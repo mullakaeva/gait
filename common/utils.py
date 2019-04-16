@@ -113,6 +113,19 @@ class LabelsReader():
         return loaded_df
 
 
+def load_df_pickle(df_path):
+    with open(df_path, "rb") as fh:
+        try:
+            loaded_df = pickle.load(fh, encoding='latin1')
+        except TypeError:
+            loaded_df = pickle.load(fh)
+    return loaded_df
+
+def write_df_pickle(df, write_path):
+    with open(write_path, "wb") as fh:
+        pickle.dump(df, fh)
+
+
 
 def moving_average(arr, kernel_size):
     """

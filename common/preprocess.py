@@ -8,8 +8,6 @@ from .utils import fullfile, read_openpose_keypoints, read_and_select_openpose_k
 from glob import glob
 from skimage.transform import resize
 from .keypoints_format import openpose2detectron_indexes
-# Preprocessing of videos detectron's output
-
 
 def save_data_for_VideoPose3D(save_path, video_size, cut_duration, keypoints_list, records=None):
     """
@@ -643,7 +641,7 @@ class OpenposePreprocesser_fromDetectronBox():
             all_keypoints.append(op_keyps_to_detectron.T) # transform to (17, 3) to fit the defined format
 
         save_data_for_VideoPose3D(output_data_path, self.cut_video_size, (self.start_idx, self.end_idx), all_keypoints)    
-        
+
     
 def detectron_preprocess_wrapper(src_vid_dir, all_data_dir, output_vid_dir, output_keypoints_dir):
     all_vid_paths = glob(os.path.join(src_vid_dir, "*"))

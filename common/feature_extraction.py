@@ -1,20 +1,27 @@
-from .utils import read_oenpose_preprocessed_keypoints, fullfile
-from .generator import SingleNumpy_DataGenerator
-from .keypoints_format import openpose_L_indexes, openpose_R_indexes, openpose_central_indexes
-
-from sklearn.metrics.pairwise import pairwise_distances
-
 import os
 import numpy as np
+import pandas as pd
+from glob import glob
+from .utils import read_oenpose_preprocessed_keypoints, fullfile, LabelsReader, write_df_pickle, load_df_pickle
+from .generator import SingleNumpy_DataGenerator
+from .keypoints_format import openpose_L_indexes, openpose_R_indexes, openpose_central_indexes
+from sklearn.metrics.pairwise import pairwise_distances
+
 
 
 class Imputator():
-    def __init__(self, data):
+    def __init__(self, data, detect_allnan=False):
         """
-        Args:
-            data: Numpy array with shape (num_frames, 25, 3)
+
+        Parameters
+        ----------
+        data : np.darray
+            OpenPose keypoints data of a video sequence. Shape = (num_frames, 25, 3)
+        raise_for_allnan : bool
+            If True, Raise error for detection of "all nan"" in any keypoint across all video frames.
         """
         self.data = data[:, :, 0:2]  # Exclude confidence terms
+        self.detect_allnan = detect_allnan
 
     def mean_imputation(self):
         """
@@ -30,20 +37,36 @@ class Imputator():
         return self.data
 
     def _search_for_nan(self):
-        nan_mask = np.isnan(self.data) == True
-        return nan_mask
+        nan_mask = np.isnan(self.data) # (num_frames, 25, 3)
+        if self.detect_allnan:
+            sum_mask = np.sum(nan_mask, axis=0)
+            all_nan_deetected = (sum_mask == self.data.shape[0]).any()
+        return nan_mask, all_nan_deetected
 
     def _calc_means(self):
         return np.nanmean(self.data, axis=0, keepdims=True)
 
 
 class CustomMeanImputator(Imputator):
-    def __init__(self, data, mean):
-        super(CustomMeanImputator, self).__init__(data)
-
+    def __init__(self, data, mean, detect_allnan=True):
+        super(CustomMeanImputator, self).__init__(data, detect_allnan)
         self.mean = mean[:, 0:2].reshape(1, self.data.shape[1], self.data.shape[2])
 
-    def _calc_means(self):
+    def mean_imputation(self):
+        """
+        Returns:
+            data: Numpy array of the same shape as input data with np.nan imputed as the mean
+        """
+        nan_mask, all_nan_deetected = self._search_for_nan()
+        if all_nan_deetected:
+            mean_keyps = self._use_existing_means()
+        else:
+            mean_keyps = self._calc_means()
+        mean_keyps_expanded = np.ones(self.data.shape) * mean_keyps
+        self.data[nan_mask] = mean_keyps_expanded[nan_mask]
+        return self.data
+
+    def _use_existing_means(self):
         return self.mean
 
 
@@ -165,3 +188,90 @@ class FeatureExtractor():
         data = np.clip(data, min_val, max_val)
         data = data * mul_factor
         return data
+
+
+class FeatureExtractorForODE(FeatureExtractor):
+    """
+    The purpose of the class is to generate a dataframe with columns of:
+        1. Video names
+        2. Feature vectors
+        3. Labels of the walking task
+
+    The feature vectors should be a numpy array with shape (num_frames, 25, 2), with below characteristics:
+        1. Entries are clipped between [0, 250]
+        2. The nan's are imputed by mean of the keypoints across a video (num_frames)
+        3. The keypoints' coordinates are scaled to between float [0, 1]
+
+    The labels should be integers within [0, 7], since there are 8 walking tasks
+
+    The class handles input data that were first preprocessed by "OpenposePreprocesser".
+    """
+    def __init__(self, scr_keyps_dir, labels_path, df_save_path):
+        """
+
+        Parameters
+        ----------
+        scr_keyps_dir : str
+            Directory that stored the preprocessed keypoints from OpenPose's inference. It should contain a .npz file
+            per video
+
+        labels_path : str
+            Path that contains the label of z_matrix which can be handled by common.utils.LabelReader class
+
+        df_save_path : str
+            Path that you will store your dataframe after this "second preprocessing"
+        """
+        self.scr_keyps_dir = scr_keyps_dir
+        self.arrs_paths = sorted(glob(os.path.join(self.scr_keyps_dir, "*.npz")))
+        self.total_paths_num = len(self.arrs_paths)
+        self.df = pd.DataFrame()
+        self.lreader = LabelsReader(labels_path)
+        self.df_save_path = df_save_path
+        self.vid_name_roots_list, self.features_list, self.labels_list = [], [], []
+        super(FeatureExtractorForODE, self).__init__(scr_keyps_dir, None)
+        self.data_grand_mean = self._incremental_mean_estimation()  # Shape = (25, 3)
+
+    def extract(self):
+
+        for idx, arr_path in enumerate(self.arrs_paths):
+
+            # Print progress
+            print("\rSecond preprocessing %d/%d" % (idx, self.total_paths_num), flush=True, end="")
+
+            # Load data
+            keyps_arr = np.load(arr_path)["positions_2d"]  # (num_frames, 25, 3)
+
+            # First column: vid_name_root
+            vid_name_root = os.path.splitext(os.path.split(arr_path)[1])[0]
+
+            # Second column: features
+            feature = self._transform_to_features(keyps_arr)
+
+            # Third column: labels
+            label = self.lreader.get_label(vid_name_root + ".mp4")
+
+            # Append to lists
+            self.vid_name_roots_list.append(vid_name_root)
+            self.features_list.append(feature)
+            self.labels_list.append(label)
+
+        # Create dataframe
+        self.df["vid_name_roots"] = self.vid_name_roots_list
+        self.df["features"] = self.features_list
+        self.df["labels"] = self.labels_list
+
+        # Save dataframe
+        write_df_pickle(self.df, self.df_save_path)
+
+    def _transform_to_features(self, keyps_arr, boundary=(0, 250)):
+
+        # Clipping (between [0, 250])
+        keyps_arr_clipped = np.clip(keyps_arr, boundary[0], boundary[1])
+
+        # Imputation (nan -> mean)
+        keyps_imputed = self._mean_single_imputation(keyps_arr_clipped, self.data_grand_mean) # (num_frames, 25, 2)
+
+        # Rescaling (./250)
+        keyps_rescaled = keyps_imputed/boundary[1]
+
+        return keyps_rescaled
