@@ -1,14 +1,14 @@
-from common.utils import  OnlineFilter_np
-import numpy as np
+from common.generator import GaitGeneratorFromDF
+import matplotlib.pyplot as plt
+df_path = "/mnt/data/raw_features_zmatrix_row_labels.pickle"
 
+gen = GaitGeneratorFromDF(df_path)
+m = 15
+for sample in gen.iterator():
+    for i in range(sample.shape[1]):
+        if i % 50 == 0:
+            sample_keyps = sample.reshape(gen.m, gen.n, 25, 3)
+            plt.scatter(sample_keyps[m, i, :, 0], sample_keyps[m, i, :, 1])
+            plt.savefig("check_{}.png".format(i))
+    break
 
-filter = OnlineFilter_np((3,), 5)
-
-for i in range(10):
-    if i < 5:
-        foo = np.zeros(3) * np.nan
-    else:
-        foo = np.ones(3)
-    filtered_output = filter.add(foo)
-
-    print(filtered_output)

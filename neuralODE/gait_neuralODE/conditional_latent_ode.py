@@ -65,12 +65,14 @@ def generate_spiral2d(nspiral=1000,
     zs_cw = stop + 1. - orig_ts
     rs_cw = a + b * 50. / zs_cw
     xs, ys = rs_cw * np.cos(zs_cw) - 5., rs_cw * np.sin(zs_cw)
-    orig_traj_cw = np.stack((xs, ys), axis=1)
+    cw_labels = np.zeros(xs.shape)
+    orig_traj_cw = np.stack((xs, ys, cw_labels), axis=1)
 
     zs_cc = orig_ts
     rw_cc = a + b * zs_cc
     xs, ys = rw_cc * np.cos(zs_cc) + 5., rw_cc * np.sin(zs_cc)
-    orig_traj_cc = np.stack((xs, ys), axis=1)
+    cc_labels = np.ones(xs.shape)
+    orig_traj_cc = np.stack((xs, ys, cc_labels), axis=1)
 
     if savefig:
         plt.figure()
@@ -195,10 +197,10 @@ def normal_kl(mu1, lv1, mu2, lv2):
 
 
 if __name__ == '__main__':
-    latent_dim = 4
+    latent_dim = 2
     nhidden = 20
     rnn_nhidden = 25
-    obs_dim = 2
+    obs_dim = 3
     nspiral = 1000
     start = 0.
     stop = 6 * np.pi
@@ -317,8 +319,6 @@ if __name__ == '__main__':
             z0 = epsilon * torch.exp(.5 * qz0_logvar) + qz0_mean
             orig_ts = torch.from_numpy(orig_ts).float().to(device)
 
-            import pdb
-            pdb.set_trace()
             # take first trajectory for visualization
             z0 = z0[0]
 

@@ -3,10 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def model_data_initialisation(latent_dim=4,
+def model_data_initialisation(latent_dim=2,
                               nhidden=20,
                               rnn_nhidden=25,
-                              obs_dim=2,
+                              obs_dim=3,
                               lr=0.01,
                               noise_std=0.3,
                               gpu_num=0):
@@ -24,12 +24,12 @@ def model_data_initialisation(latent_dim=4,
     return model, (orig_trajs, samp_trajs, orig_ts, samp_ts)
 
 def gen_latent(dim, start=0, end=2, num_samples=10):
-    latent_vecs = np.zeros((num_samples, 4))
+    latent_vecs = np.zeros((num_samples, 2))
     latent_vecs[:, dim] = np.linspace(start, end, num_samples)
     return latent_vecs
 
 def gen_latent_random(start=0, end=2, num_samples=10):
-    latent_vecs = np.random.uniform(start, end, (num_samples, 4))
+    latent_vecs = np.random.uniform(start, end, (num_samples, 2))
     return latent_vecs
 
 def training():
@@ -46,12 +46,13 @@ def visualise_latents():
         2: plt.get_cmap("autumn"),
         3: plt.get_cmap("winter")
     }
-    latents_num_per_dim = 5
+    latents_num_per_dim = 6
 
     # Generate original and sampled data
     model, data_info = model_data_initialisation()
     model.load_saved_progress("model_chkpt/ckpt.pth")
     orig_trajs, samp_trajs, orig_ts, samp_ts = data_info
+    samp_trajs, samp_ts = model.xt.cpu().numpy(), model.t.cpu().numpy()
 
     # Plot original and sampled data
     fig, ax = plt.subplots(figsize=(12, 12))
@@ -62,30 +63,48 @@ def visualise_latents():
         ax.scatter(samp_trajs[i, 0, 0], samp_trajs[i, 0, 1], marker="x")
     fig.savefig("Orig_Samps_trags.png")
 
-    # Sample outputs from latent vectors
-    # num_latents = 10
-    # latent_vecs = gen_latent_random(-2, 2, 10)
-    # for i in range(num_latents):
-    #     fig_out, ax_out = plt.subplots(figsize=(12, 12))
-    #     times = np.linspace(0, 6 * np.pi, 100)
+    # # Using example latent
+    # latent_vecs = np.load("z0.npy")
+    # times = np.linspace(0, 6 * np.pi, 100)
+    # fig_out, ax_out = plt.subplots(figsize=(12, 12))
+    # for i in range(10):
     #
     #     xt = model.sample_from_latent(latent_vecs[[i], :], times)
-    #
     #     ax_out.plot(xt[0, :, 0], xt[0, :, 1])
     #     ax_out.scatter(xt[:, 0, 0], xt[:, 0, 1],
     #                    marker="x",
     #                    )
-    #     fig_out.savefig("latents_visualisation/random/Decoded_latents{}_.png".format(i))
+    #     ax_out.set_xlim(-10, 10)
+    #     ax_out.set_ylim(-10, 10)
+    # fig_out.savefig("latents_visualisation/Decoded_latents_example.png")
+    # # fig_out.savefig("latents_visualisation/Decoded_latents_example_{}_.png".format(i))
+
+    # Sample outputs from latent vectors
+    num_latents = 10
+    latent_vecs = gen_latent_random(-2, 2, 10)
+    for i in range(num_latents):
+        fig_out, ax_out = plt.subplots(figsize=(12, 12))
+        times = np.linspace(0, 2 * np.pi, 100)
+
+        xt = model.sample_from_latent(latent_vecs[[i], :], times)
+
+        ax_out.plot(xt[0, :, 0], xt[0, :, 1])
+        ax_out.scatter(xt[:, 0, 0], xt[:, 0, 1],
+                       marker="x",
+                       )
+        ax_out.set_xlim(-10, 10)
+        ax_out.set_ylim(-10, 10)
+        fig_out.savefig("latents_visualisation/random/Decoded_latents{}_.png".format(i))
 
 
-    for dim_each in range(4):
+    for dim_each in range(2):
         fig_out, ax_out = plt.subplots(figsize=(12, 12))
         # Create latents with non-zero entries in only one dimension
-        latent_vecs = gen_latent(dim_each, start=-2, end=2, num_samples=latents_num_per_dim)
+        latent_vecs = gen_latent(dim_each, start=-2, end=3, num_samples=latents_num_per_dim)
         val_range = np.max(latent_vecs) - np.min(latent_vecs)
 
         # Create times and infer
-        times = np.linspace(0, 6*np.pi, 100)
+        times = np.linspace(0, 2*np.pi, 1000)
         xt = model.sample_from_latent(latent_vecs, times)
 
         # Plot
@@ -99,11 +118,13 @@ def visualise_latents():
                            marker="x",
                            c=cmap_dict[dim_each](latent_val / val_range)
                            )
+            ax_out.set_xlim(-10, 10)
+            ax_out.set_ylim(-10, 10)
         ax_out.legend()
         fig_out.savefig("latents_visualisation/Decoded_latents{}_.png".format(dim_each))
 
 
 
 if __name__ == "__main__":
-    # training()
-    visualise_latents()
+    training()
+    # visualise_latents()

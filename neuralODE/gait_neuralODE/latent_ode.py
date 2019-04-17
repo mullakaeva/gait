@@ -54,12 +54,14 @@ def generate_spiral2d(nspiral=1000,
     zs_cw = stop + 1. - orig_ts
     rs_cw = a + b * 50. / zs_cw
     xs, ys = rs_cw * np.cos(zs_cw) - 5., rs_cw * np.sin(zs_cw)
-    orig_traj_cw = np.stack((xs, ys), axis=1)
+    cw_labels = np.zeros(xs.shape)
+    orig_traj_cw = np.stack((xs, ys, cw_labels), axis=1)
 
     zs_cc = orig_ts
     rw_cc = a + b * zs_cc
     xs, ys = rw_cc * np.cos(zs_cc) + 5., rw_cc * np.sin(zs_cc)
-    orig_traj_cc = np.stack((xs, ys), axis=1)
+    cc_labels = np.ones(xs.shape)
+    orig_traj_cc = np.stack((xs, ys, cc_labels), axis=1)
 
     if savefig:
         plt.figure()
@@ -239,6 +241,8 @@ class LatentODEModel:
                 self.optimizer.zero_grad()
                 # backward in time to infer q(z_0)
                 h = self.rec.initHidden().to(self.device)
+                import pdb
+                pdb.set_trace()
                 for t in reversed(range(self.xt.size(1))):
                     obs = self.xt[:, t, :]
                     out, h = self.rec.forward(obs, h)
@@ -253,7 +257,6 @@ class LatentODEModel:
                 # compute loss
                 noise_std_ = torch.zeros(pred_x.size()).to(self.device) + self.noise_std
                 noise_logvar = 2. * torch.log(noise_std_).to(self.device)
-                # pdb.set_trace()
                 logpx = log_normal_pdf(
                     self.xt, pred_x, noise_logvar).sum(-1).sum(-1)
                 pz0_mean = pz0_logvar = torch.zeros(z0.size()).to(self.device)

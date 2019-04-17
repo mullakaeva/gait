@@ -196,6 +196,7 @@ class FeatureExtractorForODE(FeatureExtractor):
         1. Video names
         2. Feature vectors
         3. Labels of the walking task
+        4. Number of video frames
 
     The feature vectors should be a numpy array with shape (num_frames, 25, 2), with below characteristics:
         1. Entries are clipped between [0, 250]
@@ -231,8 +232,18 @@ class FeatureExtractorForODE(FeatureExtractor):
         super(FeatureExtractorForODE, self).__init__(scr_keyps_dir, None)
         self.data_grand_mean = self._incremental_mean_estimation()  # Shape = (25, 3)
 
-    def extract(self):
+    def extract(self, filter_window=None):
+        """
 
+        Parameters
+        ----------
+        filter_window : int
+            The minimum size of video frames to be admitted into the dataframe. If None, filtering is disabled.
+
+        Returns
+        -------
+            None
+        """
         for idx, arr_path in enumerate(self.arrs_paths):
 
             # Print progress
@@ -260,8 +271,17 @@ class FeatureExtractorForODE(FeatureExtractor):
         self.df["features"] = self.features_list
         self.df["labels"] = self.labels_list
 
-        # Save dataframe
+        # Filter rows with numbe of frames smaller than "filter_window"
+        if (filter_window is not None) and (isinstance(filter_window, int)):
+            self._filter(filter_window)
+
+        # # Save dataframe
         write_df_pickle(self.df, self.df_save_path)
+
+    def _filter(self, sequence_window_size=128):
+        self.df["num_frames"] = self.df["features"].apply(lambda x: x.shape[0]).copy()
+        self.df = self.df[self.df["num_frames"] > sequence_window_size].reset_index(drop=True).copy()
+        return None
 
     def _transform_to_features(self, keyps_arr, boundary=(0, 250)):
 

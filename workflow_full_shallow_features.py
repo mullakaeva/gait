@@ -1,5 +1,7 @@
 from common.preprocess import openpose_preprocess_wrapper
 from common.feature_extraction import FeatureExtractorForODE
+from common.generator import GaitGeneratorFromDF
+from neuralODE.analysis_neuralODE import gait_neural_ode_train, gait_neural_ode_vis
 
 # %%  ======================= Step 1: OpenPose inference ============================
 # This section find all videos from Mustafa's gait data, select those that has labels and infer them
@@ -21,11 +23,25 @@ from common.feature_extraction import FeatureExtractorForODE
 #                             plot_keypoints=True)
 
 # %% ======================== Step 3: Extracting feature for ODE =======================
-# Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /:/mnt yyhhoi/neuro:1 bash
-scr_keyps_dir = "/mnt/data/hoi/gait_analysis/data/preprocessed_keypoints"
-labels_path = "/mnt/data/hoi/gait_analysis/data/labels/z_matrix/df_gait_vid_linked_190718.pkl"
-df_save_path = "/mnt/data/hoi/gait_analysis/data/raw_features_zmatrix_row_labels.pickle"
-extractor = FeatureExtractorForODE(scr_keyps_dir=scr_keyps_dir,
-                                   labels_path=labels_path,
-                                   df_save_path=df_save_path)
-extractor.extract()
+# Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
+# scr_keyps_dir = "/mnt/data/preprocessed_keypoints"
+# labels_path = "/mnt/data/labels/z_matrix/df_gait_vid_linked_190718.pkl"
+# df_save_path = "/mnt/data/raw_features_zmatrix_row_labels.pickle"
+# minimum_sequence_window = 128
+# extractor = FeatureExtractorForODE(scr_keyps_dir=scr_keyps_dir,
+#                                    labels_path=labels_path,
+#                                    df_save_path=df_save_path)
+# extractor.extract(minimum_sequence_window)
+
+# %% ======================== Step 4: Train on neural ODE =======================
+# Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
+# model_path = "neuralODE/gait_ODE_chkpt/ckpt.pth"
+# data_gen = GaitGeneratorFromDF("/mnt/data/raw_features_zmatrix_row_labels.pickle",
+#                                m=512)
+# gait_neural_ode_train(data_gen)
+
+# %% ======================== Step 4: Visualise =======================
+data_gen = GaitGeneratorFromDF("/mnt/data/raw_features_zmatrix_row_labels.pickle",
+                               m=512)
+model_path = "neuralODE/gait_ODE_chkpt/ckpt.pth"
+gait_neural_ode_vis(model_path, "neuralODE/gait_vis_results", data_gen)
