@@ -1,0 +1,4 @@
+./data
+./data/*
+./scripts/neuralODE/gait_neuralODE/model_chkpt
+./scripts/neuralODE/gait_neuralODE/model_chkpt/*
