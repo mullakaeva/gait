@@ -10,9 +10,16 @@
       <sourceFolder url="file://$MODULE_DIR$/scripts/neuralODE/torchdiffeq" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/scripts/neuralODE/gait_neuralODE" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/scripts/vVnet" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/scripts/cVAE" isTestSource="false" />
     </content>
     <orderEntry type="jdk" jdkName="Remote Python 3.5.2 (sftp://hoi@138.245.102.12:22/data/hoi/gait_analysis/gait_env/bin/python)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+  <component name="PackageRequirementsSettings">
+    <option name="requirementsPath" value="" />
+  </component>
+  <component name="PyDocumentationSettings">
+    <option name="myDocStringFormat" value="NumPy" />
   </component>
   <component name="TestRunnerService">
     <option name="projectConfiguration" value="pytest" />
