@@ -5,24 +5,32 @@ import os
 import matplotlib.pyplot as plt
 import skvideo.io as skv
 from common.keypoints_format import openpose_body_draw_sequence
-from .Model import cVAE, total_loss
+from .Model import VAE, total_loss
 from common.utils import RunningAverageMeter
 
-class GaitCVAEmodel:
-    def __init__(self, data_gen, input_channels=58, hidden_channels=1024, latent_dims=8, gpu=0, save_chkpt_path=None):
+
+class GaitVAEmodel:
+    def __init__(self, data_gen,
+                 input_channels=1,
+                 hidden_channels=128,
+                 sequence_length=50,
+                 latent_dims=2,
+                 gpu=0,
+                 save_chkpt_path=None):
+
         self.data_gen = data_gen
         self.input_channels = input_channels
+        self.sequence_length = sequence_length
         self.hidden_channels = hidden_channels
         self.latent_dims = latent_dims
         self.loss_train_meter, self.loss_cv_meter = RunningAverageMeter(), RunningAverageMeter()
         self.device = torch.device('cuda:{}'.format(gpu))
         self.save_chkpt_path = save_chkpt_path
-        self.sequence_length, self.label_dims = self.data_gen.n, self.data_gen.label_dims
-        self.model = cVAE(n_channels=self.input_channels,
-                          L=self.sequence_length,
-                          hidden_channels=self.hidden_channels,
-                          latent_dims=self.latent_dims,
-                          label_dims=self.label_dims).to(self.device)
+        self.model = VAE(n_channels=self.input_channels,
+                         L=self.sequence_length,
+                         hidden_channels=self.hidden_channels,
+                         latent_dims=self.latent_dims,
+                         label_dims=0).to(self.device)
         params = self.model.parameters()
         self.optimizer = optim.Adam(params, lr=0.001)
 
@@ -30,26 +38,26 @@ class GaitCVAEmodel:
         try:
             for epoch in range(n_epochs):
                 iter_idx = 0
-                for (x, labels), (x_test, labels_test) in self.data_gen.iterator():
-                    x, labels = torch.from_numpy(x).float().to(self.device), torch.from_numpy(labels).float().to(self.device)
-                    x_test, labels_test = torch.from_numpy(x_test).float().to(self.device), torch.from_numpy(
-                        labels_test).float().to(self.device)
+                for (x, x_test) in self.data_gen.iterator():
+                    x = torch.from_numpy(x).float().to(self.device)
+                    x_test = torch.from_numpy(x_test).float().to(self.device)
                     self.optimizer.zero_grad()
 
-                    # CV set
+                    # Loss of CV set and training set
                     self.model.eval()
                     with torch.no_grad():
-                        out_test, mu_test, logvar_test, z_test = self.model.forward(x_test, labels_test)
+                        out_test, mu_test, logvar_test, z_test = self.model.forward(x_test)
                         loss_test = total_loss(x_test, out_test, mu_test, logvar_test)
                         self.loss_cv_meter.update(loss_test.item())
-                    # Train set
+
+                    # Training
                     self.model.train()
-                    out, mu, logvar, z = self.model.forward(x, labels)
-                    loss = total_loss(x, out, mu, logvar)
-                    self.loss_train_meter.update(loss.item())
+                    out, mu, logvar, z = self.model.forward(x)
+                    loss_train = total_loss(x, out, mu, logvar)
+                    self.loss_train_meter.update(loss_train.item())
 
                     # Back-prop
-                    loss.backward()
+                    loss_train.backward()
                     self.optimizer.step()
                     iter_idx += 1
 
@@ -94,8 +102,8 @@ class GaitCVAEmodel:
         checkpoint = torch.load(load_chkpt_path)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        # self.loss_train_meter = checkpoint['loss_train_meter']
-        # self.loss_cv_meter = checkpoint['loss_cv_meter']
+        self.loss_train_meter = checkpoint['loss_train_meter']
+        self.loss_cv_meter = checkpoint['loss_cv_meter']
         print('Loaded ckpt from {}'.format(load_chkpt_path))
 
     def _save_model(self):
@@ -109,74 +117,88 @@ class GaitCVAEmodel:
             print('Stored ckpt at {}'.format(self.save_chkpt_path))
 
 
-class GaitCVAEvisualiser:
+class GaitSingleSkeletonVAEvisualiser:
     def __init__(self, data_gen, load_model_path, save_vid_dir):
         # Hard coded stuff
         self.num_samples_pred = 5
         self.num_samples_latents = 3
-        self.latents_dim, self.label_dim = 8, 8
+        self.latents_dim, self.label_dim = 2, 0
         self.times = 128
+
         # Init
         self.data_gen = data_gen
         self.load_model_path = load_model_path
         self.save_vid_dir = save_vid_dir
-        self.model_container = GaitCVAEmodel(data_gen)
+        self.model_container = GaitVAEmodel(data_gen)
         self.model_container.load_model(self.load_model_path)
 
     def visualise_vid(self):
         # Init
         os.makedirs(self.save_vid_dir, exist_ok=True)
         (x_in, y_in), (x_out, y_out) = self._get_pred_results()
-        x_latents, y_latents, z_c = self._get_latents_results()
+        # x_latents, y_latents, z_c = self._get_latents_results()
 
         # Visualise in-out pair
         for sample_num in range(self.num_samples_pred):
             save_vid_path = os.path.join(self.save_vid_dir, "Recon-%d.mp4" % (sample_num))
             vwriter = skv.FFmpegWriter(save_vid_path)
             for t in range(self.times):
-                time = t/25
-                print("\rNow writing Recon_sample-%d | time-%0.4fs" % (sample_num, time), flush=True,end="")
+                time = t / 25
+                print("\rNow writing Recon_sample-%d | time-%0.4fs" % (sample_num, time), flush=True, end="")
                 title_in = "Input: %d | Time = %0.4fs" % (sample_num, time)
                 draw_arr_in = plot2arr(x_in, y_in, sample_num, t, title_in)
                 title_out = "Output: %d | Time = %0.4fs" % (sample_num, time)
                 draw_arr_out = plot2arr(x_out, y_out, sample_num, t, title_out)
 
-                draw_arr_recon = np.concatenate((draw_arr_in, draw_arr_out), axis = 1)
+                draw_arr_recon = np.concatenate((draw_arr_in, draw_arr_out), axis=1)
                 vwriter.writeFrame(draw_arr_recon)
             print()
             vwriter.close()
 
         # Visualise sampled vid from latents
-        for sample_num in range(z_c.shape[0]):
-            cond = np.argmax(z_c[sample_num, self.latents_dim:])
-            save_vid_path = os.path.join(self.save_vid_dir, "Sample-%d_Cond-%d.mp4" % (sample_num, cond))
-            vwriter = skv.FFmpegWriter(save_vid_path)
-            for t in range(self.times):
-                time = t/25
-                print("\rNow writing | Cond-%d | Sample-%d | time-%0.4fs" % (cond, sample_num, time), flush=True, end="")
-                title = "Sample: %d | Cond: %d | Time = %0.4fs" % (sample_num, cond, time)
-                draw_arr_latents = plot2arr(x_latents, y_latents, sample_num, t, title)
-                vwriter.writeFrame(draw_arr_latents)
-            print()
-            vwriter.close()
-
+        # for sample_num in range(z_c.shape[0]):
+        #     cond = np.argmax(z_c[sample_num, self.latents_dim:])
+        #     save_vid_path = os.path.join(self.save_vid_dir, "Sample-%d_Cond-%d.mp4" % (sample_num, cond))
+        #     vwriter = skv.FFmpegWriter(save_vid_path)
+        #     for t in range(self.times):
+        #         time = t / 25
+        #         print("\rNow writing | Cond-%d | Sample-%d | time-%0.4fs" % (cond, sample_num, time), flush=True,
+        #               end="")
+        #         title = "Sample: %d | Cond: %d | Time = %0.4fs" % (sample_num, cond, time)
+        #         draw_arr_latents = plot2arr(x_latents, y_latents, sample_num, t, title)
+        #         vwriter.writeFrame(draw_arr_latents)
+        #     print()
+        #     vwriter.close()
 
     def _get_pred_results(self):
         for (x_train, labels_train), (in_test, labels_test) in self.data_gen.iterator():
+            # Flatten data
+            n_samples, n_times = in_test.shape[0], in_test.shape[2]
+            in_test = np.transpose(in_test, (0, 2, 1))
+            in_test = in_test[:, :, 0:50].reshape(-1, 1, 50)
+
+            # Forward pass
             self.model_container.model.eval()
             with torch.no_grad():
                 in_test, labels_test = torch.from_numpy(in_test).float().to(self.model_container.device), \
-                                      torch.from_numpy(labels_test).float().to(self.model_container.device)
-                out_test, _, _, _ = self.model_container.model.forward(in_test, labels_test)
+                                       torch.from_numpy(labels_test).float().to(self.model_container.device)
+                out_test, mu, logvar, z = self.model_container.model.forward(in_test)
+                loss = total_loss(in_test, out_test, mu, logvar)
             break
+        # Unflatten data
         in_test_np, out_test_np = in_test.cpu().numpy(), out_test.cpu().numpy()
+        in_test_np, out_test_np = in_test_np.reshape(n_samples, n_times, 50), out_test_np.reshape(n_samples, n_times, 50)
+        in_test_np, out_test_np = np.transpose(in_test_np, (0, 2, 1)), np.transpose(out_test_np, (0, 2, 1))
+
+        import pdb
+        pdb.set_trace()
         x_in, y_in = in_test_np[:, 0:25, :], in_test_np[:, 25:50, :]
         x_out, y_out = out_test_np[:, 0:25, :], out_test_np[:, 25:50, :]
         return (x_in, y_in), (x_out, y_out)
 
     def _get_latents_results(self):
-        z_sampled = np.random.normal(0, 1, (self.num_samples_latents*self.label_dim, self.latents_dim))
-        cond_vec = np.zeros((self.num_samples_latents*self.label_dim, self.label_dim))
+        z_sampled = np.random.normal(0, 1, (self.num_samples_latents * self.label_dim, self.latents_dim))
+        cond_vec = np.zeros((self.num_samples_latents * self.label_dim, self.label_dim))
         z_c = np.concatenate((z_sampled, cond_vec), axis=1)
         for sample_idx in range(self.num_samples_latents):
             for cond in range(self.label_dim):
