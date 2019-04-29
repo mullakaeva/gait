@@ -13,7 +13,6 @@
             <excludedPath path="/data/hoi/gait_analysis/logs" />
             <excludedPath path="/data/hoi/gait_analysis/results" />
             <excludedPath path="/data/hoi/gait_analysis/scripts/neuralODE/gait_ODE_chkpt" />
-            <excludedPath path="/data/hoi/gait_analysis/scripts/neuralODE/gait_vis_results" />
             <excludedPath path="/data/hoi/gait_analysis/scripts/neuralODE/gait_neuralODE/gait_vis_results" />
             <excludedPath path="/data/hoi/gait_analysis/scripts/neuralODE/gait_neuralODE/model_chkpt" />
             <excludedPath path="/data/hoi/gait_analysis/scripts/cVAE/__pycache__" />

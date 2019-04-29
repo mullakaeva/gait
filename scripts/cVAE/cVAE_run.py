@@ -4,6 +4,7 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 import skvideo.io as skv
+from common.keypoints_format import openpose_body_draw_sequence
 from .Model import cVAE, total_loss
 
 
@@ -180,6 +181,7 @@ class GaitCVAEvisualiser:
 def plot2arr(x, y, sample_num, t, title):
     fig, ax = plt.subplots()
     ax.scatter(x[sample_num, :, t], y[sample_num, :, t])
+    ax = draw_skeleton(ax, x, y, sample_num, t)
     fig.suptitle(title)
     ax.set_xlim(0, 1)
     ax.set_ylim(1, 0)
@@ -189,3 +191,8 @@ def plot2arr(x, y, sample_num, t, title):
     data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
     return data
 
+
+def draw_skeleton(ax, x, y, sample_num, t):
+    for start, end in openpose_body_draw_sequence:
+        ax.plot(x[sample_num, [start, end], t], y[sample_num, [start, end], t])
+    return ax

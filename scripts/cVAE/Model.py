@@ -164,29 +164,43 @@ class cVAE(nn.Module):
 
         # Sampling from latents and concatenate with labels
         z, mu, logvar  = self.bottleneck(out)
+        # print("z's Shape: %s" % (str(z.shape)))
         z_c = torch.cat((z, labels), dim=-1)
-
         # Decoder
         out = self.decode(z_c)
 
         return out, mu, logvar, z
 
     def encode(self, x):
+        # print("Input's Shape: %s"%(str(x.shape)))
         out = self.first_layer(x)
+        # print("Encode's Shape: %s" % (str(out.shape)))
         out = self.en_blk1(out) + out[:, :, 0:int(self.Ls_encode[1])]
+        # print("Encode's Shape: %s" % (str(out.shape)))
         out = self.en_blk2(out) + out[:, :, 0:int(self.Ls_encode[2])]
+        # print("Encode's Shape: %s" % (str(out.shape)))
         out = self.en_blk3(out) + out[:, :, 0:int(self.Ls_encode[3])]
+        # print("Encode's Shape: %s" % (str(out.shape)))
         out = self.en_blk4(out) + out[:, :, 0:int(self.Ls_encode[4])]
+        # print("Encode's Shape: %s" % (str(out.shape)))
         out = self.en2latents(out)
+        # print("Encode's Shape: %s" % (str(out.shape)))
         return out
 
     def decode(self, z_c):
+        # print("z_c's Shape: %s" % (str(z_c.shape)))
         out = self.latents2de(z_c)
+        # print("Decode's Shape: %s" % (str(out.shape)))
         out = self.de_blk1(out)
+        # print("Decode's Shape: %s" % (str(out.shape)))
         out = self.de_blk2(out)
+        # print("Decode's Shape: %s" % (str(out.shape)))
         out = self.de_blk3(out)
+        # print("Decode's Shape: %s" % (str(out.shape)))
         out = self.de_blk4(out)
+        # print("Decode's Shape: %s" % (str(out.shape)))
         out = self.final_layer(out)
+        # print("Decode's Shape: %s" % (str(out.shape)))
         return out
 
     def reparameterize(self, mu, logvar):

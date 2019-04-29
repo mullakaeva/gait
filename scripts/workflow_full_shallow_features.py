@@ -25,7 +25,7 @@ from cVAE.cVAE_run import GaitCVAEmodel, GaitCVAEvisualiser
 # openpose_preprocess_wrapper(src_vid_dir, input_data_main_dir, output_vid_dir, output_data_dir, error_log_path,
 #                             plot_keypoints=True)
 
-# %% ======================== Step 3: Extracting feature for ODE =======================
+# %% ======================== Step A.A.3: Extracting feature for ODE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
 # scr_keyps_dir = "/mnt/data/preprocessed_keypoints"
 # labels_path = "/mnt/data/labels/z_matrix/df_gait_vid_linked_190718.pkl"
@@ -36,7 +36,7 @@ from cVAE.cVAE_run import GaitCVAEmodel, GaitCVAEvisualiser
 #                                    df_save_path=df_save_path)
 # extractor.extract(minimum_sequence_window)
 
-# %% ======================== Step 4: Train on cVAE =======================
+# %% ======================== Step A.A.4: Train on cVAE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
 # data_gen = GaitGeneratorFromDFforCVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
 #                                       m=512)
@@ -45,7 +45,7 @@ from cVAE.cVAE_run import GaitCVAEmodel, GaitCVAEvisualiser
 # cvae.load_model(save_model_path)
 # cvae.train(10)
 
-# %% ======================== Step 5: Visualise on cVAE =======================
+# %% ======================== Step A.A.5: Visualise on cVAE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
 data_gen = GaitGeneratorFromDFforCVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
                                       m=512)
@@ -54,14 +54,14 @@ save_vid_dir = "cVAE/vis/"
 viser = GaitCVAEvisualiser(data_gen, load_model_path, save_vid_dir)
 viser.visualise_vid()
 
-# %% ======================== (Defunkt) Step 4: Train on neural ODE =======================
+# %% ======================== (Defunkt) Step A.B.4: Train on neural ODE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
 # model_path = "neuralODE/gait_ODE_chkpt/ckpt.pth"
 # data_gen = GaitGeneratorFromDF("/mnt/data/raw_features_zmatrix_row_labels.pickle",
 #                                m=512)
 # gait_neural_ode_train(data_gen)
 
-# %% ======================== (Defunkt) Step 4: Visualise =======================
+# %% ======================== (Defunkt) Step A.B.4: Visualise =======================
 # data_gen = GaitGeneratorFromDF("/mnt/data/raw_features_zmatrix_row_labels.pickle",
 #                                m=512)
 # model_path = "neuralODE/gait_ODE_chkpt/ckpt.pth"
