@@ -177,7 +177,6 @@ class GaitGeneratorFromDFforCVAE(GaitGeneratorFromDF):
             fea_vec = df["features"].iloc[i]  # numpy.darray (num_frames, 25, 2)
             label = df["labels"].iloc[i]  # numpy.int64
             fea_vec = fea_vec - np.mean(fea_vec, axis = 1, keepdims=True)
-
             # Slice to the receptive window
             slice_start = np.random.choice(fea_vec.shape[0] - self.n)
             fea_vec_sliced = fea_vec[slice_start:slice_start + self.n, :, :]
@@ -198,7 +197,7 @@ class GaitGeneratorFromDFforSingleSkeletonVAE:
     def __init__(self, df_pickle_path, m=32, train_portion=0.95):
         # Load dataframe and collapse the num_samples and num_frames
         df = load_df_pickle(df_pickle_path)
-        output_arr = self._flatten_feature_sequences(df)  # (num_frames * num_samples, 1, 50)
+        output_arr = self._flatten_feature_sequences(df)  # (num_frames * num_samples, 50)
         self.m, self.total_num_rows = m, output_arr.shape[0]
         del df  # free memory to python process but not the system
 
@@ -232,10 +231,10 @@ class GaitGeneratorFromDFforSingleSkeletonVAE:
         vec_list = []
         for i in range(df.shape[0]):
             fea_vec = df["features"].iloc[i].copy()  # (num_frames, 25, 2)
-            fea_vec_translated = fea_vec - np.mean(fea_vec, axis= 1, keepdims=True)
-            fea_flatten = np.zeros((fea_vec.shape[0], 1, 50))  # (num_frames, 1, 50)
-            fea_flatten[:, 0, 0:25], fea_flatten[:, 0, 25:50] = fea_vec_translated[:, :, 0], fea_vec_translated[:, :, 1]
+            fea_vec = fea_vec - np.mean(fea_vec, axis=1, keepdims=True)
+            fea_flatten = np.zeros((fea_vec.shape[0], 50))  # (num_frames, 50)
+            fea_flatten[:, 0:25], fea_flatten[:, 25:50] = fea_vec[:, :, 0], fea_vec[:, :, 1]
             vec_list.append(fea_flatten)
-        output_arr = np.concatenate(vec_list, axis=0)  # (num_frames * num_samples, 1, 50)
+        output_arr = np.concatenate(vec_list, axis=0)  # (num_frames * num_samples, 50)
         return output_arr
 

@@ -13,29 +13,27 @@ from common.utils import RunningAverageMeter
 
 class GaitVAEmodel:
     def __init__(self, data_gen,
-                 input_channels=1,
-                 hidden_channels=128,
-                 sequence_length=50,
+                 input_dims=50,
                  latent_dims=2,
                  gpu=0,
-                 step_lr_decay=0.1,
+                 step_lr_decay=0.8,
                  save_chkpt_path=None):
 
+        # Standard Init
         self.data_gen = data_gen
-        self.input_channels = input_channels
-        self.sequence_length = sequence_length
-        self.hidden_channels = hidden_channels
+        self.input_dims = input_dims
         self.latent_dims = latent_dims
+        self.device = torch.device('cuda:{}'.format(gpu))
+        self.save_chkpt_path = save_chkpt_path
+
+        # Learning rate decay and loss
         self.step_lr_decay = step_lr_decay
         self.recon_loss = self._set_up_loss_func()
         self.loss_train_meter, self.loss_cv_meter = RunningAverageMeter(), RunningAverageMeter()
-        self.device = torch.device('cuda:{}'.format(gpu))
-        self.save_chkpt_path = save_chkpt_path
-        self.model = VAE(n_channels=self.input_channels,
-                         L=self.sequence_length,
-                         hidden_channels=self.hidden_channels,
-                         latent_dims=self.latent_dims,
-                         label_dims=0).to(self.device)
+
+        # initialize model, params, optimizer
+        self.model = VAE(input_dims=self.input_dims,
+                         latent_dims=self.latent_dims).to(self.device)
         params = self.model.parameters()
         self.optimizer = optim.Adam(params, lr=0.001)
 
@@ -124,10 +122,11 @@ class GaitVAEmodel:
             print('Stored ckpt at {}'.format(self.save_chkpt_path))
 
     def _set_up_loss_func(self):
-        return nn.MSELoss(size_average=False)
+        return nn.MSELoss(reduction="sum")
 
     def loss_function(self, x, pred, mu, logvar):
         img_loss = self.recon_loss(x, pred)
+        # return img_loss
         KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         loss = img_loss + KLD
         return loss
@@ -172,26 +171,21 @@ class GaitSingleSkeletonVAEvisualiser:
 
                     title_in = "Input: %d | label: %d | Time = %0.4fs" % (sample_num, label_num, time)
                     draw_arr_in = plot2arr_skeleton(x_in_labelled, y_in_labelled, sample_num, t, title_in,
-                                                    x_lim=(-0.6, 0.6),
-                                                    y_lim=(0.6, -0.6))
+                                                    x_lim=(-0.6, 0.6), y_lim=(0.6, -0.6))
                     title_latent = "Latents | mse = %f" % mse
-                    draw_arr_latent = plot2arr_latents(mu_labelled, sample_num, t, title_latent,
-                                                       x_lim=(-0.5, 0.5),
-                                                       y_lim=(-0.5, 0.5))
+                    draw_arr_latent = plot2arr_latents(mu_labelled, sample_num, t, title_latent)
                     title_out = "Output: %d | label: %d | Time = %0.4fs" % (sample_num, label_num, time)
                     draw_arr_out = plot2arr_skeleton(x_out_labelled, y_out_labelled, sample_num, t, title_out,
-                                                     x_lim=(-0.6, 0.6),
-                                                     y_lim=(0.6, -0.6))
-                    title_out = "Zoomed: %d | label: %d | Time = %0.4fs" % (sample_num, label_num, time)
-                    draw_arr_zoomed = plot2arr_skeleton(x_out_labelled, y_out_labelled, sample_num, t, title_out,
-                                                        x_lim=(-0.1, 0.1),
-                                                        y_lim=(0.6, -0.6))
+                                                     x_lim=(-0.6, 0.6), y_lim=(0.6, -0.6))
+                    # title_out = "Zoomed: %d | label: %d | Time = %0.4fs" % (sample_num, label_num, time)
+                    # draw_arr_zoomed = plot2arr_skeleton(x_out_labelled, y_out_labelled, sample_num, t, title_out,
+                    #                                  x_lim=(0.4, 0.6))
                     h, w = draw_arr_in.shape[0], draw_arr_in.shape[1]
                     output_arr = np.zeros((h * 2, w * 2, 3))
                     output_arr[0:h, 0:w, :] = draw_arr_in
                     output_arr[h:h * 2, 0:w, :] = draw_arr_out
                     output_arr[0:h, w:w * 2, :] = draw_arr_latent
-                    output_arr[h:h * 2, w:w * 2, :] = draw_arr_zoomed
+                    # output_arr[h:h * 2, w:w * 2, :] = draw_arr_zoomed
                     vwriter.writeFrame(output_arr)
                 print()
                 vwriter.close()
@@ -201,7 +195,7 @@ class GaitSingleSkeletonVAEvisualiser:
             # Flatten data
             n_samples, n_times = x_train.shape[0], x_train.shape[2]
             in_test = np.transpose(x_train, (0, 2, 1))
-            in_test = in_test[:, :, 0:50].reshape(-1, 1, 50)
+            in_test = in_test[:, :, 0:50].reshape(-1, 50)
 
             # Forward pass
             self.model_container.model.eval()
@@ -279,7 +273,7 @@ class GaitSingleSkeletonVAEvisualiserCollapsed(GaitSingleSkeletonVAEvisualiser):
         return (x_in, y_in), (x_out, y_out)
 
 
-def plot2arr_skeleton(x, y, sample_num, t, title, x_lim=(0, 1), y_lim=(1, 0)):
+def plot2arr_skeleton(x, y, sample_num, t, title, x_lim=(-0.6, 0.6), y_lim=(0.6, -0.6)):
     fig, ax = plt.subplots()
     ax.scatter(x[sample_num, :, t], y[sample_num, :, t])
     ax = draw_skeleton(ax, x, y, sample_num, t)
@@ -294,7 +288,7 @@ def plot2arr_skeleton(x, y, sample_num, t, title, x_lim=(0, 1), y_lim=(1, 0)):
     return data
 
 
-def plot2arr_latents(z, sample_num, t, title, x_lim=(-1, 1), y_lim=(-1,1)):
+def plot2arr_latents(z, sample_num, t, title, x_lim=(-1, 1), y_lim=(-1, 1)):
     fig, ax = plt.subplots()
     ax.scatter(z[sample_num, 0, t], z[sample_num, 1, t], marker="x")
     fig.suptitle(title)

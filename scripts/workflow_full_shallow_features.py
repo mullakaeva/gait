@@ -61,11 +61,11 @@
 # from single_skeleton_vae.VAE_run import GaitVAEmodel
 #
 # data_gen = GaitGeneratorFromDFforSingleSkeletonVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
-#                                                    m=8195, train_portion=0.999)
+#                                                    m=8192, train_portion=0.999)
 # save_model_path = "single_skeleton_vae/model_chkpt/ckpt.pth"
-# vae = GaitVAEmodel(data_gen, latent_dims=2, step_lr_decay=0.5, save_chkpt_path=save_model_path)
-# vae.load_model(save_model_path)
-# vae.train(2)
+# vae = GaitVAEmodel(data_gen, latent_dims=1000, step_lr_decay=0.8, save_chkpt_path=save_model_path)
+# # vae.load_model(save_model_path)
+# vae.train(5)
 
 # %% ======================== Step A.B.5: Visualise on single_skeleton_VAE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
@@ -80,7 +80,7 @@ save_vid_dir = "single_skeleton_vae/vis/"
 # viser = GaitSingleSkeletonVAEvisualiserCollapsed(data_gen, load_model_path, save_vid_dir)
 
 data_gen = GaitGeneratorFromDFforCVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle", m=128)
-viser = GaitSingleSkeletonVAEvisualiser(data_gen, load_model_path, save_vid_dir, latent_dims=2)
+viser = GaitSingleSkeletonVAEvisualiser(data_gen, load_model_path, save_vid_dir, latent_dims=1000)
 
 viser.visualise_vid()
 
