@@ -176,6 +176,7 @@ class GaitGeneratorFromDFforCVAE(GaitGeneratorFromDF):
             # Get features and labels
             fea_vec = df["features"].iloc[i]  # numpy.darray (num_frames, 25, 2)
             label = df["labels"].iloc[i]  # numpy.int64
+            fea_vec = fea_vec - np.mean(fea_vec, axis = 1, keepdims=True)
 
             # Slice to the receptive window
             slice_start = np.random.choice(fea_vec.shape[0] - self.n)
@@ -231,8 +232,9 @@ class GaitGeneratorFromDFforSingleSkeletonVAE:
         vec_list = []
         for i in range(df.shape[0]):
             fea_vec = df["features"].iloc[i].copy()  # (num_frames, 25, 2)
+            fea_vec_translated = fea_vec - np.mean(fea_vec, axis= 1, keepdims=True)
             fea_flatten = np.zeros((fea_vec.shape[0], 1, 50))  # (num_frames, 1, 50)
-            fea_flatten[:, 0, 0:25], fea_flatten[:, 0, 25:50] = fea_vec[:, :, 0], fea_vec[:, :, 1]
+            fea_flatten[:, 0, 0:25], fea_flatten[:, 0, 25:50] = fea_vec_translated[:, :, 0], fea_vec_translated[:, :, 1]
             vec_list.append(fea_flatten)
         output_arr = np.concatenate(vec_list, axis=0)  # (num_frames * num_samples, 1, 50)
         return output_arr

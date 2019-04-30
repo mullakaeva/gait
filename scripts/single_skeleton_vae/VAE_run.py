@@ -171,15 +171,21 @@ class GaitSingleSkeletonVAEvisualiser:
                         np.square(x_in_labelled - x_out_labelled) + np.square((y_in_labelled - y_out_labelled)))
 
                     title_in = "Input: %d | label: %d | Time = %0.4fs" % (sample_num, label_num, time)
-                    draw_arr_in = plot2arr_skeleton(x_in_labelled, y_in_labelled, sample_num, t, title_in)
+                    draw_arr_in = plot2arr_skeleton(x_in_labelled, y_in_labelled, sample_num, t, title_in,
+                                                    x_lim=(-0.6, 0.6),
+                                                    y_lim=(0.6, -0.6))
                     title_latent = "Latents | mse = %f" % mse
-                    draw_arr_latent = plot2arr_latents(mu_labelled, sample_num, t, title_latent)
+                    draw_arr_latent = plot2arr_latents(mu_labelled, sample_num, t, title_latent,
+                                                       x_lim=(-0.5, 0.5),
+                                                       y_lim=(-0.5, 0.5))
                     title_out = "Output: %d | label: %d | Time = %0.4fs" % (sample_num, label_num, time)
                     draw_arr_out = plot2arr_skeleton(x_out_labelled, y_out_labelled, sample_num, t, title_out,
-                                                     x_lim=(0, 1))
+                                                     x_lim=(-0.6, 0.6),
+                                                     y_lim=(0.6, -0.6))
                     title_out = "Zoomed: %d | label: %d | Time = %0.4fs" % (sample_num, label_num, time)
                     draw_arr_zoomed = plot2arr_skeleton(x_out_labelled, y_out_labelled, sample_num, t, title_out,
-                                                     x_lim=(0.4, 0.6))
+                                                        x_lim=(-0.1, 0.1),
+                                                        y_lim=(0.6, -0.6))
                     h, w = draw_arr_in.shape[0], draw_arr_in.shape[1]
                     output_arr = np.zeros((h * 2, w * 2, 3))
                     output_arr[0:h, 0:w, :] = draw_arr_in
@@ -288,12 +294,12 @@ def plot2arr_skeleton(x, y, sample_num, t, title, x_lim=(0, 1), y_lim=(1, 0)):
     return data
 
 
-def plot2arr_latents(z, sample_num, t, title):
+def plot2arr_latents(z, sample_num, t, title, x_lim=(-1, 1), y_lim=(-1,1)):
     fig, ax = plt.subplots()
     ax.scatter(z[sample_num, 0, t], z[sample_num, 1, t], marker="x")
     fig.suptitle(title)
-    ax.set_xlim(-0.1, 0.1)
-    ax.set_ylim(-0.1, 0.1)
+    ax.set_xlim(x_lim[0], x_lim[1])
+    ax.set_ylim(y_lim[0], y_lim[1])
     fig.tight_layout()
     fig.canvas.draw()
     data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')

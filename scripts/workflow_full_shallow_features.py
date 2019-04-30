@@ -61,7 +61,7 @@
 # from single_skeleton_vae.VAE_run import GaitVAEmodel
 #
 # data_gen = GaitGeneratorFromDFforSingleSkeletonVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
-#                                                    m=32, train_portion=0.999)
+#                                                    m=8195, train_portion=0.999)
 # save_model_path = "single_skeleton_vae/model_chkpt/ckpt.pth"
 # vae = GaitVAEmodel(data_gen, latent_dims=2, step_lr_decay=0.5, save_chkpt_path=save_model_path)
 # vae.load_model(save_model_path)
