@@ -25,22 +25,27 @@ class LshapeCounter:
         return Lout
 
 
-def encoding_block(input_channels, output_channels, kernel_size, dilation):
+def encoding_block(input_channels, output_channels, kernel_size, dilation, dropout_p=0.25):
     conv_layer = nn.Conv1d(input_channels, output_channels, kernel_size=kernel_size, dilation=dilation)
     bn_1_layer = nn.BatchNorm1d(output_channels)
     selu_1_layer = nn.SELU()
+    droput_1_layer = nn.Dropout(dropout_p)
     fc_layer = nn.Conv1d(output_channels, output_channels, kernel_size=1, dilation=1)
     bn_2_layer = nn.BatchNorm1d(output_channels)
     selu_2_layer = nn.SELU()
+    droput_2_layer = nn.Dropout(dropout_p)
     block_list = [
         conv_layer,
         bn_1_layer,
         selu_1_layer,
+        droput_1_layer,
         fc_layer,
         bn_2_layer,
-        selu_2_layer
+        selu_2_layer,
+        droput_2_layer
     ]
     return block_list
+
 
 
 def decoding_block(input_channels, output_channels, kernel_size, dilation):

@@ -231,8 +231,9 @@ class GaitGeneratorFromDFforSingleSkeletonVAE:
         vec_list = []
         for i in range(df.shape[0]):
             fea_vec = df["features"].iloc[i].copy()  # (num_frames, 25, 2)
-            vec_list.append(fea_vec)
-        output_arr = np.concatenate(vec_list, axis=0)  # (num_frames * num_samples, 25, 2)
-        output_arr = output_arr.reshape(-1, 1, 50)  # (num_frames * num_samples, 1, 50)
+            fea_flatten = np.zeros((fea_vec.shape[0], 1, 50))  # (num_frames, 1, 50)
+            fea_flatten[:, 0, 0:25], fea_flatten[:, 0, 25:50] = fea_vec[:, :, 0], fea_vec[:, :, 1]
+            vec_list.append(fea_flatten)
+        output_arr = np.concatenate(vec_list, axis=0)  # (num_frames * num_samples, 1, 50)
         return output_arr
 
