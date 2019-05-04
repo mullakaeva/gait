@@ -11,6 +11,63 @@ from .Model import VAE
 from common.utils import RunningAverageMeter
 
 
+def gen_spiral(a, b, speed, t_range, steps):
+    t_start, t_end = t_range
+    t = np.linspace(t_start, t_end, steps)
+    theta = speed * t
+    r = a + b * t
+    x = r * np.cos(theta)
+    y = r * np.sin(theta)
+    return x, y
+
+
+def gen_lines(x_start=None, y_start=None, lim=(-2, 2), line_steps=500):
+    if y_start is None:
+        x = np.linspace(lim[0], lim[1], line_steps)
+        y = np.zeros(x.shape) + x_start
+    elif x_start is None:
+        y = np.linspace(lim[0], lim[1], line_steps)
+        x = np.zeros(y.shape) + y_start
+    else:
+        print("Only one, x_start or y_start is None")
+        raise TypeError
+    return x, y
+
+
+def gen_paths():
+    # Storage
+    x_list = []
+    y_list = []
+
+    # Generate spiral
+    # a, b = 0, -0.3
+    # t_range = [0, 2 * np.pi]
+    # speed = 7
+    # steps_spiral = 500
+    # x_spiral, y_spiral = gen_spiral(a, b, speed, t_range, steps_spiral)
+    # x_list.append(x_spiral)
+    # y_list.append(y_spiral)
+
+    # Cross paths
+    steps_cross = 100
+    x_start_list = np.linspace(-2, 2, 10)
+    y_start_list = np.linspace(-2, 2, 10)
+    for x_start in x_start_list:
+        x_temp, y_temp = gen_lines(x_start=x_start, line_steps=steps_cross)
+        x_list.append(x_temp)
+        y_list.append(y_temp)
+    for y_start in y_start_list:
+        x_temp, y_temp = gen_lines(y_start=y_start, line_steps=steps_cross)
+        x_list.append(x_temp)
+        y_list.append(y_temp)
+
+    # Concatenate paths
+    x = np.concatenate(x_list)
+    y = np.concatenate(y_list)
+    color_vals = np.linspace(0, 1, x.shape[0])
+    return x, y, color_vals
+
+
 class GaitVAEmodel:
     def __init__(self, data_gen,
                  input_dims=50,
@@ -99,8 +156,8 @@ class GaitVAEmodel:
         with torch.no_grad():
             out = self.model.decode(z_c_tensor)
         out_np = out.cpu().numpy()
-        x = out_np[:, 0:self.data_gen.keyps_x_dims, :]
-        y = out_np[:, self.data_gen.keyps_x_dims:self.data_gen.total_fea_dims, :]
+        x = out_np[:, 0:self.data_gen.keyps_x_dims, ]
+        y = out_np[:, self.data_gen.keyps_x_dims:self.data_gen.total_fea_dims, ]
         return x, y
 
     def load_model(self, load_chkpt_path):
@@ -128,7 +185,7 @@ class GaitVAEmodel:
         img_loss = self.recon_loss(x, pred)
         # return img_loss
         KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-        loss = img_loss + KLD
+        loss = img_loss + 0.0001*KLD
         return loss
 
 
@@ -170,25 +227,48 @@ class GaitSingleSkeletonVAEvisualiser:
                         np.square(x_in_labelled - x_out_labelled) + np.square((y_in_labelled - y_out_labelled)))
 
                     title_in = "Input: %d | label: %d | Time = %0.4fs" % (sample_num, label_num, time)
-                    draw_arr_in = plot2arr_skeleton(x_in_labelled, y_in_labelled, sample_num, t, title_in,
-                                                    x_lim=(-0.6, 0.6), y_lim=(0.6, -0.6))
+                    draw_arr_in = plot2arr_skeleton(x_in_labelled[sample_num, :, t],
+                                                    y_in_labelled[sample_num, :, t],
+                                                    title_in,
+                                                    x_lim=(-0.6, 0.6),
+                                                    y_lim=(0.6, -0.6))
                     title_latent = "Latents | mse = %f" % mse
-                    draw_arr_latent = plot2arr_latents(mu_labelled, sample_num, t, title_latent)
+                    draw_arr_latent = plot2arr_latent_space(mu_labelled[sample_num, :, :].T,
+                                                            t, title_latent)
+                    # draw_arr_latent = plot2arr_latents(mu_labelled[sample_num, :, t],
+                    #                                    title_latent)
                     title_out = "Output: %d | label: %d | Time = %0.4fs" % (sample_num, label_num, time)
-                    draw_arr_out = plot2arr_skeleton(x_out_labelled, y_out_labelled, sample_num, t, title_out,
-                                                     x_lim=(-0.6, 0.6), y_lim=(0.6, -0.6))
-                    # title_out = "Zoomed: %d | label: %d | Time = %0.4fs" % (sample_num, label_num, time)
-                    # draw_arr_zoomed = plot2arr_skeleton(x_out_labelled, y_out_labelled, sample_num, t, title_out,
-                    #                                  x_lim=(0.4, 0.6))
+                    draw_arr_out = plot2arr_skeleton(x_out_labelled[sample_num, :, t],
+                                                     y_out_labelled[sample_num, :, t],
+                                                     title_out,
+                                                     x_lim=(-0.6, 0.6),
+                                                     y_lim=(0.6, -0.6))
                     h, w = draw_arr_in.shape[0], draw_arr_in.shape[1]
                     output_arr = np.zeros((h * 2, w * 2, 3))
                     output_arr[0:h, 0:w, :] = draw_arr_in
                     output_arr[h:h * 2, 0:w, :] = draw_arr_out
                     output_arr[0:h, w:w * 2, :] = draw_arr_latent
-                    # output_arr[h:h * 2, w:w * 2, :] = draw_arr_zoomed
                     vwriter.writeFrame(output_arr)
                 print()
                 vwriter.close()
+
+    def visualise_latent_space(self):
+        x_skeleton, y_skeleton, latents, _ = self._get_latents_results()
+        num_sample = x_skeleton.shape[0]
+        save_vid_path = os.path.join(self.save_vid_dir, "visualize_latent_space.mp4" )
+        vwriter = skv.FFmpegWriter(save_vid_path)
+
+        for sample_idx in range(num_sample):
+            print("\rDrawing %d/%d" % (sample_idx, num_sample), flush=True, end="")
+            title = "Time = %0.4f" % (sample_idx / 25)
+            ske_arr = plot2arr_skeleton(x_skeleton[sample_idx, :],
+                                        y_skeleton[sample_idx, :],
+                                        title)
+            lataent_arr = plot2arr_latent_space(latents, sample_idx, title, x_lim=(-2, 2), y_lim=(-2, 2))
+
+            output_arr = np.concatenate((ske_arr, lataent_arr), axis=1)
+            vwriter.writeFrame(output_arr)
+        vwriter.close()
 
     def _get_pred_results(self):
         for (x_train, labels_train), (in_test, labels_test) in self.data_gen.iterator():
@@ -211,22 +291,20 @@ class GaitSingleSkeletonVAEvisualiser:
         in_test_np, out_test_np = in_test_np.reshape(n_samples, n_times, 50), out_test_np.reshape(n_samples, n_times,
                                                                                                   50)
         in_test_np, out_test_np = np.transpose(in_test_np, (0, 2, 1)), np.transpose(out_test_np, (0, 2, 1))
-        mu_np = mu.cpu().numpy().reshape(n_samples, n_times, -1)
+        mu_np = z.cpu().numpy().reshape(n_samples, n_times, -1)
         mu_np = np.transpose(mu_np, (0, 2, 1))
         x_in, y_in = in_test_np[:, 0:25, :], in_test_np[:, 25:50, :]
         x_out, y_out = out_test_np[:, 0:25, :], out_test_np[:, 25:50, :]
         return (x_in, y_in), (x_out, y_out), labels_train, mu_np
 
     def _get_latents_results(self):
-        z_sampled = np.random.normal(0, 1, (self.num_samples_latents * self.label_dim, self.latents_dim))
-        cond_vec = np.zeros((self.num_samples_latents * self.label_dim, self.label_dim))
-        z_c = np.concatenate((z_sampled, cond_vec), axis=1)
-        for sample_idx in range(self.num_samples_latents):
-            for cond in range(self.label_dim):
-                sample_idx_each = (sample_idx * self.label_dim) + cond
-                z_c[sample_idx_each, self.latents_dim + cond] = 1
-        x, y = self.model_container.sample_from_latents(z_c)
-        return x, y, z_c
+        x_paths, y_paths, color_vals = gen_paths()
+        z_paths = np.vstack((x_paths, y_paths)).T  # (num_samples, 2)
+        # z = torch.from_numpy(z_paths).to(self.model_container.device)
+        x_tensor, y_tensor = self.model_container.sample_from_latents(z_paths)
+        # import pdb
+        # pdb.set_trace()
+        return x_tensor, y_tensor, z_paths, color_vals
 
 
 class GaitSingleSkeletonVAEvisualiserCollapsed(GaitSingleSkeletonVAEvisualiser):
@@ -273,10 +351,10 @@ class GaitSingleSkeletonVAEvisualiserCollapsed(GaitSingleSkeletonVAEvisualiser):
         return (x_in, y_in), (x_out, y_out)
 
 
-def plot2arr_skeleton(x, y, sample_num, t, title, x_lim=(-0.6, 0.6), y_lim=(0.6, -0.6)):
+def plot2arr_skeleton(x, y, title, x_lim=(-0.6, 0.6), y_lim=(0.6, -0.6)):
     fig, ax = plt.subplots()
-    ax.scatter(x[sample_num, :, t], y[sample_num, :, t])
-    ax = draw_skeleton(ax, x, y, sample_num, t)
+    ax.scatter(x, y)
+    ax = draw_skeleton(ax, x, y)
     fig.suptitle(title)
     ax.set_xlim(x_lim[0], x_lim[1])
     ax.set_ylim(y_lim[0], y_lim[1])
@@ -288,9 +366,9 @@ def plot2arr_skeleton(x, y, sample_num, t, title, x_lim=(-0.6, 0.6), y_lim=(0.6,
     return data
 
 
-def plot2arr_latents(z, sample_num, t, title, x_lim=(-1, 1), y_lim=(-1, 1)):
+def plot2arr_latents(z, title, x_lim=(-1, 1), y_lim=(-1, 1)):
     fig, ax = plt.subplots()
-    ax.scatter(z[sample_num, 0, t], z[sample_num, 1, t], marker="x")
+    ax.scatter(z[0], z[1], marker="x")
     fig.suptitle(title)
     ax.set_xlim(x_lim[0], x_lim[1])
     ax.set_ylim(y_lim[0], y_lim[1])
@@ -302,7 +380,45 @@ def plot2arr_latents(z, sample_num, t, title, x_lim=(-1, 1), y_lim=(-1, 1)):
     return data
 
 
-def draw_skeleton(ax, x, y, sample_num, t):
+def plot2arr_latent_space(z, sample_idx, title, x_lim=(-1, 1), y_lim=(-1, 1)):
+    """
+    Parameters
+    ----------
+    z : numpy.darray
+        Latent vectors with shape (num, 2).
+    title : str
+        Title of the plot
+    x_lim : tuple
+        Limits of the x_axix
+    y_lim : tuple
+        Limits of the y_axix
+
+    Returns
+    -------
+    data : numpy.darray
+        Output drawn array
+    """
+    fig, ax = plt.subplots()
+    # Scatter all vectors
+    ax.scatter(z[:, 0], z[:, 1], cmap="hsv", marker=".")
+    # Scatter current vectors
+    ax.scatter(z[sample_idx, 0], z[sample_idx, 1], c="k", marker="x")
+
+    # Title, limits and drawing
+    fig.suptitle(title)
+    ax.set_xlim(x_lim[0], x_lim[1])
+    ax.set_ylim(y_lim[0], y_lim[1])
+    fig.tight_layout()
+    fig.canvas.draw()
+
+    # Data
+    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    plt.close()
+    return data
+
+
+def draw_skeleton(ax, x, y):
     for start, end in openpose_body_draw_sequence:
-        ax.plot(x[sample_num, [start, end], t], y[sample_num, [start, end], t])
+        ax.plot(x[[start, end]], y[[start, end]])
     return ax

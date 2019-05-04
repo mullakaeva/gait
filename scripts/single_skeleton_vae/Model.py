@@ -117,7 +117,7 @@ class VAE(nn.Module):
 def total_loss(x, pred, mu, logvar):
     recon_loss = 0.5 * torch.mean((x-pred)**2)
     KLD = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
-    loss = recon_loss + KLD
+    loss = recon_loss + 0.00001*KLD
     return loss
 
 if __name__ == "__main__":

@@ -219,11 +219,13 @@ class cVAE(nn.Module):
         z = self.reparameterize(mu, logvar)
         return z, mu, logvar
 
+
 def total_loss(x, pred, mu, logvar):
-    recon_loss = 0.5 * torch.mean((x-pred)**2)
+
+    recon_loss = 0.5 * torch.sum((x-pred)**2)
     # return recon_loss
-    KLD = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
-    loss = recon_loss + KLD
+    KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    loss = recon_loss + 0.000001*KLD
     return loss
 
 if __name__ == "__main__":
