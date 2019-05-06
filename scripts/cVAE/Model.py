@@ -15,30 +15,36 @@ class LshapeCounter:
         else:
             self.L = self.calc_deconv1d_Lout(self.L, kernel_size, dilation, padding, stride)
         return self.L
+
     @staticmethod
     def calc_conv1d_Lout(Lin, kernel_size, dilation, padding=0, stride=1):
         Lout = ((Lin + 2 * padding - dilation * (kernel_size - 1) - 1) / stride) + 1
         return Lout
+
     @staticmethod
     def calc_deconv1d_Lout(Lin, kernel_size, dilation, padding=0, stride=1, output_padding=0):
         Lout = (Lin-1) * stride - 2 * padding + dilation * (kernel_size-1) + output_padding + 1
         return Lout
 
 
-def encoding_block(input_channels, output_channels, kernel_size, dilation):
+def encoding_block(input_channels, output_channels, kernel_size, dilation, dropout_p=0.25):
     conv_layer = nn.Conv1d(input_channels, output_channels, kernel_size=kernel_size, dilation=dilation)
     bn_1_layer = nn.BatchNorm1d(output_channels)
     selu_1_layer = nn.SELU()
+    droput_1_layer = nn.Dropout(dropout_p)
     fc_layer = nn.Conv1d(output_channels, output_channels, kernel_size=1, dilation=1)
     bn_2_layer = nn.BatchNorm1d(output_channels)
     selu_2_layer = nn.SELU()
+    droput_2_layer = nn.Dropout(dropout_p)
     block_list = [
         conv_layer,
         bn_1_layer,
         selu_1_layer,
+        droput_1_layer,
         fc_layer,
         bn_2_layer,
-        selu_2_layer
+        selu_2_layer,
+        droput_2_layer
     ]
     return block_list
 
@@ -72,8 +78,6 @@ class UnFlatten(nn.Module):
         self.channel_dims = channel_dims
     def forward(self, x):
         return x.view(x.size(0), self.channel_dims, 1)
-
-
 
 
 class cVAE(nn.Module):
@@ -215,10 +219,13 @@ class cVAE(nn.Module):
         z = self.reparameterize(mu, logvar)
         return z, mu, logvar
 
+
 def total_loss(x, pred, mu, logvar):
-    recon_loss = 0.5 * torch.mean((x-pred)**2)
-    KLD = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
-    loss = recon_loss + KLD
+
+    recon_loss = 0.5 * torch.sum((x-pred)**2)
+    # return recon_loss
+    KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    loss = recon_loss + 0.000001*KLD
     return loss
 
 if __name__ == "__main__":

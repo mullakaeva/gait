@@ -6,14 +6,15 @@ import matplotlib.pyplot as plt
 import skvideo.io as skv
 from common.keypoints_format import openpose_body_draw_sequence
 from .Model import cVAE, total_loss
-
+from common.utils import RunningAverageMeter
 
 class GaitCVAEmodel:
-    def __init__(self, data_gen, input_channels=58, hidden_channels=1024, latent_dims=8, gpu=0, save_chkpt_path=None):
+    def __init__(self, data_gen, input_channels=58, hidden_channels=512, latent_dims=8, gpu=0, save_chkpt_path=None):
         self.data_gen = data_gen
         self.input_channels = input_channels
         self.hidden_channels = hidden_channels
         self.latent_dims = latent_dims
+        self.loss_train_meter, self.loss_cv_meter = RunningAverageMeter(), RunningAverageMeter()
         self.device = torch.device('cuda:{}'.format(gpu))
         self.save_chkpt_path = save_chkpt_path
         self.sequence_length, self.label_dims = self.data_gen.n, self.data_gen.label_dims
@@ -38,28 +39,31 @@ class GaitCVAEmodel:
                     # CV set
                     self.model.eval()
                     with torch.no_grad():
-                        out_test, mu_test, logvar_test, z_test = self.model.forward(x_test, labels_test)
+                        out_test, mu_test, logvar_test, z_test = self.model(x_test, labels_test)
                         loss_test = total_loss(x_test, out_test, mu_test, logvar_test)
-
+                        self.loss_cv_meter.update(loss_test.item())
                     # Train set
                     self.model.train()
-                    out, mu, logvar, z = self.model.forward(x, labels)
+                    out, mu, logvar, z = self.model(x, labels)
                     loss = total_loss(x, out, mu, logvar)
+                    self.loss_train_meter.update(loss.item())
 
                     # Back-prop
                     loss.backward()
                     self.optimizer.step()
                     iter_idx += 1
+
                     # Print Info
                     print("Epoch %d/%d at iter %d/%d | Loss: %0.4f | CV Loss: %0.4f" % (epoch, n_epochs, iter_idx,
                                                                                         self.data_gen.num_rows / self.data_gen.m,
-                                                                                        loss,
-                                                                                        loss_test)
+                                                                                        self.loss_train_meter.avg,
+                                                                                        self.loss_cv_meter.avg)
                           )
-            self._save_model()
+                self._save_model()
 
-        except KeyboardInterrupt:
+        except KeyboardInterrupt as e:
             self._save_model()
+            raise e
 
     def sample_from_latents(self, z_c):
         """
@@ -90,6 +94,8 @@ class GaitCVAEmodel:
         checkpoint = torch.load(load_chkpt_path)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.loss_train_meter = checkpoint['loss_train_meter']
+        self.loss_cv_meter = checkpoint['loss_cv_meter']
         print('Loaded ckpt from {}'.format(load_chkpt_path))
 
     def _save_model(self):
@@ -97,6 +103,8 @@ class GaitCVAEmodel:
             torch.save({
                 'model_state_dict': self.model.state_dict(),
                 'optimizer_state_dict': self.optimizer.state_dict(),
+                'loss_train_meter': self.loss_train_meter,
+                'loss_cv_meter': self.loss_cv_meter
             }, self.save_chkpt_path)
             print('Stored ckpt at {}'.format(self.save_chkpt_path))
 
@@ -159,7 +167,7 @@ class GaitCVAEvisualiser:
             with torch.no_grad():
                 in_test, labels_test = torch.from_numpy(in_test).float().to(self.model_container.device), \
                                       torch.from_numpy(labels_test).float().to(self.model_container.device)
-                out_test, _, _, _ = self.model_container.model.forward(in_test, labels_test)
+                out_test, _, _, _ = self.model_container.model(in_test, labels_test)
             break
         in_test_np, out_test_np = in_test.cpu().numpy(), out_test.cpu().numpy()
         x_in, y_in = in_test_np[:, 0:25, :], in_test_np[:, 25:50, :]
@@ -183,8 +191,8 @@ def plot2arr(x, y, sample_num, t, title):
     ax.scatter(x[sample_num, :, t], y[sample_num, :, t])
     ax = draw_skeleton(ax, x, y, sample_num, t)
     fig.suptitle(title)
-    ax.set_xlim(0, 1)
-    ax.set_ylim(1, 0)
+    ax.set_xlim(-0.6, 0.6)
+    ax.set_ylim(0.6, -0.6)
     fig.tight_layout()
     fig.canvas.draw()
     data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
