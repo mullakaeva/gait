@@ -177,6 +177,7 @@ class GaitGeneratorFromDFforCVAE(GaitGeneratorFromDF):
             fea_vec = df["features"].iloc[i]  # numpy.darray (num_frames, 25, 2)
             label = df["labels"].iloc[i]  # numpy.int64
             fea_vec = fea_vec - np.mean(fea_vec, axis = 1, keepdims=True)
+
             # Slice to the receptive window
             slice_start = np.random.choice(fea_vec.shape[0] - self.n)
             fea_vec_sliced = fea_vec[slice_start:slice_start + self.n, :, :]
@@ -197,14 +198,17 @@ class GaitGeneratorFromDFforSingleSkeletonVAE:
     def __init__(self, df_pickle_path, m=32, train_portion=0.95):
         # Load dataframe and collapse the num_samples and num_frames
         df = load_df_pickle(df_pickle_path)
-        output_arr = self._flatten_feature_sequences(df)  # (num_frames * num_samples, 50)
+        output_arr, labels = self._flatten_feature_sequences(df)  # (num_frames * num_samples, 50)
         self.m, self.total_num_rows = m, output_arr.shape[0]
         del df  # free memory to python process but not the system
 
         # Construct train and test set
         split_idx = int(self.total_num_rows*train_portion)
         self.data_train = output_arr[0:split_idx, ]
+        self.labels_train = labels[0:split_idx, ]
         self.data_test = output_arr[split_idx:, ]
+        self.labels_test = labels[split_idx:, ]
+
         self.num_rows = self.data_train.shape[0]
         print("Shape of training set: %s\nShape of validating set: %s" % (self.data_train.shape, self.data_test.shape))
 
@@ -215,11 +219,14 @@ class GaitGeneratorFromDFforSingleSkeletonVAE:
             if stop - start > 0:
                 duration_indices.append((start, stop))
                 start = stop
+        ran_vec = np.random.permutation(self.num_rows)
+        arr_train_shuffled = self.data_train[ran_vec, ]
+        labels_train_shuffled = self.data_train[ran_vec, ]
 
-        arr_train_shuffled = self.data_train[np.random.permutation(self.num_rows), ]
         for start, stop in duration_indices:
             sampled_data = self._convert_arr_to_data(arr_train_shuffled, start, stop)
-            yield sampled_data, self.data_test.copy()
+            sampled_labels = self._convert_arr_to_data(labels_train_shuffled, start, stop)
+            yield (sampled_data, sampled_labels), (self.data_test.copy(), self.labels_test.copy())
 
     def _convert_arr_to_data(self, arr_shuffled, start, stop):
         data_train_batch = arr_shuffled[start:stop, ].copy()
@@ -229,12 +236,24 @@ class GaitGeneratorFromDFforSingleSkeletonVAE:
     def _flatten_feature_sequences(df):
         print("Flattening sequences & Concatenating")
         vec_list = []
+        label_vec_list = []
         for i in range(df.shape[0]):
+            # Fetch from dataframe
             fea_vec = df["features"].iloc[i].copy()  # (num_frames, 25, 2)
+            label = df["labels"].iloc[i].copy()
+            label_vec = np.ones(fea_vec.shape[0]) * label
+
+            # Normalisation and flattening
             fea_vec = fea_vec - np.mean(fea_vec, axis=1, keepdims=True)
             fea_flatten = np.zeros((fea_vec.shape[0], 50))  # (num_frames, 50)
             fea_flatten[:, 0:25], fea_flatten[:, 25:50] = fea_vec[:, :, 0], fea_vec[:, :, 1]
+
+            # Appending
             vec_list.append(fea_flatten)
+            label_vec_list.append(label_vec)
+
         output_arr = np.concatenate(vec_list, axis=0)  # (num_frames * num_samples, 50)
-        return output_arr
+        label_arr = np.concatenate(label_vec_list) # (num_frames * num_samples, )
+
+        return output_arr, label_arr
 
