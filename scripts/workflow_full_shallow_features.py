@@ -38,8 +38,8 @@
 
 # %% ======================== Step A.A.4: Train on cVAE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
-from cVAE.cVAE_run import GaitCVAEmodel, GaitCVAEvisualiser
-from common.generator import GaitGeneratorFromDFforCVAE
+# from cVAE.cVAE_run import GaitCVAEmodel, GaitCVAEvisualiser
+# from common.generator import GaitGeneratorFromDFforCVAE
 # data_gen = GaitGeneratorFromDFforCVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
 #                                       m=512)
 # save_model_path = "cVAE/model_chkpt/ckpt.pth"
@@ -49,43 +49,46 @@ from common.generator import GaitGeneratorFromDFforCVAE
 
 # %% ======================== Step A.A.5: Visualise on cVAE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
-data_gen = GaitGeneratorFromDFforCVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
-                                      m=512)
-load_model_path = "cVAE/model_chkpt/ckpt.pth"
-save_vid_dir = "cVAE/vis/"
-viser = GaitCVAEvisualiser(data_gen, load_model_path, save_vid_dir)
-viser.visualise_vid()
-
-# %% ======================== Step A.B.4: Train on single_skeleton_VAE =======================
-# Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
-
-# from common.generator import GaitGeneratorFromDFforSingleSkeletonVAE
-# from single_skeleton_vae.VAE_run import GaitVAEmodel
-#
-# data_gen = GaitGeneratorFromDFforSingleSkeletonVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
-#                                                    m=8192, train_portion=0.999)
-# save_model_path = "single_skeleton_vae/model_chkpt/ckpt.pth"
-# vae = GaitVAEmodel(data_gen, latent_dims=2, step_lr_decay=0.8, save_chkpt_path=save_model_path)
-# # vae.load_model(save_model_path)
-# vae.train(5)
-
-# %% ======================== Step A.B.5: Visualise on single_skeleton_VAE =======================
-# Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
-# from common.generator import GaitGeneratorFromDFforCVAE
-# from common.generator import GaitGeneratorFromDFforSingleSkeletonVAE
-# from single_skeleton_vae.VAE_run import GaitSingleSkeletonVAEvisualiser, GaitSingleSkeletonVAEvisualiserCollapsed
-#
-# load_model_path = "single_skeleton_vae/model_chkpt/ckpt.pth"
-# save_vid_dir = "single_skeleton_vae/vis/"
-# #
-# # data_gen = GaitGeneratorFromDFforSingleSkeletonVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle", m=130)
-# # viser = GaitSingleSkeletonVAEvisualiserCollapsed(data_gen, load_model_path, save_vid_dir)
-#
-# data_gen = GaitGeneratorFromDFforCVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle", m=128)
-# viser = GaitSingleSkeletonVAEvisualiser(data_gen, load_model_path, save_vid_dir, latent_dims=2)
-#
-# # viser.visualise_latent_space()
+# data_gen = GaitGeneratorFromDFforCVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
+#                                       m=512)
+# load_model_path = "cVAE/model_chkpt/ckpt.pth"
+# save_vid_dir = "cVAE/vis/"
+# viser = GaitCVAEvisualiser(data_gen, load_model_path, save_vid_dir)
 # viser.visualise_vid()
+
+# %% ======================== Step A.B.4: Train and visualize on single_skeleton_VAE =======================
+# Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
+
+from single_skeleton_vae.VAE_run import GaitVAEmodel
+from common.generator import GaitGeneratorFromDFforCVAE, GaitGeneratorFromDFforSingleSkeletonVAE
+from single_skeleton_vae.VAE_run import GaitSingleSkeletonVAEvisualiser, GaitSingleSkeletonVAEvisualiserCollapsed
+
+
+save_model_path = "single_skeleton_vae/model_chkpt/ckpt.pth"
+load_model_path = "single_skeleton_vae/model_chkpt/ckpt.pth"
+
+KLD_consts = (1, 0.1, 0.001, 0.0001, 0.00001, 0)
+space_samples = 2000
+for KLD_const in KLD_consts:
+    save_model_path = "single_skeleton_vae/model_chkpt/ckpt_KLD-%f.pth" % KLD_const
+    load_model_path = "single_skeleton_vae/model_chkpt/ckpt_KLD-%f.pth" % KLD_const
+    data_gen = GaitGeneratorFromDFforSingleSkeletonVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
+                                                       m=4096, train_portion=0.999)
+    vae = GaitVAEmodel(data_gen, latent_dims=2, step_lr_decay=0.8, KLD_const=KLD_const,
+                       save_chkpt_path=save_model_path)
+    # vae.load_model(save_model_path)
+    vae.train(5)
+
+    save_vid_dir = "single_skeleton_vae/vis/"
+    data_gen = GaitGeneratorFromDFforSingleSkeletonVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
+                                                       m=2000, train_portion=0.999)
+    # viser = GaitSingleSkeletonVAEvisualiserCollapsed(data_gen, load_model_path, save_vid_dir)
+
+    # data_gen = GaitGeneratorFromDFforCVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle", m=128)
+    viser = GaitSingleSkeletonVAEvisualiser(data_gen, load_model_path, save_vid_dir, latent_dims=2)
+
+    viser.visualise_latent_space()
+    # viser.visualise_vid()
 
 # %% ======================== (Defunkt) Step A.C.4: Train on neural ODE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash

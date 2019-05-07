@@ -196,6 +196,9 @@ class GaitGeneratorFromDFforCVAE(GaitGeneratorFromDF):
 
 class GaitGeneratorFromDFforSingleSkeletonVAE:
     def __init__(self, df_pickle_path, m=32, train_portion=0.95):
+        # Hard-coded params
+        self.keyps_x_dims, self.keyps_y_dims = 25, 25
+        self.total_fea_dims = self.keyps_x_dims + self.keyps_y_dims
         # Load dataframe and collapse the num_samples and num_frames
         df = load_df_pickle(df_pickle_path)
         output_arr, labels = self._flatten_feature_sequences(df)  # (num_frames * num_samples, 50)
@@ -221,7 +224,7 @@ class GaitGeneratorFromDFforSingleSkeletonVAE:
                 start = stop
         ran_vec = np.random.permutation(self.num_rows)
         arr_train_shuffled = self.data_train[ran_vec, ]
-        labels_train_shuffled = self.data_train[ran_vec, ]
+        labels_train_shuffled = self.labels_train[ran_vec, ]
 
         for start, stop in duration_indices:
             sampled_data = self._convert_arr_to_data(arr_train_shuffled, start, stop)
@@ -251,6 +254,7 @@ class GaitGeneratorFromDFforSingleSkeletonVAE:
             # Appending
             vec_list.append(fea_flatten)
             label_vec_list.append(label_vec)
+
 
         output_arr = np.concatenate(vec_list, axis=0)  # (num_frames * num_samples, 50)
         label_arr = np.concatenate(label_vec_list) # (num_frames * num_samples, )

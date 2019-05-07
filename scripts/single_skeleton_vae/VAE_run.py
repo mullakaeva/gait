@@ -74,6 +74,7 @@ class GaitVAEmodel:
                  latent_dims=2,
                  gpu=0,
                  step_lr_decay=0.8,
+                 KLD_const=0.001,
                  save_chkpt_path=None):
 
         # Standard Init
@@ -83,9 +84,10 @@ class GaitVAEmodel:
         self.device = torch.device('cuda:{}'.format(gpu))
         self.save_chkpt_path = save_chkpt_path
 
-        # Learning rate decay and loss
+        # Learning rate decay, regularization_constant, loss
         self.step_lr_decay = step_lr_decay
-        self.recon_loss = self._set_up_loss_func()
+        self.KLD_regularization_const = KLD_const
+        self.weights_vec_loss = self._get_weights_vec_loss()
         self.loss_train_meter, self.loss_cv_meter = RunningAverageMeter(), RunningAverageMeter()
 
         # initialize model, params, optimizer
@@ -99,7 +101,7 @@ class GaitVAEmodel:
             scheduler = StepLR(self.optimizer, step_size=1, gamma=self.step_lr_decay)
             for epoch in range(n_epochs):
                 iter_idx = 0
-                for (x, x_test) in self.data_gen.iterator():
+                for (x, _), (x_test, _) in self.data_gen.iterator():
                     x = torch.from_numpy(x).float().to(self.device)
                     x_test = torch.from_numpy(x_test).float().to(self.device)
                     self.optimizer.zero_grad()
@@ -166,6 +168,7 @@ class GaitVAEmodel:
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.loss_train_meter = checkpoint['loss_train_meter']
         self.loss_cv_meter = checkpoint['loss_cv_meter']
+        self.KLD_regularization_const = checkpoint['KLD_regularization_const']
         print('Loaded ckpt from {}'.format(load_chkpt_path))
 
     def _save_model(self):
@@ -174,18 +177,21 @@ class GaitVAEmodel:
                 'model_state_dict': self.model.state_dict(),
                 'optimizer_state_dict': self.optimizer.state_dict(),
                 'loss_train_meter': self.loss_train_meter,
-                'loss_cv_meter': self.loss_cv_meter
+                'loss_cv_meter': self.loss_cv_meter,
+                "KLD_regularization_const" : self.KLD_regularization_const
             }, self.save_chkpt_path)
             print('Stored ckpt at {}'.format(self.save_chkpt_path))
 
-    def _set_up_loss_func(self):
-        return nn.MSELoss(reduction="sum")
+    def _get_weights_vec_loss(self):
+        weights_vec = torch.ones(1, 50).float().to(self.device)
+        weights_vec[0, 19:25] = 2
+        weights_vec[0, 19*2:] = 2
+        return weights_vec
 
     def loss_function(self, x, pred, mu, logvar):
-        img_loss = self.recon_loss(x, pred)
-        # return img_loss
+        img_loss = torch.sum(self.weights_vec_loss * ((x-pred)**2))
         KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-        loss = img_loss + 0.0001*KLD
+        loss = img_loss + self.KLD_regularization_const*KLD
         return loss
 
 
@@ -255,8 +261,10 @@ class GaitSingleSkeletonVAEvisualiser:
     def visualise_latent_space(self):
         x_skeleton, y_skeleton, latents, _ = self._get_latents_results()
         num_sample = x_skeleton.shape[0]
-        save_vid_path = os.path.join(self.save_vid_dir, "visualize_latent_space.mp4" )
+        save_vid_path = os.path.join(self.save_vid_dir,
+                                     "visualize_latent_space_%f.mp4" % self.model_container.KLD_regularization_const)
         vwriter = skv.FFmpegWriter(save_vid_path)
+        z_space, labels_space = self._sample_collapsed_data()
 
         for sample_idx in range(num_sample):
             print("\rDrawing %d/%d" % (sample_idx, num_sample), flush=True, end="")
@@ -264,7 +272,8 @@ class GaitSingleSkeletonVAEvisualiser:
             ske_arr = plot2arr_skeleton(x_skeleton[sample_idx, :],
                                         y_skeleton[sample_idx, :],
                                         title)
-            lataent_arr = plot2arr_latent_space(latents, sample_idx, title, x_lim=(-2, 2), y_lim=(-2, 2))
+            lataent_arr = plot2arr_latent_space(latents, sample_idx, title, x_lim=(-2, 2), y_lim=(-2, 2),
+                                                z_labels=(z_space, labels_space))
 
             output_arr = np.concatenate((ske_arr, lataent_arr), axis=1)
             vwriter.writeFrame(output_arr)
@@ -302,9 +311,19 @@ class GaitSingleSkeletonVAEvisualiser:
         z_paths = np.vstack((x_paths, y_paths)).T  # (num_samples, 2)
         # z = torch.from_numpy(z_paths).to(self.model_container.device)
         x_tensor, y_tensor = self.model_container.sample_from_latents(z_paths)
-        # import pdb
-        # pdb.set_trace()
+
         return x_tensor, y_tensor, z_paths, color_vals
+
+    def _sample_collapsed_data(self):
+        for (data_train, labels_train), (data_test, labels_test) in self.data_gen.iterator():
+            # Forward pass
+            self.model_container.model.eval()
+            with torch.no_grad():
+                in_test = torch.from_numpy(data_train).float().to(self.model_container.device)
+                out_test, mu, logvar, z = self.model_container.model(in_test)
+            break
+        z = z.cpu().numpy()
+        return z, labels_train
 
 
 class GaitSingleSkeletonVAEvisualiserCollapsed(GaitSingleSkeletonVAEvisualiser):
@@ -342,8 +361,6 @@ class GaitSingleSkeletonVAEvisualiserCollapsed(GaitSingleSkeletonVAEvisualiser):
                 out_test, mu, logvar, z = self.model_container.model(in_test)
                 loss = self.model_container.loss_function(in_test, out_test, mu, logvar)
             break
-        # import pdb
-        # pdb.set_trace()
 
         out_test_np = out_test.cpu().numpy()
         x_in, y_in = np.transpose(data[:, :, 0:25], (1, 2, 0)), np.transpose(data[:, :, 25:], (1, 2, 0))
@@ -380,7 +397,7 @@ def plot2arr_latents(z, title, x_lim=(-1, 1), y_lim=(-1, 1)):
     return data
 
 
-def plot2arr_latent_space(z, sample_idx, title, x_lim=(-1, 1), y_lim=(-1, 1)):
+def plot2arr_latent_space(z, sample_idx, title, x_lim=(-1, 1), y_lim=(-1, 1), z_labels=None):
     """
     Parameters
     ----------
@@ -400,14 +417,25 @@ def plot2arr_latent_space(z, sample_idx, title, x_lim=(-1, 1), y_lim=(-1, 1)):
     """
     fig, ax = plt.subplots()
     # Scatter all vectors
-    ax.scatter(z[:, 0], z[:, 1], cmap="hsv", marker=".")
+    # ax.scatter(z[:, 0], z[:, 1], cmap="hsv", marker=".")
+    x_max, y_max = np.max(z[:, 0]), np.max(z[:, 1])
+
+    if z_labels is not None:
+        z_space, z_labels = z_labels
+        im_space = ax.scatter(z_space[:, 0], z_space[:, 1], c=z_labels, cmap="hsv", marker=".", alpha=0.5)
+        fig.colorbar(im_space)
+        x_max_space, y_max_space = np.max(z_space[:, 0]), np.max(z_space[:, 1])
+        x_max, y_max = max(x_max, x_max_space), max(y_max, y_max_space)
+
     # Scatter current vectors
-    ax.scatter(z[sample_idx, 0], z[sample_idx, 1], c="k", marker="x")
+    ax.scatter(z[sample_idx, 0], z[sample_idx, 1], c="r", marker="x")
 
     # Title, limits and drawing
     fig.suptitle(title)
-    ax.set_xlim(x_lim[0], x_lim[1])
-    ax.set_ylim(y_lim[0], y_lim[1])
+    # ax.set_xlim(x_lim[0], x_lim[1])
+    # ax.set_ylim(y_lim[0], y_lim[1])
+    ax.set_xlim(-x_max, x_max)
+    ax.set_ylim(-y_max, y_max)
     fig.tight_layout()
     fig.canvas.draw()
 
@@ -419,6 +447,11 @@ def plot2arr_latent_space(z, sample_idx, title, x_lim=(-1, 1), y_lim=(-1, 1)):
 
 
 def draw_skeleton(ax, x, y):
-    for start, end in openpose_body_draw_sequence:
-        ax.plot(x[[start, end]], y[[start, end]])
+    side_dict = {
+        "m": "k",
+        "l": "r",
+        "r": "b"
+    }
+    for start, end, side in openpose_body_draw_sequence:
+        ax.plot(x[[start, end]], y[[start, end]], c=side_dict[side])
     return ax
