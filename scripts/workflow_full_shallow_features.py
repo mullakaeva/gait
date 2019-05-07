@@ -67,7 +67,7 @@ from single_skeleton_vae.VAE_run import GaitSingleSkeletonVAEvisualiser, GaitSin
 save_model_path = "single_skeleton_vae/model_chkpt/ckpt.pth"
 load_model_path = "single_skeleton_vae/model_chkpt/ckpt.pth"
 
-KLD_consts = (1, 0.1, 0.001, 0.0001, 0.00001, 0)
+KLD_consts = (1, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001)
 space_samples = 2000
 for KLD_const in KLD_consts:
     save_model_path = "single_skeleton_vae/model_chkpt/ckpt_KLD-%f.pth" % KLD_const
@@ -79,16 +79,16 @@ for KLD_const in KLD_consts:
     # vae.load_model(save_model_path)
     vae.train(5)
 
-    save_vid_dir = "single_skeleton_vae/vis/"
-    data_gen = GaitGeneratorFromDFforSingleSkeletonVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
-                                                       m=2000, train_portion=0.999)
-    # viser = GaitSingleSkeletonVAEvisualiserCollapsed(data_gen, load_model_path, save_vid_dir)
-
-    # data_gen = GaitGeneratorFromDFforCVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle", m=128)
-    viser = GaitSingleSkeletonVAEvisualiser(data_gen, load_model_path, save_vid_dir, latent_dims=2)
-
-    viser.visualise_latent_space()
-    # viser.visualise_vid()
+    # save_vid_dir = "single_skeleton_vae/vis/"
+    # data_gen = GaitGeneratorFromDFforSingleSkeletonVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
+    #                                                    m=space_samples, train_portion=0.999)
+    # # viser = GaitSingleSkeletonVAEvisualiserCollapsed(data_gen, load_model_path, save_vid_dir)
+    #
+    # # data_gen = GaitGeneratorFromDFforCVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle", m=128)
+    # viser = GaitSingleSkeletonVAEvisualiser(data_gen, load_model_path, save_vid_dir, latent_dims=2)
+    #
+    # viser.visualise_latent_space()
+    # # viser.visualise_vid()
 
 # %% ======================== (Defunkt) Step A.C.4: Train on neural ODE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash

@@ -21,12 +21,12 @@ def gen_spiral(a, b, speed, t_range, steps):
     return x, y
 
 
-def gen_lines(x_start=None, y_start=None, lim=(-2, 2), line_steps=500):
+def gen_lines(x_start=None, y_start=None, line_steps=500):
     if y_start is None:
-        x = np.linspace(lim[0], lim[1], line_steps)
+        x = np.linspace(-x_start, x_start, line_steps)
         y = np.zeros(x.shape) + x_start
     elif x_start is None:
-        y = np.linspace(lim[0], lim[1], line_steps)
+        y = np.linspace(-y_start, y_start, line_steps)
         x = np.zeros(y.shape) + y_start
     else:
         print("Only one, x_start or y_start is None")
@@ -34,7 +34,7 @@ def gen_lines(x_start=None, y_start=None, lim=(-2, 2), line_steps=500):
     return x, y
 
 
-def gen_paths():
+def gen_paths(x_max, y_max, num_lines, num_steps=100):
     # Storage
     x_list = []
     y_list = []
@@ -49,15 +49,14 @@ def gen_paths():
     # y_list.append(y_spiral)
 
     # Cross paths
-    steps_cross = 100
-    x_start_list = np.linspace(-2, 2, 10)
-    y_start_list = np.linspace(-2, 2, 10)
+    x_start_list = np.linspace(-x_max, x_max, num_lines)
+    y_start_list = np.linspace(-y_max, y_max, num_lines)
     for x_start in x_start_list:
-        x_temp, y_temp = gen_lines(x_start=x_start, line_steps=steps_cross)
+        x_temp, y_temp = gen_lines(x_start=x_start, line_steps=num_steps)
         x_list.append(x_temp)
         y_list.append(y_temp)
     for y_start in y_start_list:
-        x_temp, y_temp = gen_lines(y_start=y_start, line_steps=steps_cross)
+        x_temp, y_temp = gen_lines(y_start=y_start, line_steps=num_steps)
         x_list.append(x_temp)
         y_list.append(y_temp)
 
@@ -259,20 +258,27 @@ class GaitSingleSkeletonVAEvisualiser:
                 vwriter.close()
 
     def visualise_latent_space(self):
-        x_skeleton, y_skeleton, latents, _ = self._get_latents_results()
+        # Randomly sample the data to visualze the latent-label distribution
+        z_space, labels_space = self._sample_collapsed_data()
+        x_max, y_max = np.max(np.abs(z_space[:, 0])), np.max(np.abs(z_space[:, 1]))
+        num_scale = int(np.mean([x_max,y_max]))
+        x_skeleton, y_skeleton, latents, _ = self._get_latents_results(x_max=x_max,
+                                                                       y_max=y_max,
+                                                                       num_lines=num_scale*2,
+                                                                       num_steps=100)
         num_sample = x_skeleton.shape[0]
         save_vid_path = os.path.join(self.save_vid_dir,
                                      "visualize_latent_space_%f.mp4" % self.model_container.KLD_regularization_const)
         vwriter = skv.FFmpegWriter(save_vid_path)
-        z_space, labels_space = self._sample_collapsed_data()
-
         for sample_idx in range(num_sample):
             print("\rDrawing %d/%d" % (sample_idx, num_sample), flush=True, end="")
             title = "Time = %0.4f" % (sample_idx / 25)
             ske_arr = plot2arr_skeleton(x_skeleton[sample_idx, :],
                                         y_skeleton[sample_idx, :],
                                         title)
-            lataent_arr = plot2arr_latent_space(latents, sample_idx, title, x_lim=(-2, 2), y_lim=(-2, 2),
+            lataent_arr = plot2arr_latent_space(latents, sample_idx, title,
+                                                x_lim=(-x_max, x_max),
+                                                y_lim=(-y_max, y_max),
                                                 z_labels=(z_space, labels_space))
 
             output_arr = np.concatenate((ske_arr, lataent_arr), axis=1)
@@ -306,8 +312,8 @@ class GaitSingleSkeletonVAEvisualiser:
         x_out, y_out = out_test_np[:, 0:25, :], out_test_np[:, 25:50, :]
         return (x_in, y_in), (x_out, y_out), labels_train, mu_np
 
-    def _get_latents_results(self):
-        x_paths, y_paths, color_vals = gen_paths()
+    def _get_latents_results(self, x_max, y_max, num_lines, num_steps):
+        x_paths, y_paths, color_vals = gen_paths(x_max, y_max, num_lines, num_steps)
         z_paths = np.vstack((x_paths, y_paths)).T  # (num_samples, 2)
         # z = torch.from_numpy(z_paths).to(self.model_container.device)
         x_tensor, y_tensor = self.model_container.sample_from_latents(z_paths)
@@ -417,25 +423,18 @@ def plot2arr_latent_space(z, sample_idx, title, x_lim=(-1, 1), y_lim=(-1, 1), z_
     """
     fig, ax = plt.subplots()
     # Scatter all vectors
-    # ax.scatter(z[:, 0], z[:, 1], cmap="hsv", marker=".")
-    x_max, y_max = np.max(z[:, 0]), np.max(z[:, 1])
-
     if z_labels is not None:
         z_space, z_labels = z_labels
         im_space = ax.scatter(z_space[:, 0], z_space[:, 1], c=z_labels, cmap="hsv", marker=".", alpha=0.5)
         fig.colorbar(im_space)
-        x_max_space, y_max_space = np.max(z_space[:, 0]), np.max(z_space[:, 1])
-        x_max, y_max = max(x_max, x_max_space), max(y_max, y_max_space)
 
     # Scatter current vectors
     ax.scatter(z[sample_idx, 0], z[sample_idx, 1], c="r", marker="x")
 
     # Title, limits and drawing
     fig.suptitle(title)
-    # ax.set_xlim(x_lim[0], x_lim[1])
-    # ax.set_ylim(y_lim[0], y_lim[1])
-    ax.set_xlim(-x_max, x_max)
-    ax.set_ylim(-y_max, y_max)
+    ax.set_xlim(x_lim[0], x_lim[1])
+    ax.set_ylim(y_lim[0], y_lim[1])
     fig.tight_layout()
     fig.canvas.draw()
 
