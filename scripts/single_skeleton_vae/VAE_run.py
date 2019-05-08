@@ -21,13 +21,13 @@ def gen_spiral(a, b, speed, t_range, steps):
     return x, y
 
 
-def gen_lines(x_start=None, y_start=None, line_steps=500):
-    if y_start is None:
-        x = np.linspace(-x_start, x_start, line_steps)
-        y = np.zeros(x.shape) + x_start
-    elif x_start is None:
-        y = np.linspace(-y_start, y_start, line_steps)
-        x = np.zeros(y.shape) + y_start
+def gen_lines(x_start=None, y_start=None, lim=(-2, 2), line_steps=500):
+    if x_start is None:
+        x = np.linspace(lim[0], lim[1], line_steps)
+        y = np.zeros(x.shape) + y_start
+    elif y_start is None:
+        y = np.linspace(lim[0], lim[1], line_steps)
+        x = np.zeros(y.shape) + x_start
     else:
         print("Only one, x_start or y_start is None")
         raise TypeError
@@ -52,11 +52,11 @@ def gen_paths(x_max, y_max, num_lines, num_steps=100):
     x_start_list = np.linspace(-x_max, x_max, num_lines)
     y_start_list = np.linspace(-y_max, y_max, num_lines)
     for x_start in x_start_list:
-        x_temp, y_temp = gen_lines(x_start=x_start, line_steps=num_steps)
+        x_temp, y_temp = gen_lines(x_start=x_start, lim=(-y_max, y_max), line_steps=num_steps)
         x_list.append(x_temp)
         y_list.append(y_temp)
     for y_start in y_start_list:
-        x_temp, y_temp = gen_lines(y_start=y_start, line_steps=num_steps)
+        x_temp, y_temp = gen_lines(y_start=y_start, lim=(-x_max, x_max), line_steps=num_steps)
         x_list.append(x_temp)
         y_list.append(y_temp)
 
@@ -197,7 +197,7 @@ class GaitVAEmodel:
 class GaitSingleSkeletonVAEvisualiser:
     def __init__(self, data_gen, load_model_path, save_vid_dir, latent_dims=2):
         # Hard coded stuff
-        self.num_samples_pred = 2
+        self.num_samples_pred = 5
         self.num_samples_latents = 3
         self.latents_dim, self.label_dim = 2, 0
         self.times = 128
@@ -214,58 +214,60 @@ class GaitSingleSkeletonVAEvisualiser:
         os.makedirs(self.save_vid_dir, exist_ok=True)
         (x_in, y_in), (x_out, y_out), labels, mu = self._get_pred_results()
 
-        # Visualise in-out pair
-        for label_num in range(8):
-            label_mask = np.argmax(labels, axis=1) == label_num
-            x_in_labelled, y_in_labelled = x_in[label_mask,], y_in[label_mask,]
-            x_out_labelled, y_out_labelled = x_out[label_mask,], y_out[label_mask,]
-            mu_labelled = mu[label_mask,]
-            for sample_num in range(self.num_samples_pred):
-                save_vid_path = os.path.join(self.save_vid_dir, "Label-%d_Recon-%d.mp4" % (label_num, sample_num))
-                vwriter = skv.FFmpegWriter(save_vid_path)
-                for t in range(self.times):
-                    time = t / 25
-                    print("\rNow writing label-%d | Recon_sample-%d | time-%0.4fs" % (label_num, sample_num, time),
-                          flush=True, end="")
+        labels_expanded = np.repeat(labels.reshape(-1,1), self.times, axis=1)
+        labels_flattened = labels_expanded.flatten()
+        z_x, z_y = mu[:, 0, :], mu[:, 1, :]
+        z_space_flattened = np.concatenate((z_x.flatten().reshape(-1, 1), z_y.flatten().reshape(-1,1)), axis=1)
+        # labels ~ (m, )
+        # mu ~ (m, 2, 128)
 
-                    mse = 0.5 * np.mean(
-                        np.square(x_in_labelled - x_out_labelled) + np.square((y_in_labelled - y_out_labelled)))
+        KLD_const = self.model_container.KLD_regularization_const
 
-                    title_in = "Input: %d | label: %d | Time = %0.4fs" % (sample_num, label_num, time)
-                    draw_arr_in = plot2arr_skeleton(x_in_labelled[sample_num, :, t],
-                                                    y_in_labelled[sample_num, :, t],
-                                                    title_in,
-                                                    x_lim=(-0.6, 0.6),
-                                                    y_lim=(0.6, -0.6))
-                    title_latent = "Latents | mse = %f" % mse
-                    draw_arr_latent = plot2arr_latent_space(mu_labelled[sample_num, :, :].T,
-                                                            t, title_latent)
-                    # draw_arr_latent = plot2arr_latents(mu_labelled[sample_num, :, t],
-                    #                                    title_latent)
-                    title_out = "Output: %d | label: %d | Time = %0.4fs" % (sample_num, label_num, time)
-                    draw_arr_out = plot2arr_skeleton(x_out_labelled[sample_num, :, t],
-                                                     y_out_labelled[sample_num, :, t],
-                                                     title_out,
-                                                     x_lim=(-0.6, 0.6),
-                                                     y_lim=(0.6, -0.6))
-                    h, w = draw_arr_in.shape[0], draw_arr_in.shape[1]
-                    output_arr = np.zeros((h * 2, w * 2, 3))
-                    output_arr[0:h, 0:w, :] = draw_arr_in
-                    output_arr[h:h * 2, 0:w, :] = draw_arr_out
-                    output_arr[0:h, w:w * 2, :] = draw_arr_latent
-                    vwriter.writeFrame(output_arr)
-                print()
-                vwriter.close()
+        for sample_idx in range(self.num_samples_pred):
+
+            save_vid_path = os.path.join(self.save_vid_dir,
+                                         "Seq%d_KLD-%f.mp4"% (sample_idx,
+                                                              KLD_const))
+            vwriter = skv.FFmpegWriter(save_vid_path)
+            for t in range(self.times):
+                time = t / 25
+                print("\rNow writing KLD-%f | Recon_sample-%d | time-%0.3fs" % (KLD_const, sample_idx, time),
+                      flush=True, end="")
+                title_in = "KLD-%f | Recon_sample-%d | time-%0.3fs" % (KLD_const, sample_idx, time)
+                draw_arr_in = plot2arr_skeleton(x_in[sample_idx, :, t],
+                                                y_in[sample_idx, :, t],
+                                                title_in,
+                                                x_lim=(-0.6, 0.6),
+                                                y_lim=(0.6, -0.6))
+                title_latent = "Latent"
+                draw_arr_latent = plot2arr_latent_space(mu[sample_idx, :, :].T, t, title_latent,
+                                                        x_lim=(-5, 5),
+                                                        y_lim=(-5, 5),
+                                                        z_info=(z_space_flattened, labels_flattened))
+
+                draw_arr_out = plot2arr_skeleton(x_out[sample_idx, :, t],
+                                                y_out[sample_idx, :, t],
+                                                title_in,
+                                                x_lim=(-0.6, 0.6),
+                                                y_lim=(0.6, -0.6))
+                h, w = draw_arr_in.shape[0], draw_arr_in.shape[1]
+                output_arr = np.zeros((h * 2, w * 2, 3))
+                output_arr[0:h, 0:w, :] = draw_arr_in
+                output_arr[h:h * 2, 0:w, :] = draw_arr_out
+                output_arr[0:h, w:w * 2, :] = draw_arr_latent
+                vwriter.writeFrame(output_arr)
+            print()
+            vwriter.close()
 
     def visualise_latent_space(self):
         # Randomly sample the data to visualze the latent-label distribution
         z_space, labels_space = self._sample_collapsed_data()
-        x_max, y_max = np.max(np.abs(z_space[:, 0])), np.max(np.abs(z_space[:, 1]))
-        num_scale = int(np.mean([x_max,y_max]))
+        x_max, y_max = np.quantile(np.abs(z_space[:, 0]), 0.99), np.quantile(np.abs(z_space[:, 1]), 0.99)
+        num_scale = int(np.mean([x_max,y_max]))+1
         x_skeleton, y_skeleton, latents, _ = self._get_latents_results(x_max=x_max,
                                                                        y_max=y_max,
-                                                                       num_lines=num_scale*2,
-                                                                       num_steps=100)
+                                                                       num_lines=num_scale*4,
+                                                                       num_steps=200)
         num_sample = x_skeleton.shape[0]
         save_vid_path = os.path.join(self.save_vid_dir,
                                      "visualize_latent_space_%f.mp4" % self.model_container.KLD_regularization_const)
@@ -279,7 +281,7 @@ class GaitSingleSkeletonVAEvisualiser:
             lataent_arr = plot2arr_latent_space(latents, sample_idx, title,
                                                 x_lim=(-x_max, x_max),
                                                 y_lim=(-y_max, y_max),
-                                                z_labels=(z_space, labels_space))
+                                                z_info=(z_space, labels_space))
 
             output_arr = np.concatenate((ske_arr, lataent_arr), axis=1)
             vwriter.writeFrame(output_arr)
@@ -403,7 +405,7 @@ def plot2arr_latents(z, title, x_lim=(-1, 1), y_lim=(-1, 1)):
     return data
 
 
-def plot2arr_latent_space(z, sample_idx, title, x_lim=(-1, 1), y_lim=(-1, 1), z_labels=None):
+def plot2arr_latent_space(z, sample_idx, title, x_lim=(-1, 1), y_lim=(-1, 1), z_info=None):
     """
     Parameters
     ----------
@@ -423,13 +425,13 @@ def plot2arr_latent_space(z, sample_idx, title, x_lim=(-1, 1), y_lim=(-1, 1), z_
     """
     fig, ax = plt.subplots()
     # Scatter all vectors
-    if z_labels is not None:
-        z_space, z_labels = z_labels
+    if z_info is not None:
+        z_space, z_labels = z_info
         im_space = ax.scatter(z_space[:, 0], z_space[:, 1], c=z_labels, cmap="hsv", marker=".", alpha=0.5)
         fig.colorbar(im_space)
 
     # Scatter current vectors
-    ax.scatter(z[sample_idx, 0], z[sample_idx, 1], c="r", marker="x")
+    ax.scatter(z[sample_idx, 0], z[sample_idx, 1], c="k", marker="x")
 
     # Title, limits and drawing
     fig.suptitle(title)

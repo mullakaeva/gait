@@ -153,24 +153,50 @@ class GaitGeneratorFromDF:
         return output_arr, times
 
 
-class GaitGeneratorFromDFforCVAE(GaitGeneratorFromDF):
-    def __init__(self, df_pickle_path, m=32, n=128, label_dims=8, train_portion=0.95):
+class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
+    """
+    Example of usage:
+
+        data_gen = GaitGeneratorFromDFforTemporalVAE(df_pickle_path, m, n, 0.95)
+
+        for (features_train, labels_train), (features_test, labels_test) in data_gen.iterator():
+            ...
+
+    where features_train/test has shape (m, num_features=50, n), and labels_train/test has shape (m, )
+
+    """
+    def __init__(self, df_pickle_path, m=32, n=128, train_portion=0.95):
         # Hard-coded params
         self.keyps_x_dims, self.keyps_y_dims = 25, 25
         self.total_fea_dims = self.keyps_x_dims + self.keyps_y_dims
-        # Define label dimension
-        self.label_dims = label_dims
-        super(GaitGeneratorFromDFforCVAE, self).__init__(df_pickle_path, m, n, train_portion)
+        super(GaitGeneratorFromDFforTemporalVAE, self).__init__(df_pickle_path, m, n, train_portion)
 
     def _convert_df_to_data(self, df_shuffled, start, stop):
         selected_df = df_shuffled.iloc[start:stop, :].copy()
-        output_arr, labels = self._loop_for_array_construction(selected_df, self.m)
-        output_arr_test, labels_test = self._loop_for_array_construction(self.df_test, self.m)
-        return (output_arr, labels), (output_arr_test, labels_test)
+        output_arr_train, labels_train = self._loop_for_array_construction(selected_df, self.m)
+        output_arr_test, labels_test = self._loop_for_array_construction(self.df_test, self.df_test.shape[0])
+        return (output_arr_train, labels_train), (output_arr_test, labels_test)
 
     def _loop_for_array_construction(self, df, num_samples):
-        output_arr = np.zeros((num_samples, self.total_fea_dims+self.label_dims, self.n))
-        label_arr = np.zeros((num_samples, self.label_dims))
+        """
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            Dataframe with columns "features" (numpy.darray (num_frames, 25, 2)) and "labels" (numpy.int64)
+        num_samples : int
+            Size of the sampled data
+
+        Returns
+        -------
+        input_features : numpy.darray
+            It has shape (num_samples, num_features=50, num_time_window), as input array to the network
+        labels : numpy.darray
+            It has shape (num_samples, ) numpy.int64 [0, 7], as the labels for visualisation
+
+        """
+        features_arr = np.zeros((num_samples, self.total_fea_dims, self.n))
+        label_arr = np.zeros(num_samples)
         for i in range(num_samples):
 
             # Get features and labels
@@ -182,17 +208,14 @@ class GaitGeneratorFromDFforCVAE(GaitGeneratorFromDF):
             slice_start = np.random.choice(fea_vec.shape[0] - self.n)
             fea_vec_sliced = fea_vec[slice_start:slice_start + self.n, :, :]
 
-            # Expand label to match fea_vec_sliced
-            label_np = np.zeros((self.label_dims, self.n))
-            label_np[label, :] = 1
-            label_arr[i, label] = 1
+            # Put integer label into numpy.darray
+            label_arr[i] = label
 
             # Construct output
-            output_arr[i, 0:self.keyps_x_dims, :] = fea_vec_sliced[:, :, 0].T
-            output_arr[i, self.keyps_x_dims:self.total_fea_dims, :] = fea_vec_sliced[:, :, 1].T
-            output_arr[i, self.total_fea_dims:self.total_fea_dims+self.label_dims, :] = label_np
+            features_arr[i, 0:self.keyps_x_dims, :] = fea_vec_sliced[:, :, 0].T # Store x-coordinates
+            features_arr[i, self.keyps_x_dims:self.total_fea_dims, :] = fea_vec_sliced[:, :, 1].T # Store y-coordinates
 
-        return output_arr, label_arr
+        return features_arr, label_arr
 
 class GaitGeneratorFromDFforSingleSkeletonVAE:
     def __init__(self, df_pickle_path, m=32, train_portion=0.95):

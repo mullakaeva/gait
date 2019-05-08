@@ -18,6 +18,7 @@
             <excludedPath path="/data/hoi/gait_analysis/scripts/cVAE/__pycache__" />
             <excludedPath path="/data/hoi/gait_analysis/scripts/single_skeleton_vae/model_chkpt" />
             <excludedPath path="/data/hoi/gait_analysis/scripts/cVAE/model_chkpt" />
+            <excludedPath path="/data/hoi/gait_analysis/scripts/TemporalVAE/model_chkpt" />
           </excludedPaths>
         </serverdata>
       </paths>

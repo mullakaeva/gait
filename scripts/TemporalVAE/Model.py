@@ -1,16 +1,12 @@
-import copy
 import torch
 import torch.nn as nn
-import torch.optim as optim
-
-import numpy as np
 
 class LshapeCounter:
     def __init__(self, L_in):
         self.L = L_in
 
     def updateL(self, kernel_size, dilation, padding=0, stride=1, decode=False):
-        if decode == False:
+        if decode is False:
             self.L = self.calc_conv1d_Lout(self.L, kernel_size, dilation, padding, stride)
         else:
             self.L = self.calc_deconv1d_Lout(self.L, kernel_size, dilation, padding, stride)
@@ -23,7 +19,7 @@ class LshapeCounter:
 
     @staticmethod
     def calc_deconv1d_Lout(Lin, kernel_size, dilation, padding=0, stride=1, output_padding=0):
-        Lout = (Lin-1) * stride - 2 * padding + dilation * (kernel_size-1) + output_padding + 1
+        Lout = (Lin - 1) * stride - 2 * padding + dilation * (kernel_size - 1) + output_padding + 1
         return Lout
 
 
@@ -76,14 +72,15 @@ class UnFlatten(nn.Module):
     def __init__(self, channel_dims):
         super(UnFlatten, self).__init__()
         self.channel_dims = channel_dims
+
     def forward(self, x):
         return x.view(x.size(0), self.channel_dims, 1)
 
 
-class cVAE(nn.Module):
-    def __init__(self, n_channels=58, L=128, hidden_channels = 1024, latent_dims=8, label_dims=8):
+class TemporalVAE(nn.Module):
+    def __init__(self, n_channels=50, L=128, hidden_channels=1024, latent_dims=8):
         """
-        Conditional Variational Autoencoder (cVAE)
+        Temporal Variational Autoencoder (TemporalVAE)
         In Gait analysis. we want a VAE function f(x) that follows the shapes:
 
             x = (N, C, L), where N = batch_size, C = n_features + n_labels, L = sequence length (time), specifically,
@@ -98,9 +95,9 @@ class cVAE(nn.Module):
         L : int
             The length of input sequence. In gait analysis, it is the sequence length.
         """
-        super(cVAE, self).__init__()
+        super(TemporalVAE, self).__init__()
         self.device = torch.device('cuda:0')
-        self.n_channels, self.L, self.latent_dims, self.label_dims = n_channels, L, latent_dims, label_dims
+        self.n_channels, self.L, self.latent_dims = n_channels, L, latent_dims
         self.L_encode_counter = LshapeCounter(L)
         self.encoding_kernels = [3, 3, 3, 3, 3]
         self.encoding_dilations = [1, 3, 9, 27, 21]
@@ -132,11 +129,11 @@ class cVAE(nn.Module):
                                                      dilation=self.encoding_dilations[4]))
         self.en2latents = nn.Sequential(
             Flatten(),
-            nn.Linear(hidden_channels*int(self.Ls_encode[4]), 2*self.latent_dims)
+            nn.Linear(hidden_channels * int(self.Ls_encode[4]), 2 * self.latent_dims)
         )
         self.latents2de = nn.Sequential(
-            UnFlatten(self.latent_dims + self.label_dims),
-            nn.ConvTranspose1d(self.latent_dims + self.label_dims,
+            UnFlatten(self.latent_dims),
+            nn.ConvTranspose1d(self.latent_dims,
                                hidden_channels,
                                kernel_size=self.decoding_kernels[0],
                                dilation=self.decoding_dilations[0],
@@ -162,16 +159,16 @@ class cVAE(nn.Module):
         self.final_layer = nn.Sequential(
             nn.Conv1d(hidden_channels, self.n_channels, kernel_size=1)
         )
-    def forward(self, x, labels):
+
+    def forward(self, x):
         # Encoder
         out = self.encode(x)
 
         # Sampling from latents and concatenate with labels
-        z, mu, logvar  = self.bottleneck(out)
-        # print("z's Shape: %s" % (str(z.shape)))
-        z_c = torch.cat((z, labels), dim=-1)
+        z, mu, logvar = self.bottleneck(out)
+
         # Decoder
-        out = self.decode(z_c)
+        out = self.decode(z)
 
         return out, mu, logvar, z
 
@@ -220,26 +217,18 @@ class cVAE(nn.Module):
         return z, mu, logvar
 
 
-def total_loss(x, pred, mu, logvar):
-
-    recon_loss = 0.5 * torch.sum((x-pred)**2)
-    # return recon_loss
-    KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-    loss = recon_loss + 0.000001*KLD
-    return loss
-
 if __name__ == "__main__":
-    device = torch.device('cuda:0')
-    x = torch.randn(512, 58, 128).to(device)
-    y = torch.randn(512, 8).to(device)
-    model = cVAE().to(device)
-    params = model.parameters()
-    optimizer = optim.Adam(params, lr=0.001)
-    for i in range(10):
-        optimizer.zero_grad()
-        out, mu, logvar, z = model.forward(x, y)
-        loss = total_loss(x, out, mu, logvar)
-        print(loss)
-        loss.backward()
-        optimizer.step()
-
+    pass
+    # device = torch.device('cuda:0')
+    # x = torch.randn(512, 58, 128).to(device)
+    # y = torch.randn(512, 8).to(device)
+    # model = TemporalVAE().to(device)
+    # params = model.parameters()
+    # optimizer = optim.Adam(params, lr=0.001)
+    # for i in range(10):
+    #     optimizer.zero_grad()
+    #     out, mu, logvar, z = model.forward(x, y)
+    #     loss = total_loss(x, out, mu, logvar)
+    #     print(loss)
+    #     loss.backward()
+    #     optimizer.step()
