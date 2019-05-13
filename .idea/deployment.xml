@@ -19,6 +19,7 @@
             <excludedPath path="/data/hoi/gait_analysis/scripts/single_skeleton_vae/model_chkpt" />
             <excludedPath path="/data/hoi/gait_analysis/scripts/cVAE/model_chkpt" />
             <excludedPath path="/data/hoi/gait_analysis/scripts/TemporalVAE/model_chkpt" />
+            <excludedPath path="/data/hoi/gait_analysis/MNIST_data" />
           </excludedPaths>
         </serverdata>
       </paths>
