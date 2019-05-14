@@ -51,7 +51,7 @@ for kld_const in kld_consts:
         kld_identifier = -np.log10(kld_const)
         velo_identifier = -np.log10(velo_const)
 
-        model_identifier = "NoVar"
+        model_identifier = "NoVar_Stride"
         # model_identifier = "KLD-%f_velo-%f" % (kld_identifier, velo_identifier)
 
         # Train
