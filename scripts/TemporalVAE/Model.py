@@ -129,7 +129,8 @@ class TemporalVAE(nn.Module):
                                                      dilation=self.encoding_dilations[4]))
         self.en2latents = nn.Sequential(
             Flatten(),
-            nn.Linear(hidden_channels * int(self.Ls_encode[4]), 2 * self.latent_dims)
+            # nn.Linear(hidden_channels * int(self.Ls_encode[4]), 2 * self.latent_dims)
+            nn.Linear(hidden_channels * int(self.Ls_encode[4]), self.latent_dims)
         )
         self.latents2de = nn.Sequential(
             UnFlatten(self.latent_dims),
@@ -163,14 +164,14 @@ class TemporalVAE(nn.Module):
     def forward(self, x):
         # Encoder
         out = self.encode(x)
-
+        z_latent = out.clone()
         # Sampling from latents and concatenate with labels
         z, mu, logvar = self.bottleneck(out)
 
         # Decoder
-        out = self.decode(z)
-
-        return out, mu, logvar, z
+        # out = self.decode(z)
+        out = self.decode(out)
+        return out, mu, logvar, z_latent
 
     def encode(self, x):
         # print("Input's Shape: %s"%(str(x.shape)))
@@ -212,7 +213,8 @@ class TemporalVAE(nn.Module):
         return z
 
     def bottleneck(self, h):
-        mu, logvar = h[:, 0:self.latent_dims], h[:, self.latent_dims:]
+        mu, logvar = h, h
+        # mu, logvar = h[:, 0:self.latent_dims], h[:, self.latent_dims:]
         z = self.reparameterize(mu, logvar)
         return z, mu, logvar
 

@@ -146,14 +146,15 @@ class GaitTVAEmodel:
 
     def loss_function(self, x, pred, mu, logvar):
         img_loss = torch.sum(self.weights_vec_loss * ((x - pred) ** 2))
-        KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-        velo_loss = self._temporal_smoothen_loss(pred)
-        loss = img_loss + self.KLD_regularization_const * KLD + self.velo_regularization_const * velo_loss
+        # KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        # velo_loss = self.velo_regularization_const * self._temporal_smoothen_loss(pred)
+        # KLD_loss = self.KLD_regularization_const * KLD
+        loss = img_loss
         return loss
 
 
 class GaitCVAEvisualiser:
-    def __init__(self, data_gen, load_model_path, save_vid_dir):
+    def __init__(self, data_gen, load_model_path, save_vid_dir, model_identifier=""):
         # Hard coded stuff
         self.num_samples_pred = 5
         self.num_samples_latents = 3
@@ -169,22 +170,18 @@ class GaitCVAEvisualiser:
         self.data_gen = data_gen
         self.model_container = GaitTVAEmodel(data_gen)
         self.model_container.load_model(self.load_model_path)
+        self.model_identifier = model_identifier
 
     def visualise_random_reconstruction_label_clusters(self, sample_num):
         (x_in, y_in), (x_out, y_out), labels, z = self._get_pred_results()
 
-        hyper_params_title = "KLD = %f | Velo = %f" % (self.model_container.KLD_regularization_const,
-                                                       self.model_container.velo_regularization_const)
-        print("visualize: %s" % hyper_params_title)
-        kld_identifier = -np.log10(self.model_container.KLD_regularization_const)
-        velo_identifier = -np.log10(self.model_container.velo_regularization_const)
+        print("visualize: %s" % self.model_identifier)
 
         # Visualise reconstruction
         for sample_idx in range(sample_num):
             save_vid_path = os.path.join(self.save_vid_dir,
-                                         "Recon%d_KLD-%f_Velo-%f.mp4" % (sample_idx,
-                                                                         kld_identifier,
-                                                                         velo_identifier))
+                                         "Recon%d_%s.mp4" % (sample_idx, self.model_identifier))
+
             vwriter = skv.FFmpegWriter(save_vid_path)
 
             # Draw input & output skeleton for every time step
@@ -193,12 +190,12 @@ class GaitCVAEvisualiser:
                 print("\rNow writing Recon_sample-%d | time-%0.4fs" % (sample_idx, time), flush=True, end="")
                 draw_arr_in = plot2arr_skeleton(x=x_in[sample_idx, :, t],
                                                 y=y_in[sample_idx, :, t],
-                                                title="%d | " % sample_idx + hyper_params_title
+                                                title="%d | " % sample_idx + self.model_identifier
                                                 )
 
                 draw_arr_out = plot2arr_skeleton(x=x_out[sample_idx, :, t],
                                                  y=y_out[sample_idx, :, t],
-                                                 title="%d | " % sample_idx + hyper_params_title
+                                                 title="%d | " % sample_idx + self.model_identifier
                                                  )
                 draw_arr_recon = np.concatenate((draw_arr_in, draw_arr_out), axis=1)
                 vwriter.writeFrame(draw_arr_recon)
@@ -207,9 +204,9 @@ class GaitCVAEvisualiser:
 
         # Visualise label clusters images
         save_img_path = os.path.join(self.save_vid_dir,
-                                     "cluster_KLD-%f_Velo-%f.png" % (kld_identifier,
-                                                                     velo_identifier))
-        draw_clusters = plot_latent_labels_cluster(z, labels, hyper_params_title)
+                                     "cluster_%s.png" % (self.model_identifier))
+
+        draw_clusters = plot_latent_labels_cluster(z, labels, self.model_identifier)
         ski.imsave(save_img_path, draw_clusters)
 
     def _get_pred_results(self):
@@ -249,11 +246,11 @@ def plot_latent_labels_cluster(z_space, z_labels, title, x_lim=None, y_lim=None)
 
     # Set limits of axes
     if x_lim is None:
-        x_max = np.quantile(np.abs(z_space[:, 0]), 0.98)
+        x_max = np.quantile(np.abs(z_space[:, 0]), 0.99)
         x_lim = (-x_max, x_max)
 
     if y_lim is None:
-        y_max = np.quantile(np.abs(z_space[:, 1]), 0.98)
+        y_max = np.quantile(np.abs(z_space[:, 1]), 0.99)
         y_lim = (-y_max, y_max)
 
     # Title, limits and drawing
