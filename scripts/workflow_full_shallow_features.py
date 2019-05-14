@@ -45,34 +45,36 @@ import numpy as np
 import os
 kld_consts = (1e-10, )
 velo_consts = (1e-10, )
+times = 25
 for kld_const in kld_consts:
     for velo_const in velo_consts:
         print("KLD = %f | velo = %f" % (kld_const, velo_const))
         kld_identifier = -np.log10(kld_const)
         velo_identifier = -np.log10(velo_const)
 
-        model_identifier = "NoVar_Stride"
+        model_identifier = "NoVar_Stride_t25_l100"
         # model_identifier = "KLD-%f_velo-%f" % (kld_identifier, velo_identifier)
 
         # Train
         data_gen = GaitGeneratorFromDFforTemporalVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
-                                                     m=512)
+                                                     m=512, n=times)
         save_model_path = "TemporalVAE/model_chkpt/ckpt_%s.pth" % (model_identifier)
         tvae = GaitTVAEmodel(data_gen,
+                             latent_dims=100,
                              KLD_const=kld_const,
                              velo_const=velo_const,
                              save_chkpt_path=save_model_path)
         if os.path.isfile(save_model_path):
             tvae.load_model(save_model_path)
-        tvae.train(20)
+        tvae.train(30)
         # Visualize
         data_gen = GaitGeneratorFromDFforTemporalVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
-                                                     m=4000)
+                                                     m=4000, n=times)
         load_model_path = "TemporalVAE/model_chkpt/ckpt_%s.pth" % (model_identifier)
         save_vid_dir = "TemporalVAE/vis/"
 
         viser = GaitCVAEvisualiser(data_gen, load_model_path, save_vid_dir, model_identifier=model_identifier)
-        viser.visualise_random_reconstruction_label_clusters(5)
+        viser.visualise_random_reconstruction_label_clusters(10)
 
 # %% ======================== Step A.B.4: Train and visualize on single_skeleton_VAE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash

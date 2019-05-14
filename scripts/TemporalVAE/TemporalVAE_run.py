@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 import skvideo.io as skv
 import skimage.io as ski
 from common.keypoints_format import openpose_body_draw_sequence
-from .Model import TemporalVAE
+from .Model_t128 import TemporalVAE as TemporalVAE128
+from .Model_t25 import TemporalVAE as TemporalVAE25
 from common.utils import RunningAverageMeter
 
 
@@ -36,7 +37,7 @@ class GaitTVAEmodel:
 
         # Model initialization
         self.save_chkpt_path = save_chkpt_path
-        self.model = TemporalVAE(n_channels=self.input_channels,
+        self.model = TemporalVAE25(n_channels=self.input_channels,
                                  L=self.sequence_length,
                                  hidden_channels=self.hidden_channels,
                                  latent_dims=self.latent_dims).to(self.device)
@@ -159,7 +160,7 @@ class GaitCVAEvisualiser:
         self.num_samples_pred = 5
         self.num_samples_latents = 3
         self.latents_dim = 2
-        self.times = 128
+        self.times = data_gen.n
 
         # Init paths
         self.save_vid_dir = save_vid_dir
