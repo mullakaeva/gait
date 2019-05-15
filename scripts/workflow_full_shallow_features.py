@@ -41,40 +41,67 @@
 
 from TemporalVAE.TemporalVAE_run import GaitTVAEmodel, GaitCVAEvisualiser
 from common.generator import GaitGeneratorFromDFforTemporalVAE
-import numpy as np
 import os
-kld_consts = (1e-10, )
-velo_consts = (1e-10, )
-times = 25
-for kld_const in kld_consts:
-    for velo_const in velo_consts:
-        print("KLD = %f | velo = %f" % (kld_const, velo_const))
-        kld_identifier = -np.log10(kld_const)
-        velo_identifier = -np.log10(velo_const)
 
-        model_identifier = "NoVar_Stride_t25_l100"
-        # model_identifier = "KLD-%f_velo-%f" % (kld_identifier, velo_identifier)
+df_path = "/mnt/data/raw_features_zmatrix_row_labels.pickle"
+kld_list = (None,)
+# latent_dims_list = (6400, 2)
+latent_dims_list = (6400,)
+hidden_units = 512
+dropout_p = 0
+times = 128
+init_lr = 0.001
+lr_milestones = [10]
+lr_decay_gamma = 0.1
+
+u_neighbors = [15, 50]
+min_dists = [0.5, 0.1]
+metrics = ["euclidean"]
+pcas = [True]
+
+for kld in kld_list:
+    for latent_dims in latent_dims_list:
+        print("Drop = {} | KLD = {} | Latent_dims = {} | hidden = {}".format(dropout_p, kld, latent_dims, hidden_units))
+
+        model_identifier = "Drop-{}_KLD-{}_l-{}_h-{}".format(dropout_p, kld, latent_dims, hidden_units)
 
         # Train
-        data_gen = GaitGeneratorFromDFforTemporalVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
-                                                     m=512, n=times)
-        save_model_path = "TemporalVAE/model_chkpt/ckpt_%s.pth" % (model_identifier)
-        tvae = GaitTVAEmodel(data_gen,
-                             latent_dims=100,
-                             KLD_const=kld_const,
-                             velo_const=velo_const,
-                             save_chkpt_path=save_model_path)
-        if os.path.isfile(save_model_path):
-            tvae.load_model(save_model_path)
-        tvae.train(30)
+        # data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=512, n=times)
+        # save_model_path = "TemporalVAE/model_chkpt/ckpt_%s.pth" % (model_identifier)
+        # tvae = GaitTVAEmodel(data_gen,
+        #                      hidden_channels=hidden_units,
+        #                      latent_dims=latent_dims,
+        #                      kld=kld,
+        #                      dropout_p=dropout_p,
+        #                      init_lr=init_lr,
+        #                      lr_milestones=lr_milestones,
+        #                      lr_decay_gamma=lr_decay_gamma,
+        #                      save_chkpt_path=save_model_path)
+        # if os.path.isfile(save_model_path):
+        #     tvae.load_model(save_model_path)
+        # tvae.train(150)
+
         # Visualize
-        data_gen = GaitGeneratorFromDFforTemporalVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
-                                                     m=4000, n=times)
+        data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=4000, n=times, seed=60)
         load_model_path = "TemporalVAE/model_chkpt/ckpt_%s.pth" % (model_identifier)
         save_vid_dir = "TemporalVAE/vis/"
 
-        viser = GaitCVAEvisualiser(data_gen, load_model_path, save_vid_dir, model_identifier=model_identifier)
-        viser.visualise_random_reconstruction_label_clusters(10)
+        viser = GaitCVAEvisualiser(data_gen, load_model_path, save_vid_dir,
+                                   hidden_channels=hidden_units,
+                                   latent_dims=latent_dims,
+                                   model_identifier=model_identifier,
+                                   init_lr=init_lr,
+                                   lr_milestones=lr_milestones,
+                                   lr_decay_gamma=lr_decay_gamma
+                                   )
+        # viser.visualise_random_reconstruction_label_clusters(5)
+
+        viser.visualize_umap_embedding(
+            n_neighs=u_neighbors,
+            min_dists=min_dists,
+            metrics=metrics,
+            pca_enableds=pcas,
+        )
 
 # %% ======================== Step A.B.4: Train and visualize on single_skeleton_VAE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
@@ -82,31 +109,46 @@ for kld_const in kld_consts:
 # from single_skeleton_vae.VAE_run import GaitVAEmodel
 # from common.generator import GaitGeneratorFromDFforTemporalVAE, GaitGeneratorFromDFforSingleSkeletonVAE
 # from single_skeleton_vae.VAE_run import GaitSingleSkeletonVAEvisualiser, GaitSingleSkeletonVAEvisualiserCollapsed
+# import os
 #
-#
-# save_model_path = "single_skeleton_vae/model_chkpt/ckpt.pth"
-# load_model_path = "single_skeleton_vae/model_chkpt/ckpt.pth"
-#
-# KLD_consts = (0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001)
-# # KLD_consts = (0.01,)
+# kld_list = (None, 0.001)
+# pw_list = (True, False)
+# latent_dims_list = (2, 100)
+# df_path = "/mnt/data/raw_features_zmatrix_row_labels.pickle"
+# save_vid_dir = "single_skeleton_vae/vis/"
 # space_samples = 6400
-# for KLD_const in KLD_consts:
-#     save_model_path = "single_skeleton_vae/model_chkpt/ckpt_KLD-%f.pth" % KLD_const
-#     load_model_path = "single_skeleton_vae/model_chkpt/ckpt_KLD-%f.pth" % KLD_const
-#     data_gen = GaitGeneratorFromDFforSingleSkeletonVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
-#                                                        m=space_samples, train_portion=0.999)
-#     vae = GaitVAEmodel(data_gen, latent_dims=2, step_lr_decay=0.8, KLD_const=KLD_const,
-#                        save_chkpt_path=save_model_path)
-#     # vae.load_model(save_model_path)
-#     # vae.train(5)
+# for kld in kld_list:
+#     for pw in pw_list:
+#         for latent_dims in latent_dims_list:
 #
-#     save_vid_dir = "single_skeleton_vae/vis/"
-#     data_gen = GaitGeneratorFromDFforSingleSkeletonVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle",
-#                                                        m=space_samples, train_portion=0.999)
-#     # data_gen = GaitGeneratorFromDFforTemporalVAE("/mnt/data/raw_features_zmatrix_row_labels.pickle", m=50)
-#     viser = GaitSingleSkeletonVAEvisualiser(data_gen, load_model_path, save_vid_dir, latent_dims=2)
-#     viser.visualise_latent_space()
-#     # viser.visualise_vid()
+#             # Define condition-specific paths/identifiers
+#             model_identifier = "noDrop_KLD-{}_PW-{}_latent-{}".format(kld, pw, latent_dims)
+#             save_model_path = "single_skeleton_vae/model_chkpt/ckpt_{}.pth".format(model_identifier)
+#             load_model_path = "single_skeleton_vae/model_chkpt/ckpt_{}.pth".format(model_identifier)
+#             print(model_identifier)
+#
+#             # Training
+#             data_gen = GaitGeneratorFromDFforSingleSkeletonVAE(df_path, m=space_samples, train_portion=0.999)
+#             vae = GaitVAEmodel(data_gen=data_gen, input_dims=50, latent_dims=latent_dims, step_lr_decay=0.8, kld=kld,
+#                                precision_weighting=pw, save_chkpt_path=save_model_path, data_gen_type="single")
+#             if os.path.isfile(load_model_path):
+#                 vae.load_model(load_model_path)
+#             vae.train(5)
+#
+#             # Visualize low-dimensional space
+#             # data_gen = GaitGeneratorFromDFforSingleSkeletonVAE(df_path, m=space_samples, train_portion=0.999)
+#             # viser = GaitSingleSkeletonVAEvisualiser(data_gen, load_model_path, save_vid_dir,
+#             #                                         latent_dims=latent_dims, model_identifier=model_identifier)
+#             # viser.visualise_latent_space()
+#
+#             # Visualize action sequence
+#             data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=50, seed=60)
+#             viser = GaitSingleSkeletonVAEvisualiser(data_gen, load_model_path, save_vid_dir,
+#                                                     latent_dims=latent_dims, model_identifier=model_identifier,
+#                                                     kld=kld,
+#                                                     data_gen_type="temporal")
+#             viser.visualise_vid()
+
 
 # %% ======================== (Defunkt) Step A.C.4: Train on neural ODE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash

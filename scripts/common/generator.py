@@ -1,6 +1,7 @@
 from glob import glob
 from abc import ABC, abstractmethod
 from .utils import LabelsReader, fullfile, load_df_pickle
+from .keypoints_format import excluded_points_flatten
 import random
 import os
 import numpy as np
@@ -94,12 +95,14 @@ class SSF_tSNE_DataGenerator(DataGenerator):
 
 class GaitGeneratorFromDF:
 
-    def __init__(self, df_pickle_path, m=32, n=128, train_portion=0.95):
+    def __init__(self, df_pickle_path, m=32, n=128, train_portion=0.95, seed=None):
         self.df = load_df_pickle(df_pickle_path)
         self.total_num_rows = self.df.shape[0]
         split_index = int(self.total_num_rows * train_portion)
         self.df_train = self.df.iloc[0:split_index, :].reset_index(drop=True)
         self.df_test = self.df.iloc[split_index:, :].reset_index(drop=True)
+
+        self.seed = seed
 
         self.num_rows = self.df_train.shape[0]
         self.m, self.n = m, n
@@ -113,6 +116,9 @@ class GaitGeneratorFromDF:
             if stop - start > 0:
                 duration_indices.append((start, stop))
                 start = stop
+
+        if self.seed is not None:
+            np.random.seed(self.seed)
         df_shuffled = self.df_train.iloc[np.random.permutation(self.num_rows), :]
 
         for start, stop in duration_indices:
@@ -165,11 +171,15 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
     where features_train/test has shape (m, num_features=50, n), and labels_train/test has shape (m, )
 
     """
-    def __init__(self, df_pickle_path, m=32, n=128, train_portion=0.95):
+    def __init__(self, df_pickle_path, m=32, n=128, train_portion=0.95, seed=None):
         # Hard-coded params
         self.keyps_x_dims, self.keyps_y_dims = 25, 25
         self.total_fea_dims = self.keyps_x_dims + self.keyps_y_dims
-        super(GaitGeneratorFromDFforTemporalVAE, self).__init__(df_pickle_path, m, n, train_portion)
+        self.weighting_vec = np.ones(self.total_fea_dims) # Construct weighting vector
+        self.weighting_vec[excluded_points_flatten] = 0 # masked out nose, two eyes
+
+        # Call parent's init
+        super(GaitGeneratorFromDFforTemporalVAE, self).__init__(df_pickle_path, m, n, train_portion, seed)
 
     def _convert_df_to_data(self, df_shuffled, start, stop):
         selected_df = df_shuffled.iloc[start:stop, :].copy()
@@ -222,9 +232,12 @@ class GaitGeneratorFromDFforSingleSkeletonVAE:
         # Hard-coded params
         self.keyps_x_dims, self.keyps_y_dims = 25, 25
         self.total_fea_dims = self.keyps_x_dims + self.keyps_y_dims
+        self.excluded_keypoints = excluded_points_flatten
+
         # Load dataframe and collapse the num_samples and num_frames
         df = load_df_pickle(df_pickle_path)
         output_arr, labels = self._flatten_feature_sequences(df)  # (num_frames * num_samples, 50)
+        self.weighting_vec = self._calculate_precision_weighting(output_arr)
         self.m, self.total_num_rows = m, output_arr.shape[0]
         del df  # free memory to python process but not the system
 
@@ -254,7 +267,11 @@ class GaitGeneratorFromDFforSingleSkeletonVAE:
             sampled_labels = self._convert_arr_to_data(labels_train_shuffled, start, stop)
             yield (sampled_data, sampled_labels), (self.data_test.copy(), self.labels_test.copy())
 
-    def _convert_arr_to_data(self, arr_shuffled, start, stop):
+    def get_weighting_vec(self):
+        return self.weighting_vec.copy()
+
+    @staticmethod
+    def _convert_arr_to_data(arr_shuffled, start, stop):
         data_train_batch = arr_shuffled[start:stop, ].copy()
         return data_train_batch
 
@@ -278,9 +295,33 @@ class GaitGeneratorFromDFforSingleSkeletonVAE:
             vec_list.append(fea_flatten)
             label_vec_list.append(label_vec)
 
-
+        # Concatenation
         output_arr = np.concatenate(vec_list, axis=0)  # (num_frames * num_samples, 50)
-        label_arr = np.concatenate(label_vec_list) # (num_frames * num_samples, )
+        label_arr = np.concatenate(label_vec_list)  # (num_frames * num_samples, )
 
         return output_arr, label_arr
 
+    def _calculate_precision_weighting(self, arr):
+        """
+        Calculate weighting for each joint by their grand precision. Keypoints specified in self.excluded_keypoints,
+        (e.g. nose, r/l eyes) are assigned 0 s.t. they don't affect training.
+
+        Parameters
+        ----------
+        arr : numpy.darray
+            With shape (num_frames * num_samples, 50).
+
+        Returns
+        -------
+        precision_vec : numpy.darray
+            With shape (50, ). Weighting for each key point. Indexes specified by self.excluded_keypoints are 0.
+        -------
+
+        """
+        precision_vec = 1/( ( np.std(arr, axis=0) ** 2 ) + 1e-8)
+        # Normalization, while ignoring the exluded indices
+        precision_vec[self.excluded_keypoints] = np.nan
+        precision_vec = precision_vec /np.nanmax(precision_vec)
+        # Excluded indices assigned to 0 to eliminate their effect
+        precision_vec[np.isnan(precision_vec)] = 0
+        return precision_vec

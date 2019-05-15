@@ -82,7 +82,7 @@ class UnFlatten(nn.Module):
 
 
 class TemporalVAE(nn.Module):
-    def __init__(self, n_channels=50, L=128, hidden_channels=1024, latent_dims=8):
+    def __init__(self, n_channels=50, L=128, hidden_channels=1024, latent_dims=8, kld=None, dropout_p=0):
         """
         Temporal Variational Autoencoder (TemporalVAE)
         In Gait analysis. we want a VAE function f(x) that follows the shapes:
@@ -99,9 +99,15 @@ class TemporalVAE(nn.Module):
         L : int
             The length of input sequence. In gait analysis, it is the sequence length.
         """
+
+        # Init
         super(TemporalVAE, self).__init__()
         self.device = torch.device('cuda:0')
         self.n_channels, self.L, self.latent_dims = n_channels, L, latent_dims
+        self.kld = kld
+        self.connecting_dims = self.latent_dims if self.kld is None else (2 * self.latent_dims)
+
+        # Record the time dimension
         self.L_encode_counter = LshapeCounter(L)
         self.encoding_kernels = [5, 5, 5, 5, 5]
         self.encoding_strides = [1, 2, 2, 2, 2]
@@ -118,26 +124,30 @@ class TemporalVAE(nn.Module):
         self.en_blk1 = nn.Sequential(*encoding_block(hidden_channels,
                                                      hidden_channels,
                                                      kernel_size=self.encoding_kernels[1],
-                                                     stride=self.encoding_strides[1]))
+                                                     stride=self.encoding_strides[1],
+                                                     dropout_p=dropout_p))
         self.en_blk2 = nn.Sequential(*encoding_block(hidden_channels,
                                                      hidden_channels,
                                                      kernel_size=self.encoding_kernels[2],
-                                                     stride=self.encoding_strides[2]))
+                                                     stride=self.encoding_strides[2],
+                                                     dropout_p=dropout_p))
         self.en_blk3 = nn.Sequential(*encoding_block(hidden_channels,
                                                      hidden_channels,
                                                      kernel_size=self.encoding_kernels[3],
-                                                     stride=self.encoding_strides[3]))
+                                                     stride=self.encoding_strides[3],
+                                                     dropout_p=dropout_p))
         self.en_blk4 = nn.Sequential(*encoding_block(hidden_channels,
                                                      hidden_channels,
                                                      kernel_size=self.encoding_kernels[4],
-                                                     stride=self.encoding_strides[4]))
+                                                     stride=self.encoding_strides[4],
+                                                     dropout_p=dropout_p))
         self.en2latents = nn.Sequential(
             Flatten(),
-            # nn.Linear(hidden_channels * int(self.Ls_encode[4]), 2 * self.latent_dims)
-            nn.Linear(hidden_channels * int(self.Ls_encode[4]), self.latent_dims)
+            nn.Linear(hidden_channels * int(self.Ls_encode[4]), self.connecting_dims)
         )
+
         self.latents2de = nn.Sequential(
-            UnFlatten(self.latent_dims),
+            UnFlatten(self.connecting_dims),
             nn.ConvTranspose1d(self.latent_dims,
                                hidden_channels,
                                kernel_size=self.decoding_kernels[0],
@@ -167,14 +177,18 @@ class TemporalVAE(nn.Module):
     def forward(self, x):
         # Encoder
         out = self.encode(x)
-        z_latent = out.clone()
-        # Sampling from latents and concatenate with labels
-        z, mu, logvar = self.bottleneck(out)
+        if self.kld is None:
+            z = out.clone()
+            mu, logvar = z, z  # dummy assignment
+            out = self.decode(out)
+        else:
+            # Sampling from latents and concatenate with labels
+            z, mu, logvar = self.bottleneck(out)
+            self.logging.debug("z's Shape: %s" % (str(z.shape)))
+            # Decoder
+            out = self.decode(z)
 
-        # Decoder
-        # out = self.decode(z)
-        out = self.decode(out)
-        return out, mu, logvar, z_latent
+        return out, mu, logvar, z
 
     def encode(self, x):
         logging.debug("Ls_encode = %s" % self.Ls_encode)
@@ -211,14 +225,12 @@ class TemporalVAE(nn.Module):
 
     def reparameterize(self, mu, logvar):
         std = logvar.mul(0.5).exp_()
-        # return torch.normal(mu, std)
         esp = torch.randn(*mu.size()).to(self.device)
         z = mu + std * esp
         return z
 
     def bottleneck(self, h):
-        mu, logvar = h, h
-        # mu, logvar = h[:, 0:self.latent_dims], h[:, self.latent_dims:]
+        mu, logvar = h[:, 0:self.latent_dims], h[:, self.latent_dims:]
         z = self.reparameterize(mu, logvar)
         return z, mu, logvar
 

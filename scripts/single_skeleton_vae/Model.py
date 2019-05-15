@@ -12,25 +12,28 @@ def linear_block(input_channels, output_channels, dropout_p=0.25):
     LN_layer = nn.Linear(input_channels, output_channels)
     bn_layer = nn.BatchNorm1d(output_channels)
     relu_layer = nn.ReLU()
-
+    droput_layer = nn.Dropout(dropout_p)
     block_list = [
         LN_layer,
         bn_layer,
         relu_layer
+        # droput_layer
     ]
 
     return block_list
 
 
 class VAE(nn.Module):
-    def __init__(self, input_dims=50, latent_dims=2):
+    def __init__(self, input_dims=50, latent_dims=2, kld=None):
 
         super(VAE, self).__init__()
         self.device = torch.device('cuda:0')
         self.logging = logging
         self.logging.basicConfig(level=50)
-        self.input_dims, self.latent_dims = input_dims, latent_dims
 
+        # Model setting
+        self.kld = kld
+        self.input_dims, self.latent_dims = input_dims, latent_dims
         self.encode_units = [512, 128, 32, 8]
         self.decode_units = [8, 32, 128, 512]
 
@@ -44,7 +47,10 @@ class VAE(nn.Module):
                                                    output_channels=self.encode_units[2]))
         self.en_blk3 = nn.Sequential(*linear_block(input_channels=self.encode_units[2],
                                                    output_channels=self.encode_units[3]))
-        self.en2latents = nn.Linear(self.encode_units[3], self.latent_dims*2)
+        if self.kld is None:
+            self.en2latents = nn.Linear(self.encode_units[3], self.latent_dims)
+        else:
+            self.en2latents = nn.Linear(self.encode_units[3], self.latent_dims * 2)
 
         # Decode
         self.latents2de = nn.Linear(self.latent_dims, self.decode_units[0])
@@ -57,17 +63,21 @@ class VAE(nn.Module):
                                                    output_channels=self.decode_units[3]))
         self.final_layer = nn.Linear(self.decode_units[3], self.input_dims)
 
-    def forward(self, x, labels=None):
-
+    def forward(self, x):
         # Encoder
         out = self.encode(x)
 
-        # Sampling from latents and concatenate with labels
-        z, mu, logvar = self.bottleneck(out)
-        self.logging.debug("z's Shape: %s" % (str(z.shape)))
+        if self.kld is None:
+            z = out.clone()
+            mu, logvar = z, z  # dummy assignment
+            out = self.decode(out)
+        else:
+            # Sampling from latents and concatenate with labels
+            z, mu, logvar = self.bottleneck(out)
+            self.logging.debug("z's Shape: %s" % (str(z.shape)))
+            # Decoder
+            out = self.decode(z)
 
-        # Decoder
-        out = self.decode(z)
         return out, mu, logvar, z
 
     def encode(self, x):
@@ -103,9 +113,7 @@ class VAE(nn.Module):
 
     def reparameterize(self, mu, logvar):
         std = logvar.mul(0.5).exp_()
-        # return torch.normal(mu, std)
         esp = torch.randn(*mu.size()).to(self.device)
-        # esp = torch.zeros(*mu.size()).to(self.device)
         z = mu + std * esp
         return z
 

@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
 # left and right is from the owner's perspective, not the observer's
 
@@ -53,11 +54,13 @@ openpose_body25_labels = {
 }
 
 openpose_body_draw_sequence = (
-    (0, 1, "m"),  # nose to neck
-    (0, 15, "r"),  # nose to r_eye
-    (0, 16, "l"),  # nose to l_eye
-    (15, 17, "r"),  # r_eye to r_ear
-    (16, 18, "l"),  # l_eye to l_ear
+    # (0, 1, "m"),  # nose to neck
+    # (0, 15, "r"),  # nose to r_eye
+    # (0, 16, "l"),  # nose to l_eye
+    # (15, 17, "r"),  # r_eye to r_ear
+    # (16, 18, "l"),  # l_eye to l_ear
+    (18, 1, "l"),  # l_ear to neck
+    (17, 1, "l"),  # r_ear to neck
     (1, 5, "l"),  # neck to l_shoulder
     (5, 6, "l"),  # l_shoulder to l_elbow
     (6, 7, "l"),  # l_elbow to l_wrist
@@ -86,6 +89,8 @@ openpose_L_indexes = [5, 6, 7, 12, 13, 14, 16, 18, 19, 20, 21]
 openpose_R_indexes = [2, 3, 4, 9, 10, 11, 15, 17, 22, 23, 24]
 openpose_central_indexes = [0, 1, 8] # From top to bottom. 0=nose, 1=neck, 8=hip_centre
 
+excluded_points = [0, 15, 16]
+excluded_points_flatten = [0, 15, 16, 25, 40, 41]
 
 def index2feature_dist(n):
     relative_dists_indexes = np.triu_indices(25, k=1)
@@ -137,3 +142,30 @@ def index2feature(n):
         feature = "*(ASY) {}-{}".format(x[2:], anchor)
     
     return feature
+
+
+def draw_skeleton(ax, x, y):
+    side_dict = {
+        "m": "k",
+        "l": "r",
+        "r": "b"
+    }
+    for start, end, side in openpose_body_draw_sequence:
+        ax.plot(x[[start, end]], y[[start, end]], c=side_dict[side])
+    return ax
+
+
+def plot2arr_skeleton(x, y, title, x_lim=(-0.6, 0.6), y_lim=(0.6, -0.6)):
+    fig, ax = plt.subplots()
+    ax.scatter(np.delete(x, excluded_points), np.delete(y, excluded_points))
+    ax = draw_skeleton(ax, x, y)
+    fig.suptitle(title)
+    ax.set_xlim(x_lim[0], x_lim[1])
+    ax.set_ylim(y_lim[0], y_lim[1])
+    fig.tight_layout()
+    fig.canvas.draw()
+    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    plt.close()
+    return data
+

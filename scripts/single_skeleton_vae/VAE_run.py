@@ -6,7 +6,7 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 import skvideo.io as skv
-from common.keypoints_format import openpose_body_draw_sequence
+from common.keypoints_format import plot2arr_skeleton
 from .Model import VAE
 from common.utils import RunningAverageMeter
 
@@ -73,8 +73,10 @@ class GaitVAEmodel:
                  latent_dims=2,
                  gpu=0,
                  step_lr_decay=0.8,
-                 KLD_const=0.001,
-                 save_chkpt_path=None):
+                 kld = None,
+                 precision_weighting=False,
+                 save_chkpt_path=None,
+                 data_gen_type="single"):
 
         # Standard Init
         self.data_gen = data_gen
@@ -85,13 +87,18 @@ class GaitVAEmodel:
 
         # Learning rate decay, regularization_constant, loss
         self.step_lr_decay = step_lr_decay
-        self.KLD_regularization_const = KLD_const
-        self.weights_vec_loss = self._get_weights_vec_loss()
+        self.kld = kld
+        self.pw = precision_weighting
         self.loss_train_meter, self.loss_cv_meter = RunningAverageMeter(), RunningAverageMeter()
 
         # initialize model, params, optimizer
         self.model = VAE(input_dims=self.input_dims,
-                         latent_dims=self.latent_dims).to(self.device)
+                         latent_dims=self.latent_dims,
+                         kld=self.kld).to(self.device)
+        if data_gen_type == "single":
+            self.weight_vec = torch.from_numpy(self.data_gen.get_weighting_vec().reshape(1,-1)).float().to(self.device)  # (1, 50)
+        elif data_gen_type == "temporal":
+            self.weight_vec = torch.ones(1, 50).float().to(self.device)
         params = self.model.parameters()
         self.optimizer = optim.Adam(params, lr=0.001)
 
@@ -131,6 +138,7 @@ class GaitVAEmodel:
                                                                                           self.loss_cv_meter.avg)
                           , flush=True, end="")
                 scheduler.step()
+                print()
                 self._save_model()
 
         except KeyboardInterrupt:
@@ -167,7 +175,7 @@ class GaitVAEmodel:
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.loss_train_meter = checkpoint['loss_train_meter']
         self.loss_cv_meter = checkpoint['loss_cv_meter']
-        self.KLD_regularization_const = checkpoint['KLD_regularization_const']
+        self.kld = checkpoint['kld']
         print('Loaded ckpt from {}'.format(load_chkpt_path))
 
     def _save_model(self):
@@ -177,25 +185,30 @@ class GaitVAEmodel:
                 'optimizer_state_dict': self.optimizer.state_dict(),
                 'loss_train_meter': self.loss_train_meter,
                 'loss_cv_meter': self.loss_cv_meter,
-                "KLD_regularization_const" : self.KLD_regularization_const
+                "kld" : self.kld
             }, self.save_chkpt_path)
             print('Stored ckpt at {}'.format(self.save_chkpt_path))
 
-    def _get_weights_vec_loss(self):
-        weights_vec = torch.ones(1, 50).float().to(self.device)
-        weights_vec[0, 19:25] = 2
-        weights_vec[0, 19*2:] = 2
-        return weights_vec
-
     def loss_function(self, x, pred, mu, logvar):
-        img_loss = torch.sum(self.weights_vec_loss * ((x-pred)**2))
-        KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-        loss = img_loss + self.KLD_regularization_const*KLD
+        # kld loss
+        kld_multiplier = 0 if self.kld is None else self.kld
+
+        # precision weighting
+        weight_power_switch = 1 if self.pw else 0
+
+        # Different types of loss
+        recon_loss = torch.sum( (self.weight_vec**weight_power_switch) * ((x-pred)**2) )
+        kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+
+        # Combining the loss
+        loss = recon_loss + kld_multiplier * kld_loss
         return loss
 
 
 class GaitSingleSkeletonVAEvisualiser:
-    def __init__(self, data_gen, load_model_path, save_vid_dir, latent_dims=2):
+    def __init__(self, data_gen, load_model_path, save_vid_dir, latent_dims=2, input_dims=50, kld=None,
+                 model_identifier="",
+                 data_gen_type="single"):
         # Hard coded stuff
         self.num_samples_pred = 5
         self.num_samples_latents = 3
@@ -206,7 +219,12 @@ class GaitSingleSkeletonVAEvisualiser:
         self.data_gen = data_gen
         self.load_model_path = load_model_path
         self.save_vid_dir = save_vid_dir
-        self.model_container = GaitVAEmodel(data_gen, latent_dims=latent_dims)
+        self.model_identifier = model_identifier
+        self.model_container = GaitVAEmodel(data_gen,
+                                            input_dims=input_dims,
+                                            latent_dims=latent_dims,
+                                            kld=kld,
+                                            data_gen_type=data_gen_type)
         self.model_container.load_model(self.load_model_path)
 
     def visualise_vid(self):
@@ -221,35 +239,37 @@ class GaitSingleSkeletonVAEvisualiser:
         # labels ~ (m, )
         # mu ~ (m, 2, 128)
 
-        KLD_const = self.model_container.KLD_regularization_const
-
         for sample_idx in range(self.num_samples_pred):
 
             save_vid_path = os.path.join(self.save_vid_dir,
-                                         "Seq%d_KLD-%f.mp4"% (sample_idx,
-                                                              KLD_const))
+                                         "Sample%d_%s.mp4"% (sample_idx,
+                                                             self.model_identifier))
             vwriter = skv.FFmpegWriter(save_vid_path)
             for t in range(self.times):
                 time = t / 25
-                print("\rNow writing KLD-%f | Recon_sample-%d | time-%0.3fs" % (KLD_const, sample_idx, time),
+                print("\rNow writing %s | Sample-%d | time-%0.3fs" % (self.model_identifier, sample_idx, time),
                       flush=True, end="")
-                title_in = "KLD-%f | Recon_sample-%d | time-%0.3fs" % (KLD_const, sample_idx, time)
+                # Plot and draw input
+                title_in = "%s | Input-%d | time-%0.3fs" % (self.model_identifier, sample_idx, time)
                 draw_arr_in = plot2arr_skeleton(x_in[sample_idx, :, t],
                                                 y_in[sample_idx, :, t],
                                                 title_in,
                                                 x_lim=(-0.6, 0.6),
                                                 y_lim=(0.6, -0.6))
-                title_latent = "Latent"
+                # Plot and draw latent
+                title_latent = "%s | Latent" % self.model_identifier
                 draw_arr_latent = plot2arr_latent_space(mu[sample_idx, :, :].T, t, title_latent,
                                                         x_lim=(-5, 5),
                                                         y_lim=(-5, 5),
                                                         z_info=(z_space_flattened, labels_flattened))
-
+                # Plot and draw output
+                title_out = "%s | Output-%d | time-%0.3fs" % (self.model_identifier, sample_idx, time)
                 draw_arr_out = plot2arr_skeleton(x_out[sample_idx, :, t],
                                                 y_out[sample_idx, :, t],
-                                                title_in,
+                                                title_out,
                                                 x_lim=(-0.6, 0.6),
                                                 y_lim=(0.6, -0.6))
+                # Build video frame
                 h, w = draw_arr_in.shape[0], draw_arr_in.shape[1]
                 output_arr = np.zeros((h * 2, w * 2, 3))
                 output_arr[0:h, 0:w, :] = draw_arr_in
@@ -262,7 +282,7 @@ class GaitSingleSkeletonVAEvisualiser:
     def visualise_latent_space(self):
         # Randomly sample the data to visualze the latent-label distribution
         z_space, labels_space = self._sample_collapsed_data()
-        x_max, y_max = np.quantile(np.abs(z_space[:, 0]), 0.99), np.quantile(np.abs(z_space[:, 1]), 0.99)
+        x_max, y_max = np.quantile(np.abs(z_space[:, 0]), 0.995), np.quantile(np.abs(z_space[:, 1]), 0.995)
         num_scale = int(np.mean([x_max,y_max]))+1
         x_skeleton, y_skeleton, latents, _ = self._get_latents_results(x_max=x_max,
                                                                        y_max=y_max,
@@ -270,11 +290,11 @@ class GaitSingleSkeletonVAEvisualiser:
                                                                        num_steps=200)
         num_sample = x_skeleton.shape[0]
         save_vid_path = os.path.join(self.save_vid_dir,
-                                     "visualize_latent_space_%f.mp4" % self.model_container.KLD_regularization_const)
+                                     "latent_space_%s.mp4" % self.model_identifier)
         vwriter = skv.FFmpegWriter(save_vid_path)
         for sample_idx in range(num_sample):
             print("\rDrawing %d/%d" % (sample_idx, num_sample), flush=True, end="")
-            title = "Time = %0.4f" % (sample_idx / 25)
+            title = "%s | Time = %0.4f" % (self.model_identifier, sample_idx / 25)
             ske_arr = plot2arr_skeleton(x_skeleton[sample_idx, :],
                                         y_skeleton[sample_idx, :],
                                         title)
@@ -376,21 +396,6 @@ class GaitSingleSkeletonVAEvisualiserCollapsed(GaitSingleSkeletonVAEvisualiser):
         return (x_in, y_in), (x_out, y_out)
 
 
-def plot2arr_skeleton(x, y, title, x_lim=(-0.6, 0.6), y_lim=(0.6, -0.6)):
-    fig, ax = plt.subplots()
-    ax.scatter(x, y)
-    ax = draw_skeleton(ax, x, y)
-    fig.suptitle(title)
-    ax.set_xlim(x_lim[0], x_lim[1])
-    ax.set_ylim(y_lim[0], y_lim[1])
-    fig.tight_layout()
-    fig.canvas.draw()
-    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-    plt.close()
-    return data
-
-
 def plot2arr_latents(z, title, x_lim=(-1, 1), y_lim=(-1, 1)):
     fig, ax = plt.subplots()
     ax.scatter(z[0], z[1], marker="x")
@@ -446,13 +451,3 @@ def plot2arr_latent_space(z, sample_idx, title, x_lim=(-1, 1), y_lim=(-1, 1), z_
     plt.close()
     return data
 
-
-def draw_skeleton(ax, x, y):
-    side_dict = {
-        "m": "k",
-        "l": "r",
-        "r": "b"
-    }
-    for start, end, side in openpose_body_draw_sequence:
-        ax.plot(x[[start, end]], y[[start, end]], c=side_dict[side])
-    return ax
