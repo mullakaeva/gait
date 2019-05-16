@@ -290,6 +290,10 @@ class GaitCVAEvisualiser:
                 for metric in metrics:
                     for pca in pca_enableds:
 
+                        save_img1 = os.path.join(save_img_dir,
+                                                 self.model_identifier + "_type1_" + umap_identifier + ".png")
+                        save_img2 = os.path.join(
+                            save_img_dir, self.model_identifier + "_type2_" + umap_identifier + ".png")
                         umap_identifier = "PCA-{}_neigh-{}_dist-{}_metric-{}".format(pca, neigh, min_dist, metric)
                         print("Visualizing U-map | {}".format(umap_identifier))
 
@@ -306,15 +310,10 @@ class GaitCVAEvisualiser:
                         # Output image
                         title = self.model_identifier + "\n{}".format(umap_identifier)
                         draw_clusters_sep = plot_umap_with_labels(embedding, labels, title)
+                        plt.savefig(save_img1, dpi=300)
                         draw_clusters_sin = plot_latent_labels_cluster(embedding, labels, title, alpha=0.2)
-                        draw_2dhist = plot_embedding_2dhist(embedding, title)
-                        draw_combined = np.concatenate((draw_clusters_sin, draw_2dhist), axis=1)
-                        ski.imsave(
-                            os.path.join(save_img_dir, self.model_identifier + "_type1_" + umap_identifier + ".png"),
-                            draw_clusters_sep)
-                        ski.imsave(
-                            os.path.join(save_img_dir, self.model_identifier + "_type2_" + umap_identifier + ".png"),
-                            draw_combined)
+                        plt.savefig(save_img2, dpi=300)
+                        plt.close()
 
 
     def _get_pred_results(self):
@@ -369,7 +368,6 @@ def plot_latent_labels_cluster(z_space, z_labels, title, x_lim=None, y_lim=None,
     # Convert to numpy array
     data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
     data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-    plt.close()
 
     return data
 
@@ -392,16 +390,5 @@ def plot_umap_with_labels(z, labels, title):
     # Convert to numpy array
     data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
     data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-    plt.close()
-    return data
 
-def plot_embedding_2dhist(z, title):
-    fig, ax = plt.subplots(figsize=(12, 12))
-    ax.hist2d(z[:, 0], z[:, 1], bins=100)
-    fig.suptitle(title)
-    fig.canvas.draw()
-    # Convert to numpy array
-    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-    plt.close()
     return data

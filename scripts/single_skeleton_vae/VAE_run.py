@@ -259,8 +259,6 @@ class GaitSingleSkeletonVAEvisualiser:
                 # Plot and draw latent
                 title_latent = "%s | Latent" % self.model_identifier
                 draw_arr_latent = plot2arr_latent_space(mu[sample_idx, :, :].T, t, title_latent,
-                                                        x_lim=(-5, 5),
-                                                        y_lim=(-5, 5),
                                                         z_info=(z_space_flattened, labels_flattened))
                 # Plot and draw output
                 title_out = "%s | Output-%d | time-%0.3fs" % (self.model_identifier, sample_idx, time)
@@ -410,7 +408,7 @@ def plot2arr_latents(z, title, x_lim=(-1, 1), y_lim=(-1, 1)):
     return data
 
 
-def plot2arr_latent_space(z, sample_idx, title, x_lim=(-1, 1), y_lim=(-1, 1), z_info=None):
+def plot2arr_latent_space(z, sample_idx, title, x_lim=None, y_lim=None, z_info=None):
     """
     Parameters
     ----------
@@ -440,8 +438,10 @@ def plot2arr_latent_space(z, sample_idx, title, x_lim=(-1, 1), y_lim=(-1, 1), z_
 
     # Title, limits and drawing
     fig.suptitle(title)
-    ax.set_xlim(x_lim[0], x_lim[1])
-    ax.set_ylim(y_lim[0], y_lim[1])
+    if x_lim is not None:
+        ax.set_xlim(x_lim[0], x_lim[1])
+    if y_lim is not None:
+        ax.set_ylim(y_lim[0], y_lim[1])
     fig.tight_layout()
     fig.canvas.draw()
 
