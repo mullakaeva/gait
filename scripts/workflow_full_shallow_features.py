@@ -115,7 +115,7 @@ df_path = "/mnt/data/raw_features_zmatrix_row_labels.pickle"
 save_vid_dir = "single_skeleton_vae/vis/"
 
 kld_list = (None,)
-latent_dims_list = (5, 2)
+latent_dims_list = (3, )
 drop_p = 0
 space_samples = 6400
 
@@ -140,7 +140,7 @@ for kld in kld_list:
 
         if os.path.isfile(load_model_path):
             vae.load_model(load_model_path)
-        vae.train(100)
+        vae.train(150)
 
         # Visualize low-dimensional space
         # data_gen = GaitGeneratorFromDFforSingleSkeletonVAE(df_path, m=space_samples, train_portion=0.999)
