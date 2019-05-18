@@ -82,7 +82,8 @@ class GaitTVAEmodel:
                     iter_idx += 1
 
                     # Print Info
-                    print("\rEpoch %d/%d at iter %d/%d | Loss: %0.8f | CV Loss: %0.8f" % (self.epoch, n_epochs,
+                    print("\rEpoch %d/%d at iter %d/%d | Loss: %0.8f | CV Loss: %0.8f" % (self.epoch,
+                                                                                          n_epochs,
                                                                                           iter_idx,
                                                                                           self.data_gen.num_rows / self.data_gen.m,
                                                                                           self.loss_train_meter.avg,
@@ -197,8 +198,6 @@ class GaitTVAEmodel:
         self.loss_recorder["cv"].append(self.loss_cv_meter.avg)
         self.epoch = len(self.loss_recorder["train"])
         fig, ax = plt.subplots(2, 2, figsize=(12, 12))
-        # ax[0, 0].plot(self.loss_recorder["train"], label="train")
-        # ax[1, 0].plot(self.loss_recorder["cv"], label="cv")
 
         # Restrict to show only recent epochs
         if self.epoch > epoch_windows_original:
@@ -206,17 +205,7 @@ class GaitTVAEmodel:
         else:
             ax[0, 0].plot(self.loss_recorder["train"], label="train")
             ax[1, 0].plot(self.loss_recorder["cv"], label="cv")
-            # x_length = np.linspace(self.epoch - epoch_windows, self.epoch - 1, epoch_windows)
-            # y_train = self.loss_recorder["train"][self.epoch - epoch_windows:]
-            # y_cv = self.loss_recorder["cv"][self.epoch - epoch_windows:]
-            #
-            # y_min_train, y_max_train = np.min(y_train), np.max(y_train)
-            # y_min_cv, y_max_cv = np.min(y_cv), np.max(y_cv)
-            #
-            # ax[0, 1].plot(x_length, y_train, label="train")
-            # ax[1, 1].plot(x_length, y_cv, label="cv")
-            # ax[0, 1].set_ylim(y_min_train, y_max_train)
-            # ax[1, 1].set_ylim(y_min_cv, y_max_cv)
+
         if self.epoch > epoch_windows_zoomed:
             sliding_plot(epoch_windows_zoomed, ax[0, 1], ax[1, 1])
         else:

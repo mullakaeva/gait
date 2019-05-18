@@ -237,9 +237,11 @@ class GaitGeneratorFromDFforSingleSkeletonVAE:
         # Load dataframe and collapse the num_samples and num_frames
         df = load_df_pickle(df_pickle_path)
         output_arr, labels = self._flatten_feature_sequences(df)  # (num_frames * num_samples, 50)
-        self.weighting_vec = self._calculate_precision_weighting(output_arr)
         self.m, self.total_num_rows = m, output_arr.shape[0]
         del df  # free memory to python process but not the system
+
+        self.weighting_vec = np.ones(self.total_fea_dims)  # Construct weighting vector
+        self.weighting_vec[excluded_points_flatten] = 0  # masked out nose, two eyes
 
         # Construct train and test set
         split_idx = int(self.total_num_rows*train_portion)
@@ -300,28 +302,3 @@ class GaitGeneratorFromDFforSingleSkeletonVAE:
         label_arr = np.concatenate(label_vec_list)  # (num_frames * num_samples, )
 
         return output_arr, label_arr
-
-    def _calculate_precision_weighting(self, arr):
-        """
-        Calculate weighting for each joint by their grand precision. Keypoints specified in self.excluded_keypoints,
-        (e.g. nose, r/l eyes) are assigned 0 s.t. they don't affect training.
-
-        Parameters
-        ----------
-        arr : numpy.darray
-            With shape (num_frames * num_samples, 50).
-
-        Returns
-        -------
-        precision_vec : numpy.darray
-            With shape (50, ). Weighting for each key point. Indexes specified by self.excluded_keypoints are 0.
-        -------
-
-        """
-        precision_vec = 1/( ( np.std(arr, axis=0) ** 2 ) + 1e-8)
-        # Normalization, while ignoring the exluded indices
-        precision_vec[self.excluded_keypoints] = np.nan
-        precision_vec = precision_vec /np.nanmax(precision_vec)
-        # Excluded indices assigned to 0 to eliminate their effect
-        precision_vec[np.isnan(precision_vec)] = 0
-        return precision_vec

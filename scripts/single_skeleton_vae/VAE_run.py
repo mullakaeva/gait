@@ -1,7 +1,7 @@
 import torch
 import torch.optim as optim
 import torch.nn as nn
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import MultiStepLR
 import numpy as np
 import os
 import matplotlib.pyplot as plt
@@ -39,15 +39,6 @@ def gen_paths(x_max, y_max, num_lines, num_steps=100):
     x_list = []
     y_list = []
 
-    # Generate spiral
-    # a, b = 0, -0.3
-    # t_range = [0, 2 * np.pi]
-    # speed = 7
-    # steps_spiral = 500
-    # x_spiral, y_spiral = gen_spiral(a, b, speed, t_range, steps_spiral)
-    # x_list.append(x_spiral)
-    # y_list.append(y_spiral)
-
     # Cross paths
     x_start_list = np.linspace(-x_max, x_max, num_lines)
     y_start_list = np.linspace(-y_max, y_max, num_lines)
@@ -72,39 +63,43 @@ class GaitVAEmodel:
                  input_dims=50,
                  latent_dims=2,
                  gpu=0,
-                 step_lr_decay=0.8,
-                 kld = None,
-                 precision_weighting=False,
+                 kld=None,
+                 dropout_p=0,
+                 init_lr=0.001,
+                 lr_milestones=[50, 100, 150],
+                 lr_decay_gamma=0.1,
                  save_chkpt_path=None,
                  data_gen_type="single"):
+
+        # Others
+        self.epoch = 0
 
         # Standard Init
         self.data_gen = data_gen
         self.input_dims = input_dims
         self.latent_dims = latent_dims
+        self.dropout_p = dropout_p
+        self.kld = kld
+        self.data_gen_type = data_gen_type
         self.device = torch.device('cuda:{}'.format(gpu))
         self.save_chkpt_path = save_chkpt_path
 
-        # Learning rate decay, regularization_constant, loss
-        self.step_lr_decay = step_lr_decay
-        self.kld = kld
-        self.pw = precision_weighting
-        self.loss_train_meter, self.loss_cv_meter = RunningAverageMeter(), RunningAverageMeter()
+        # Weigted vector for loss
+        self.weights_vec = self._get_weights_vec()
 
-        # initialize model, params, optimizer
+        # initialize model, params, optimizer, loss
         self.model = VAE(input_dims=self.input_dims,
                          latent_dims=self.latent_dims,
-                         kld=self.kld).to(self.device)
-        if data_gen_type == "single":
-            self.weight_vec = torch.from_numpy(self.data_gen.get_weighting_vec().reshape(1,-1)).float().to(self.device)  # (1, 50)
-        elif data_gen_type == "temporal":
-            self.weight_vec = torch.ones(1, 50).float().to(self.device)
+                         kld=self.kld,
+                         dropout_p=self.dropout_p).to(self.device)
         params = self.model.parameters()
-        self.optimizer = optim.Adam(params, lr=0.001)
+        self.loss_train_meter, self.loss_cv_meter = RunningAverageMeter(), RunningAverageMeter()
+        self.loss_recorder = {"train": [], "cv": []}
+        self.optimizer = optim.Adam(params, lr=init_lr)
+        self.lr_scheduler = MultiStepLR(self.optimizer, milestones=lr_milestones, gamma=lr_decay_gamma)
 
     def train(self, n_epochs=50):
         try:
-            scheduler = StepLR(self.optimizer, step_size=1, gamma=self.step_lr_decay)
             for epoch in range(n_epochs):
                 iter_idx = 0
                 for (x, _), (x_test, _) in self.data_gen.iterator():
@@ -116,13 +111,13 @@ class GaitVAEmodel:
                     self.model.eval()
                     with torch.no_grad():
                         out_test, mu_test, logvar_test, z_test = self.model(x_test)
-                        loss_test = self.loss_function(x_test, out_test, mu_test, logvar_test)
+                        loss_test, _ = self.loss_function(x_test, out_test, mu_test, logvar_test)
                         self.loss_cv_meter.update(loss_test.item())
 
                     # Training
                     self.model.train()
                     out, mu, logvar, z = self.model(x)
-                    loss_train = self.loss_function(x, out, mu, logvar)
+                    loss_train, _ = self.loss_function(x, out, mu, logvar)
                     self.loss_train_meter.update(loss_train.item())
 
                     # Back-prop
@@ -132,17 +127,22 @@ class GaitVAEmodel:
                     iter_idx += 1
 
                     # Print Info
-                    print("\rEpoch %d/%d at iter %d/%d | Loss: %0.8f | CV Loss: %0.8f" % (epoch, n_epochs, iter_idx,
+                    print("\rEpoch %d/%d at iter %d/%d | Loss: %0.8f | CV Loss: %0.8f" % (self.epoch,
+                                                                                          n_epochs,
+                                                                                          iter_idx,
                                                                                           self.data_gen.num_rows / self.data_gen.m,
                                                                                           self.loss_train_meter.avg,
                                                                                           self.loss_cv_meter.avg)
                           , flush=True, end="")
-                scheduler.step()
                 print()
+                # save (overwrite) model file every epoch
                 self._save_model()
+                self._plot_loss()
+                self.lr_scheduler.step(epoch=self.epoch)
 
-        except KeyboardInterrupt:
+        except KeyboardInterrupt as e:
             self._save_model()
+            raise e
 
     def sample_from_latents(self, z_c):
         """
@@ -173,9 +173,13 @@ class GaitVAEmodel:
         checkpoint = torch.load(load_chkpt_path)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         self.loss_train_meter = checkpoint['loss_train_meter']
         self.loss_cv_meter = checkpoint['loss_cv_meter']
+        self.loss_recorder = checkpoint['loss_recorder']
         self.kld = checkpoint['kld']
+        self.dropout_p = checkpoint['dropout_p']
+        self.epoch = len(self.loss_recorder["train"])
         print('Loaded ckpt from {}'.format(load_chkpt_path))
 
     def _save_model(self):
@@ -183,30 +187,80 @@ class GaitVAEmodel:
             torch.save({
                 'model_state_dict': self.model.state_dict(),
                 'optimizer_state_dict': self.optimizer.state_dict(),
+                'lr_scheduler': self.lr_scheduler.state_dict(),
                 'loss_train_meter': self.loss_train_meter,
                 'loss_cv_meter': self.loss_cv_meter,
-                "kld" : self.kld
+                'loss_recorder': self.loss_recorder,
+                'kld': self.kld,
+                'dropout_p': self.dropout_p
             }, self.save_chkpt_path)
             print('Stored ckpt at {}'.format(self.save_chkpt_path))
 
     def loss_function(self, x, pred, mu, logvar):
-        # kld loss
-        kld_multiplier = 0 if self.kld is None else self.kld
 
-        # precision weighting
-        weight_power_switch = 1 if self.pw else 0
+        # Set KLD
+        if self.kld is None:
+            kld_loss = 0
+        else:
+            kld_loss = self.kld * (-0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()))
 
-        # Different types of loss
-        recon_loss = torch.sum( (self.weight_vec**weight_power_switch) * ((x-pred)**2) )
-        kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        # Set recon loss
+        recon_loss = torch.mean(self.weights_vec * ((x - pred) ** 2))
 
-        # Combining the loss
-        loss = recon_loss + kld_multiplier * kld_loss
-        return loss
+        # Combine different losses
+        loss = recon_loss + kld_loss
+        return loss, kld_loss
 
+    def _plot_loss(self):
+
+        def sliding_plot(epoch_windows, ax1, ax2):
+            x_length = np.linspace(self.epoch - epoch_windows, self.epoch - 1, epoch_windows)
+            y_train = self.loss_recorder["train"][self.epoch - epoch_windows:]
+            y_cv = self.loss_recorder["cv"][self.epoch - epoch_windows:]
+
+            y_min_train, y_max_train = np.min(y_train), np.max(y_train)
+            y_min_cv, y_max_cv = np.min(y_cv), np.max(y_cv)
+
+            ax1.plot(x_length, y_train, label="train")
+            ax2.plot(x_length, y_cv, label="cv")
+            ax1.set_ylim(y_min_train, y_max_train)
+            ax2.set_ylim(y_min_cv, y_max_cv)
+
+        epoch_windows_original = 100
+        epoch_windows_zoomed = 20
+
+        self.loss_recorder["train"].append(self.loss_train_meter.avg)
+        self.loss_recorder["cv"].append(self.loss_cv_meter.avg)
+        self.epoch = len(self.loss_recorder["train"])
+        fig, ax = plt.subplots(2, 2, figsize=(12, 12))
+
+        # Restrict to show only recent epochs
+        if self.epoch > epoch_windows_original:
+            sliding_plot(epoch_windows_original, ax[0, 0], ax[1, 0])
+        else:
+            ax[0, 0].plot(self.loss_recorder["train"], label="train")
+            ax[1, 0].plot(self.loss_recorder["cv"], label="cv")
+
+        if self.epoch > epoch_windows_zoomed:
+            sliding_plot(epoch_windows_zoomed, ax[0, 1], ax[1, 1])
+        else:
+            ax[0, 1].axis("off")
+            ax[1, 1].axis("off")
+        fig.suptitle(os.path.splitext(os.path.split(self.save_chkpt_path)[1])[0])
+        plt.savefig(self.save_chkpt_path + ".png", dpi=300)
+
+    def _get_weights_vec(self):
+        if self.data_gen_type == "temporal":
+            weights_vec = self.data_gen.weighting_vec.copy().reshape(1, -1, 1)
+        elif self.data_gen_type == "single":
+            weights_vec = self.data_gen.weighting_vec.copy().reshape(1, -1)
+
+        weights_vec = torch.from_numpy(weights_vec).float().to(self.device)
+        return weights_vec
 
 class GaitSingleSkeletonVAEvisualiser:
     def __init__(self, data_gen, load_model_path, save_vid_dir, latent_dims=2, input_dims=50, kld=None,
+                 dropout_p=0,
                  model_identifier="",
                  data_gen_type="single"):
         # Hard coded stuff
@@ -224,6 +278,7 @@ class GaitSingleSkeletonVAEvisualiser:
                                             input_dims=input_dims,
                                             latent_dims=latent_dims,
                                             kld=kld,
+                                            dropout_p=dropout_p,
                                             data_gen_type=data_gen_type)
         self.model_container.load_model(self.load_model_path)
 
@@ -318,7 +373,6 @@ class GaitSingleSkeletonVAEvisualiser:
                 in_test, labels_test = torch.from_numpy(in_test).float().to(self.model_container.device), \
                                        torch.from_numpy(labels_test).float().to(self.model_container.device)
                 out_test, mu, logvar, z = self.model_container.model(in_test)
-                # loss = total_loss(in_test, out_test, mu, logvar)
             break
 
         # Unflatten data

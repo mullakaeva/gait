@@ -16,15 +16,15 @@ def linear_block(input_channels, output_channels, dropout_p=0.25):
     block_list = [
         LN_layer,
         bn_layer,
-        relu_layer
-        # droput_layer
+        relu_layer,
+        droput_layer
     ]
 
     return block_list
 
 
 class VAE(nn.Module):
-    def __init__(self, input_dims=50, latent_dims=2, kld=None):
+    def __init__(self, input_dims=50, latent_dims=2, kld=None, dropout_p=0):
 
         super(VAE, self).__init__()
         self.device = torch.device('cuda:0')
@@ -42,11 +42,14 @@ class VAE(nn.Module):
         self.first_layer = nn.Linear(self.input_dims, self.encode_units[0])
 
         self.en_blk1 = nn.Sequential(*linear_block(input_channels=self.encode_units[0],
-                                                   output_channels=self.encode_units[1]))
+                                                   output_channels=self.encode_units[1],
+                                                   dropout_p=dropout_p))
         self.en_blk2 = nn.Sequential(*linear_block(input_channels=self.encode_units[1],
-                                                   output_channels=self.encode_units[2]))
+                                                   output_channels=self.encode_units[2],
+                                                   dropout_p=dropout_p))
         self.en_blk3 = nn.Sequential(*linear_block(input_channels=self.encode_units[2],
-                                                   output_channels=self.encode_units[3]))
+                                                   output_channels=self.encode_units[3],
+                                                   dropout_p=dropout_p))
         if self.kld is None:
             self.en2latents = nn.Linear(self.encode_units[3], self.latent_dims)
         else:
@@ -56,11 +59,14 @@ class VAE(nn.Module):
         self.latents2de = nn.Linear(self.latent_dims, self.decode_units[0])
 
         self.de_blk1 = nn.Sequential(*linear_block(input_channels=self.decode_units[0],
-                                                   output_channels=self.decode_units[1]))
+                                                   output_channels=self.decode_units[1],
+                                                   dropout_p=dropout_p))
         self.de_blk2 = nn.Sequential(*linear_block(input_channels=self.decode_units[1],
-                                                   output_channels=self.decode_units[2]))
+                                                   output_channels=self.decode_units[2],
+                                                   dropout_p=dropout_p))
         self.de_blk3 = nn.Sequential(*linear_block(input_channels=self.decode_units[2],
-                                                   output_channels=self.decode_units[3]))
+                                                   output_channels=self.decode_units[3],
+                                                   dropout_p=dropout_p))
         self.final_layer = nn.Linear(self.decode_units[3], self.input_dims)
 
     def forward(self, x):
@@ -122,7 +128,7 @@ class VAE(nn.Module):
         z = self.reparameterize(mu, logvar)
         return z, mu, logvar
 
-def total_loss(x, pred, mu, logvar):
+def debug_loss(x, pred, mu, logvar):
     recon_loss = 0.5 * torch.mean((x-pred)**2)
     KLD = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
     loss = recon_loss + 0.00001*KLD
@@ -138,7 +144,7 @@ if __name__ == "__main__":
     for i in range(10):
         optimizer.zero_grad()
         out, mu, logvar, z = model.forward(x)
-        loss = total_loss(x, out, mu, logvar)
+        loss = debug_loss(x, out, mu, logvar)
         print(loss)
         loss.backward()
         optimizer.step()
