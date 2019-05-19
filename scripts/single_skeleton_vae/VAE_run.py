@@ -6,6 +6,7 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 import skvideo.io as skv
+from sklearn.decomposition import PCA
 from common.keypoints_format import plot2arr_skeleton
 from .Model import VAE
 from common.utils import RunningAverageMeter
@@ -150,7 +151,7 @@ class GaitVAEmodel:
         Parameters
         ----------
         z_c : numpy.darray
-            Conditioned latent encoding vectors, with shape (num_samples, num_latents + num_labels)
+            Conditioned latent encoding vectors, with shape (num_samples, num_latents)
 
         Returns
         -------
@@ -201,7 +202,18 @@ class GaitVAEmodel:
         # Set KLD
         if self.kld is None:
             kld_loss = 0
-        else:
+        elif isinstance(self.kld, list):
+            # if self.kld is list, then self.kld = [start_epoch, end_epoch, kld_const]
+            kld_const = self.kld[2]
+            kld_range = self.kld[1] - self.kld[0]
+            if self.epoch < self.kld[0]:
+                kld_loss = 0
+            elif (self.epoch >= self.kld[0]) and (self.epoch < self.kld[1]):
+                kld_multiplier = kld_const * (self.epoch - self.kld[0])/kld_range
+                kld_loss = kld_multiplier* (-0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()))
+            elif (self.epoch >= self.kld[1]):
+                kld_loss = kld_const * (-0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()))
+        elif isinstance(self.kld, int):
             kld_loss = self.kld * (-0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()))
 
         # Set recon loss
@@ -266,11 +278,12 @@ class GaitSingleSkeletonVAEvisualiser:
         # Hard coded stuff
         self.num_samples_pred = 5
         self.num_samples_latents = 3
-        self.latents_dim, self.label_dim = 2, 0
+        self.latents_dim = latent_dims
         self.times = 128
 
         # Init
         self.data_gen = data_gen
+        self.pca_fitter = None
         self.load_model_path = load_model_path
         self.save_vid_dir = save_vid_dir
         self.model_identifier = model_identifier
@@ -337,6 +350,12 @@ class GaitSingleSkeletonVAEvisualiser:
         z_space, labels_space = self._sample_collapsed_data()
         x_max, y_max = np.quantile(np.abs(z_space[:, 0]), 0.995), np.quantile(np.abs(z_space[:, 1]), 0.995)
         num_scale = int(np.mean([x_max,y_max]))+1
+
+        if z_space.shape[1] > 2:
+            self.pca_fitter = PCA(n_components=z_space.shape[1])
+            z_space = self.pca_fitter.fit_transform(z_space)
+
+        # Sample data from the grid lines of the latent space
         x_skeleton, y_skeleton, latents, _ = self._get_latents_results(x_max=x_max,
                                                                        y_max=y_max,
                                                                        num_lines=num_scale*4,
@@ -381,6 +400,7 @@ class GaitSingleSkeletonVAEvisualiser:
                                                                                                   50)
         in_test_np, out_test_np = np.transpose(in_test_np, (0, 2, 1)), np.transpose(out_test_np, (0, 2, 1))
         mu_np = mu.cpu().numpy().reshape(n_samples, n_times, -1)
+
         mu_np = np.transpose(mu_np, (0, 2, 1))
         x_in, y_in = in_test_np[:, 0:25, :], in_test_np[:, 25:50, :]
         x_out, y_out = out_test_np[:, 0:25, :], out_test_np[:, 25:50, :]
@@ -389,7 +409,12 @@ class GaitSingleSkeletonVAEvisualiser:
     def _get_latents_results(self, x_max, y_max, num_lines, num_steps):
         x_paths, y_paths, color_vals = gen_paths(x_max, y_max, num_lines, num_steps)
         z_paths = np.vstack((x_paths, y_paths)).T  # (num_samples, 2)
-        # z = torch.from_numpy(z_paths).to(self.model_container.device)
+
+        if (self.pca_fitter is not None) and (self.latents_dim>2):
+            z_paths_extend = np.zeros((z_paths.shape[0], self.latents_dim))
+            z_paths_extend[:, 0:2] = z_paths
+            z_paths = self.pca_fitter.inverse_transform(z_paths_extend)
+
         x_tensor, y_tensor = self.model_container.sample_from_latents(z_paths)
 
         return x_tensor, y_tensor, z_paths, color_vals
