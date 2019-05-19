@@ -380,7 +380,7 @@ class GaitSingleSkeletonVAEvisualiser:
         in_test_np, out_test_np = in_test_np.reshape(n_samples, n_times, 50), out_test_np.reshape(n_samples, n_times,
                                                                                                   50)
         in_test_np, out_test_np = np.transpose(in_test_np, (0, 2, 1)), np.transpose(out_test_np, (0, 2, 1))
-        mu_np = z.cpu().numpy().reshape(n_samples, n_times, -1)
+        mu_np = mu.cpu().numpy().reshape(n_samples, n_times, -1)
         mu_np = np.transpose(mu_np, (0, 2, 1))
         x_in, y_in = in_test_np[:, 0:25, :], in_test_np[:, 25:50, :]
         x_out, y_out = out_test_np[:, 0:25, :], out_test_np[:, 25:50, :]

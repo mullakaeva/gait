@@ -293,8 +293,8 @@ class GaitCVAEvisualiser:
                                  pca_enableds=[True, False]):
 
         z, labels = self._get_all_latents_results()
-        pca_model = PCA(n_components=50)
-        z_pca = pca_model.fit_transform(z)
+        # pca_model = PCA(n_components=50)
+        # z_pca = pca_model.fit_transform(z)
         save_img_dir = os.path.join(self.save_vid_dir, "umap")
         # Loop for creating umap
         for neigh in n_neighs:
