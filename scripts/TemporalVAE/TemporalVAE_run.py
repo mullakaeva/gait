@@ -40,8 +40,15 @@ class GaitTVAEmodel:
         self.kld = kld
         self.dropout_p = dropout_p
         self.weights_vec = self._get_weights_vec()
-        self.loss_train_meter, self.loss_cv_meter = RunningAverageMeter(), RunningAverageMeter()
-        self.loss_recorder = {"train": [], "cv": []}
+        self.loss_meter = {
+            "train_recon": RunningAverageMeter(),
+            "cv_recon": RunningAverageMeter(),
+            "train_kld": RunningAverageMeter(),
+            "cv_kld": RunningAverageMeter()
+        }
+        self.loss_recorder = {
+            "train_recon": [], "cv_recon": [], "train_kld": [], "cv_kld": []
+        }
 
         # Model initialization
         self.save_chkpt_path = save_chkpt_path
@@ -67,14 +74,17 @@ class GaitTVAEmodel:
                     self.model.eval()
                     with torch.no_grad():
                         out_test, mu_test, logvar_test, z_test = self.model(x_test)
-                        loss_test, kld_loss_test = self.loss_function(x_test, out_test, mu_test, logvar_test)
-                        self.loss_cv_meter.update(loss_test.item())
+                        loss_cv, (recon_loss_cv, kld_loss_cv) = self.loss_function(x_test, out_test, mu_test,
+                                                                                   logvar_test)
+                        self.loss_meter["cv_recon"].update(recon_loss_cv.item())
+                        self.loss_meter["cv_kld"].update(kld_loss_cv.item())
 
                     # Train set
                     self.model.train()
                     out, mu, logvar, z = self.model(x)
-                    loss, kld_loss = self.loss_function(x, out, mu, logvar)
-                    self.loss_train_meter.update(loss.item())
+                    loss, (recon_loss, kld_loss) = self.loss_function(x, out, mu, logvar)
+                    self.loss_meter["train_recon"].update(recon_loss.item())
+                    self.loss_meter["train_kld"].update(kld_loss.item())
 
                     # Back-prop
                     loss.backward()
@@ -82,12 +92,16 @@ class GaitTVAEmodel:
                     iter_idx += 1
 
                     # Print Info
-                    print("\rEpoch %d/%d at iter %d/%d | Loss: %0.8f | CV Loss: %0.8f" % (self.epoch,
-                                                                                          n_epochs,
-                                                                                          iter_idx,
-                                                                                          self.data_gen.num_rows / self.data_gen.m,
-                                                                                          self.loss_train_meter.avg,
-                                                                                          self.loss_cv_meter.avg),
+                    print("\rEpoch %d/%d at iter %d/%d | Loss: (%0.8f, %0.8f) | CV Loss: (%0.8f, %0.8f)" % (
+                        self.epoch,
+                        n_epochs,
+                        iter_idx,
+                        self.data_gen.num_rows / self.data_gen.m,
+                        self.loss_meter["train_recon"].avg,
+                        self.loss_meter["train_kld"].avg,
+                        self.loss_meter["cv_recon"].avg,
+                        self.loss_meter["cv_kld"].avg
+                    ),
                           flush=True, end="")
                 print()
                 # save (overwrite) model file every epoch
@@ -129,12 +143,11 @@ class GaitTVAEmodel:
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
-        self.loss_train_meter = checkpoint['loss_train_meter']
-        self.loss_cv_meter = checkpoint['loss_cv_meter']
+        self.loss_meter = checkpoint['loss_meter']
         self.loss_recorder = checkpoint['loss_recorder']
         self.kld = checkpoint['kld']
         self.dropout_p = checkpoint['dropout_p']
-        self.epoch = len(self.loss_recorder["train"])
+        self.epoch = len(self.loss_recorder["train_recon"])
         print('Loaded ckpt from {}'.format(load_chkpt_path))
 
     def _save_model(self):
@@ -143,8 +156,7 @@ class GaitTVAEmodel:
                 'model_state_dict': self.model.state_dict(),
                 'optimizer_state_dict': self.optimizer.state_dict(),
                 'lr_scheduler': self.lr_scheduler.state_dict(),
-                'loss_train_meter': self.loss_train_meter,
-                'loss_cv_meter': self.loss_cv_meter,
+                'loss_meter': self.loss_meter,
                 'loss_recorder': self.loss_recorder,
                 'kld': self.kld,
                 'dropout_p': self.dropout_p
@@ -165,58 +177,64 @@ class GaitTVAEmodel:
         return velo_loss
 
     def loss_function(self, x, pred, mu, logvar):
-        # Set KLD
+        # Set KLD loss
         if self.kld is None:
-            kld_loss = 0
+            kld_multiplier = 0
         elif isinstance(self.kld, list):
-            # if self.kld is list, then self.kld = [start_epoch, end_epoch, kld_const]
-            kld_const = self.kld[2]
-            kld_range = self.kld[1] - self.kld[0]
-            if self.epoch < self.kld[0]:
-                kld_loss = 0
-            elif (self.epoch >= self.kld[0]) and (self.epoch < self.kld[1]):
-                kld_multiplier = kld_const * (self.epoch - self.kld[0])/kld_range
-                kld_loss = kld_multiplier* (-0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()))
-            elif (self.epoch >= self.kld[1]):
-                kld_loss = kld_const * (-0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()))
+            kld_multiplier = self._get_kld_multiplier(self.kld[0], self.kld[1], self.kld[2])
         elif isinstance(self.kld, int):
-            kld_loss = self.kld * (-0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()))
+            kld_multiplier = self.kld
+        kld_loss_indicator = (-0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()))
+        kld_loss = kld_multiplier * kld_loss_indicator
 
         # Set recon loss
         recon_loss = torch.mean(self.weights_vec * ((x - pred) ** 2))
         # Combine different losses
         loss = recon_loss + kld_loss
-        return loss, kld_loss
+        return loss, (recon_loss, kld_loss_indicator)
 
     def _plot_loss(self):
 
         def sliding_plot(epoch_windows, ax1, ax2):
             x_length = np.linspace(self.epoch - epoch_windows, self.epoch - 1, epoch_windows)
-            y_train = self.loss_recorder["train"][self.epoch - epoch_windows:]
-            y_cv = self.loss_recorder["cv"][self.epoch - epoch_windows:]
+            # Retrieve loss
+            y_train_recon = self.loss_recorder["train_recon"][self.epoch - epoch_windows:]
+            y_cv_recon = self.loss_recorder["cv_recon"][self.epoch - epoch_windows:]
+            y_train_kld = self.loss_recorder["train_kld"][self.epoch - epoch_windows:]
+            y_cv_kld = self.loss_recorder["cv_kld"][self.epoch - epoch_windows:]
 
-            y_min_train, y_max_train = np.min(y_train), np.max(y_train)
-            y_min_cv, y_max_cv = np.min(y_cv), np.max(y_cv)
+            # Plot training loss
+            ax1.plot(x_length, y_train_recon, c="b")
+            ax1_kld = ax1.twinx()
+            ax1_kld.plot(x_length, y_train_kld, c="r")
+            ax1.set_ylabel("train_recon")
+            ax1_kld.set_ylabel("train_kld")
 
-            ax1.plot(x_length, y_train, label="train")
-            ax2.plot(x_length, y_cv, label="cv")
-            ax1.set_ylim(y_min_train, y_max_train)
-            ax2.set_ylim(y_min_cv, y_max_cv)
+            # Plot cv loss
+            ax2.plot(x_length, y_cv_recon, c="b")
+            ax2_kld = ax2.twinx()
+            ax2_kld.plot(x_length, y_cv_kld, c="r")
+            ax2.set_ylabel("cv_recon")
+            ax2_kld.set_ylabel("cv_kld")
 
-        epoch_windows_original = 100
+
+        epoch_windows_original = 150
         epoch_windows_zoomed = 20
 
-        self.loss_recorder["train"].append(self.loss_train_meter.avg)
-        self.loss_recorder["cv"].append(self.loss_cv_meter.avg)
-        self.epoch = len(self.loss_recorder["train"])
+        # Recording loss history
+        self.loss_recorder["train_recon"].append(self.loss_meter["train_recon"].avg)
+        self.loss_recorder["train_kld"].append(self.loss_meter["train_kld"].avg)
+        self.loss_recorder["cv_recon"].append(self.loss_meter["cv_recon"].avg)
+        self.loss_recorder["cv_kld"].append(self.loss_meter["cv_kld"].avg)
+
+        self.epoch = len(self.loss_recorder["train_recon"])
         fig, ax = plt.subplots(2, 2, figsize=(12, 12))
 
         # Restrict to show only recent epochs
         if self.epoch > epoch_windows_original:
             sliding_plot(epoch_windows_original, ax[0, 0], ax[1, 0])
         else:
-            ax[0, 0].plot(self.loss_recorder["train"], label="train")
-            ax[1, 0].plot(self.loss_recorder["cv"], label="cv")
+            sliding_plot(self.epoch, ax[0, 0], ax[1, 0])
 
         if self.epoch > epoch_windows_zoomed:
             sliding_plot(epoch_windows_zoomed, ax[0, 1], ax[1, 1])
@@ -225,6 +243,14 @@ class GaitTVAEmodel:
             ax[1, 1].axis("off")
         fig.suptitle(os.path.splitext(os.path.split(self.save_chkpt_path)[1])[0])
         plt.savefig(self.save_chkpt_path + ".png", dpi=300)
+
+    def _get_kld_multiplier(self, start, end, const):
+        if self.epoch < start:
+            return 0
+        elif (self.epoch >= start) and (self.epoch < end):
+            return (const / (end - start))
+        elif self.epoch >= end:
+            return const
 
 
 class GaitCVAEvisualiser:
@@ -299,45 +325,63 @@ class GaitCVAEvisualiser:
         ski.imsave(save_img_path, draw_clusters)
 
     def visualize_umap_embedding(self,
-                                 n_neighs=[5, 15, 50],
-                                 min_dists=[0.001, 0.1, 0.5],
-                                 metrics=["euclidean"],
-                                 pca_enableds=[True, False]):
+                                 neigh=15,
+                                 min_dist=0.1,
+                                 metric="euclidean",
+                                 pca=False):
 
-        z, labels = self._get_all_latents_results()
-        # pca_model = PCA(n_components=50)
-        # z_pca = pca_model.fit_transform(z)
+        z, labels, (x_train_vis, z_vis) = self._get_all_latents_results()
         save_img_dir = os.path.join(self.save_vid_dir, "umap")
-        # Loop for creating umap
-        for neigh in n_neighs:
-            for min_dist in min_dists:
-                for metric in metrics:
-                    for pca in pca_enableds:
-                        umap_identifier = "PCA-{}_neigh-{}_dist-{}_metric-{}".format(pca, neigh, min_dist, metric)
 
-                        save_img1 = os.path.join(save_img_dir,
-                                                 self.model_identifier + "_type1_" + umap_identifier + ".png")
-                        save_img2 = os.path.join(save_img_dir,
-                                                 self.model_identifier + "_type2_" + umap_identifier + ".png")
-                        print("Visualizing U-map | {}".format(umap_identifier))
+        # # Umap creation
+        umap_identifier = "PCA-{}_neigh-{}_dist-{}_metric-{}".format(pca, neigh, min_dist, metric)
 
-                        # U-map embedding
-                        if pca:
-                            embedding = umap.UMAP(n_neighbors=neigh,
-                                                  min_dist=min_dist,
-                                                  metric=metric).fit_transform(z_pca)
-                        else:
-                            embedding = umap.UMAP(n_neighbors=neigh,
-                                                  min_dist=min_dist,
-                                                  metric=metric).fit_transform(z)
+        save_img1 = os.path.join(save_img_dir,
+                                 self.model_identifier + "_type1_" + umap_identifier + ".png")
+        save_img2 = os.path.join(save_img_dir,
+                                 self.model_identifier + "_type2_" + umap_identifier + ".png")
+        print("Visualizing U-map | {}".format(umap_identifier))
 
-                        # Output image
-                        title = self.model_identifier + "\n{}".format(umap_identifier)
-                        draw_clusters_sep = plot_umap_with_labels(embedding, labels, title)
-                        plt.savefig(save_img1, dpi=300)
-                        draw_clusters_sin = plot_latent_labels_cluster(embedding, labels, title, alpha=0.2)
-                        plt.savefig(save_img2, dpi=300)
-                        plt.close()
+        # U-map embedding
+        if pca:
+            pca_model = PCA(n_components=50)
+            z_pca = pca_model.fit_transform(z)
+            embedding = umap.UMAP(n_neighbors=neigh,
+                                  min_dist=min_dist,
+                                  metric=metric).fit_transform(z_pca)
+        else:
+            embedding = umap.UMAP(n_neighbors=neigh,
+                                  min_dist=min_dist,
+                                  metric=metric).fit_transform(z)
+
+        # Output image
+        title = self.model_identifier + "\n{}".format(umap_identifier)
+        _ = plot_umap_with_labels(embedding, labels, title)
+        plt.savefig(save_img1, dpi=300)
+        _ = plot_latent_labels_cluster(embedding, labels, title, alpha=0.1)
+        plt.savefig(save_img2, dpi=300)
+        plt.close()
+
+        # # Draw video with umap
+        save_vid_path = os.path.join(save_img_dir,
+                                     self.model_identifier + "_umapVID_" + umap_identifier + ".mp4")
+        vwriter = skv.FFmpegWriter(save_vid_path)
+        for vis_idx in range(30):
+            skeleton_title = "Sampled-{}_label-{}-{}".format(vis_idx, labels[vis_idx,], gaitclass(labels[vis_idx,]))
+            video_example = x_train_vis[vis_idx, :, :] # (50, 128)
+            embedding_example = embedding[vis_idx] # Since x_train is the first batch, the indices are same
+            draw_clusters_sin = plot_latent_labels_cluster(embedding, labels, title, alpha=0.1,
+                                                           target_scatter=embedding_example, figsize=None)
+            for t in range(self.data_gen.n):
+                print("\rNow writing Umap Recon_sample-%d | time-%d" % (vis_idx, t), flush=True, end="")
+                draw_arr_in = plot2arr_skeleton(x=video_example[0:25, t],
+                                                y=video_example[25:, t],
+                                                title=skeleton_title
+                                                )
+                output_frame = np.concatenate((draw_arr_in, draw_clusters_sin), axis=1)
+                vwriter.writeFrame(output_frame)
+        vwriter.close()
+
 
     def _get_pred_results(self):
         for (x_train, labels_train), (_, _) in self.data_gen.iterator():
@@ -354,6 +398,8 @@ class GaitCVAEvisualiser:
     def _get_all_latents_results(self):
         z_list = []
         labels_list = []
+
+        i = 0
         for (x_train, labels_train), (_, _) in self.data_gen.iterator():
             self.model_container.model.eval()
             with torch.no_grad():
@@ -361,31 +407,31 @@ class GaitCVAEvisualiser:
                 out_test, _, _, z = self.model_container.model(x_train)
                 z_list.append(z.cpu().numpy())
                 labels_list.append(labels_train)
+            if i == 0:
+                x_train_vis, z_vis = x_train.cpu().numpy().copy(), z.cpu().numpy().copy()
+            i += 1
         all_z = np.vstack(z_list)
         all_labels = np.concatenate(labels_list)
-        return all_z, all_labels
+        return all_z, all_labels, (x_train_vis, z_vis)
 
 
-def plot_latent_labels_cluster(z_space, z_labels, title, x_lim=None, y_lim=None, alpha=0.5):
-    fig, ax = plt.subplots(figsize=(12, 12))
+def plot_latent_labels_cluster(z_space, z_labels, title, x_lim=None, y_lim=None, alpha=0.5, target_scatter=None,
+                               figsize = (12,12)):
+    if figsize is None:
+        fig, ax = plt.subplots()
+    else:
+        fig, ax = plt.subplots(figsize=figsize)
 
     # Scatter all vectors
     im_space = ax.scatter(z_space[:, 0], z_space[:, 1], c=z_labels, cmap="hsv", marker=".", alpha=alpha)
     fig.colorbar(im_space)
 
-    # Set limits of axes
-    # if x_lim is None:
-    #     x_max = np.quantile(np.abs(z_space[:, 0]), 0.995)
-    #     x_lim = (-x_max, x_max)
-    #
-    # if y_lim is None:
-    #     y_max = np.quantile(np.abs(z_space[:, 1]), 0.995)
-    #     y_lim = (-y_max, y_max)
+    # Draw a specific scatter point
+    if target_scatter is not None:
+        ax.scatter(target_scatter[0], target_scatter[1], c="k", marker="x")
 
     # Title, limits and drawing
     fig.suptitle(title)
-    # ax.set_xlim(x_lim[0], x_lim[1])
-    # ax.set_ylim(y_lim[0], y_lim[1])
     fig.canvas.draw()
 
     # Convert to numpy array
