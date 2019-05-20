@@ -6,9 +6,9 @@ def run_train_and_vis_on_tvae():
     import os
 
     df_path = "/mnt/data/raw_features_zmatrix_row_labels.pickle"
-    kld_list = (None,)
+    kld_list = ([100, 150, 0.0001],)
     # latent_dims_list = (20,)
-    latent_dims_list = (20, 2)
+    latent_dims_list = (100,)
     hidden_units = 512
     dropout_p = 0
     times = 128

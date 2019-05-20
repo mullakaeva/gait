@@ -168,8 +168,20 @@ class GaitTVAEmodel:
         # Set KLD
         if self.kld is None:
             kld_loss = 0
-        else:
+        elif isinstance(self.kld, list):
+            # if self.kld is list, then self.kld = [start_epoch, end_epoch, kld_const]
+            kld_const = self.kld[2]
+            kld_range = self.kld[1] - self.kld[0]
+            if self.epoch < self.kld[0]:
+                kld_loss = 0
+            elif (self.epoch >= self.kld[0]) and (self.epoch < self.kld[1]):
+                kld_multiplier = kld_const * (self.epoch - self.kld[0])/kld_range
+                kld_loss = kld_multiplier* (-0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()))
+            elif (self.epoch >= self.kld[1]):
+                kld_loss = kld_const * (-0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()))
+        elif isinstance(self.kld, int):
             kld_loss = self.kld * (-0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()))
+
         # Set recon loss
         recon_loss = torch.mean(self.weights_vec * ((x - pred) ** 2))
         # Combine different losses
