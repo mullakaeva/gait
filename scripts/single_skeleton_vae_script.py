@@ -5,7 +5,7 @@ def run_train_and_vis_on_ssvae():
 
     from single_skeleton_vae.VAE_run import GaitVAEmodel
     from common.generator import GaitGeneratorFromDFforTemporalVAE, GaitGeneratorFromDFforSingleSkeletonVAE
-    from single_skeleton_vae.VAE_run import GaitSingleSkeletonVAEvisualiser, GaitSingleSkeletonVAEvisualiserCollapsed
+    from single_skeleton_vae.VAE_run import GaitSingleSkeletonVAEvisualiser
     import os
 
     df_path = "/mnt/data/raw_features_zmatrix_row_labels.pickle"
@@ -40,12 +40,12 @@ def run_train_and_vis_on_ssvae():
             # vae.train(100)
 
             # Visualize low-dimensional space
-            data_gen = GaitGeneratorFromDFforSingleSkeletonVAE(df_path, m=space_samples, train_portion=0.999)
-            viser = GaitSingleSkeletonVAEvisualiser(data_gen=data_gen, load_model_path=load_model_path,
-                                                    save_vid_dir=save_vid_dir, latent_dims=latent_dims,
-                                                    kld=kld, dropout_p=drop_p, model_identifier=model_identifier,
-                                                    data_gen_type="single")
-            viser.visualise_latent_space()
+            # data_gen = GaitGeneratorFromDFforSingleSkeletonVAE(df_path, m=space_samples, train_portion=0.999)
+            # viser = GaitSingleSkeletonVAEvisualiser(data_gen=data_gen, load_model_path=load_model_path,
+            #                                         save_vid_dir=save_vid_dir, latent_dims=latent_dims,
+            #                                         kld=kld, dropout_p=drop_p, model_identifier=model_identifier,
+            #                                         data_gen_type="single")
+            # viser.visualise_latent_space()
 
             # Visualize action sequence
             data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=50, seed=60)

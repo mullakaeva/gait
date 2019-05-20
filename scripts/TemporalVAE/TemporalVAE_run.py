@@ -6,7 +6,7 @@ import os
 import matplotlib.pyplot as plt
 import skvideo.io as skv
 import skimage.io as ski
-from common.keypoints_format import plot2arr_skeleton
+from common.visualisation import plot2arr_skeleton, plot_latent_space_with_labels, plot_umap_with_labels, build_frame_4by4
 from .Model_t128 import TemporalVAE
 from common.utils import RunningAverageMeter, gaitclass
 import umap
@@ -321,16 +321,17 @@ class GaitCVAEvisualiser:
         save_img_path = os.path.join(self.save_vid_dir,
                                      "cluster_%s.png" % (self.model_identifier))
 
-        draw_clusters = plot_latent_labels_cluster(z, labels, self.model_identifier)
+        draw_clusters = plot_latent_space_with_labels(z, labels, self.model_identifier)
         ski.imsave(save_img_path, draw_clusters)
 
     def visualize_umap_embedding(self,
+                                 num_vids=5,
                                  neigh=15,
                                  min_dist=0.1,
                                  metric="euclidean",
                                  pca=False):
 
-        z, labels, (x_train_vis, z_vis) = self._get_all_latents_results()
+        z, labels, (x_train_vis, z_vis, out_vis) = self._get_all_latents_results()
         save_img_dir = os.path.join(self.save_vid_dir, "umap")
 
         # # Umap creation
@@ -358,7 +359,7 @@ class GaitCVAEvisualiser:
         title = self.model_identifier + "\n{}".format(umap_identifier)
         _ = plot_umap_with_labels(embedding, labels, title)
         plt.savefig(save_img1, dpi=300)
-        _ = plot_latent_labels_cluster(embedding, labels, title, alpha=0.1)
+        _ = plot_latent_space_with_labels(embedding, labels, title, alpha=0.2)
         plt.savefig(save_img2, dpi=300)
         plt.close()
 
@@ -366,19 +367,24 @@ class GaitCVAEvisualiser:
         save_vid_path = os.path.join(save_img_dir,
                                      self.model_identifier + "_umapVID_" + umap_identifier + ".mp4")
         vwriter = skv.FFmpegWriter(save_vid_path)
-        for vis_idx in range(30):
+        for vis_idx in range(num_vids):
             skeleton_title = "Sampled-{}_label-{}-{}".format(vis_idx, labels[vis_idx,], gaitclass(labels[vis_idx,]))
             video_example = x_train_vis[vis_idx, :, :] # (50, 128)
+            recon_example = out_vis[vis_idx, :, :]
             embedding_example = embedding[vis_idx] # Since x_train is the first batch, the indices are same
-            draw_clusters_sin = plot_latent_labels_cluster(embedding, labels, title, alpha=0.1,
-                                                           target_scatter=embedding_example, figsize=None)
+            draw_clusters_sin = plot_latent_space_with_labels(embedding, labels, title, alpha=0.2,
+                                                              target_scatter=embedding_example, figsize=None)
             for t in range(self.data_gen.n):
                 print("\rNow writing Umap Recon_sample-%d | time-%d" % (vis_idx, t), flush=True, end="")
                 draw_arr_in = plot2arr_skeleton(x=video_example[0:25, t],
                                                 y=video_example[25:, t],
                                                 title=skeleton_title
                                                 )
-                output_frame = np.concatenate((draw_arr_in, draw_clusters_sin), axis=1)
+                draw_arr_out = plot2arr_skeleton(x=recon_example[0:25, t],
+                                                 y=recon_example[25:, t],
+                                                 title=skeleton_title
+                                                 )
+                output_frame = build_frame_4by4([draw_arr_in, draw_clusters_sin, draw_arr_out])
                 vwriter.writeFrame(output_frame)
         vwriter.close()
 
@@ -404,60 +410,15 @@ class GaitCVAEvisualiser:
             self.model_container.model.eval()
             with torch.no_grad():
                 x_train = torch.from_numpy(x_train).float().to(self.model_container.device)
-                out_test, _, _, z = self.model_container.model(x_train)
+                out_train, _, _, z = self.model_container.model(x_train)
                 z_list.append(z.cpu().numpy())
                 labels_list.append(labels_train)
             if i == 0:
                 x_train_vis, z_vis = x_train.cpu().numpy().copy(), z.cpu().numpy().copy()
+                out_train_vis = out_train.cpu().numpy().copy()
             i += 1
         all_z = np.vstack(z_list)
         all_labels = np.concatenate(labels_list)
-        return all_z, all_labels, (x_train_vis, z_vis)
+        return all_z, all_labels, (x_train_vis, z_vis, out_train_vis)
 
 
-def plot_latent_labels_cluster(z_space, z_labels, title, x_lim=None, y_lim=None, alpha=0.5, target_scatter=None,
-                               figsize = (12,12)):
-    if figsize is None:
-        fig, ax = plt.subplots()
-    else:
-        fig, ax = plt.subplots(figsize=figsize)
-
-    # Scatter all vectors
-    im_space = ax.scatter(z_space[:, 0], z_space[:, 1], c=z_labels, cmap="hsv", marker=".", alpha=alpha)
-    fig.colorbar(im_space)
-
-    # Draw a specific scatter point
-    if target_scatter is not None:
-        ax.scatter(target_scatter[0], target_scatter[1], c="k", marker="x")
-
-    # Title, limits and drawing
-    fig.suptitle(title)
-    fig.canvas.draw()
-
-    # Convert to numpy array
-    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-
-    return data
-
-
-def plot_umap_with_labels(z, labels, title):
-    fig, ax = plt.subplots(2, 4, figsize=(14, 7))
-    ax = ax.ravel()
-    for class_idx in range(8):
-        embed_this_class = z[labels.astype(int) == class_idx, :]
-        embed_other_classes = z[labels.astype(int) != class_idx, :]
-        ax[class_idx].scatter(embed_other_classes[:, 0], embed_other_classes[:, 1], c="0.1", marker=".", alpha=0.25)
-        ax[class_idx].scatter(embed_this_class[:, 0], embed_this_class[:, 1], c="r", marker=".", alpha=0.1)
-        ax[class_idx].set_title("{}".format(gaitclass(class_idx)))
-        ax[class_idx].axis("off")
-
-    # Title, limits and drawing
-    fig.suptitle(title)
-    fig.canvas.draw()
-
-    # Convert to numpy array
-    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-
-    return data

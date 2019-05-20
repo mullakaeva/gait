@@ -28,20 +28,20 @@ def run_train_and_vis_on_tvae():
             model_identifier = "Drop-{}_KLD-{}_l-{}_h-{}".format(dropout_p, kld, latent_dims, hidden_units)
 
             # Train
-            data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=512, n=times)
-            save_model_path = "TemporalVAE/model_chkpt/ckpt_%s.pth" % (model_identifier)
-            tvae = GaitTVAEmodel(data_gen,
-                                 hidden_channels=hidden_units,
-                                 latent_dims=latent_dims,
-                                 kld=kld,
-                                 dropout_p=dropout_p,
-                                 init_lr=init_lr,
-                                 lr_milestones=lr_milestones,
-                                 lr_decay_gamma=lr_decay_gamma,
-                                 save_chkpt_path=save_model_path)
-            if os.path.isfile(save_model_path):
-                tvae.load_model(save_model_path)
-            tvae.train(200)
+            # data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=512, n=times)
+            # save_model_path = "TemporalVAE/model_chkpt/ckpt_%s.pth" % (model_identifier)
+            # tvae = GaitTVAEmodel(data_gen,
+            #                      hidden_channels=hidden_units,
+            #                      latent_dims=latent_dims,
+            #                      kld=kld,
+            #                      dropout_p=dropout_p,
+            #                      init_lr=init_lr,
+            #                      lr_milestones=lr_milestones,
+            #                      lr_decay_gamma=lr_decay_gamma,
+            #                      save_chkpt_path=save_model_path)
+            # if os.path.isfile(save_model_path):
+            #     tvae.load_model(save_model_path)
+            # tvae.train(200)
 
             # # Visualize
             data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=4000, n=times, seed=60)
@@ -56,9 +56,10 @@ def run_train_and_vis_on_tvae():
                                        lr_milestones=lr_milestones,
                                        lr_decay_gamma=lr_decay_gamma
                                        )
-            viser.visualise_random_reconstruction_label_clusters(5)
+            # viser.visualise_random_reconstruction_label_clusters(5)
 
             viser.visualize_umap_embedding(
+                num_vids=5,
                 neigh=u_neighbors,
                 min_dist=min_dists,
                 metric=metrics,

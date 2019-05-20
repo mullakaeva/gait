@@ -7,7 +7,7 @@ import os
 import matplotlib.pyplot as plt
 import skvideo.io as skv
 from sklearn.decomposition import PCA
-from common.keypoints_format import plot2arr_skeleton
+from common.visualisation import plot2arr_skeleton, plot_latent_space_with_labels, build_frame_4by4
 from .Model import VAE
 from common.utils import RunningAverageMeter
 
@@ -283,7 +283,6 @@ class GaitSingleSkeletonVAEvisualiser:
 
         # Init
         self.data_gen = data_gen
-        self.pca_fitter = None
         self.load_model_path = load_model_path
         self.save_vid_dir = save_vid_dir
         self.model_identifier = model_identifier
@@ -326,8 +325,10 @@ class GaitSingleSkeletonVAEvisualiser:
                                                 y_lim=(0.6, -0.6))
                 # Plot and draw latent
                 title_latent = "%s | Latent" % self.model_identifier
-                draw_arr_latent = plot2arr_latent_space(mu[sample_idx, :, :].T, t, title_latent,
-                                                        z_info=(z_space_flattened, labels_flattened))
+
+                draw_arr_latent = plot_latent_space_with_labels(z_space_flattened, labels_flattened, title_latent,
+                                                                target_scatter=mu[sample_idx, :, t])
+
                 # Plot and draw output
                 title_out = "%s | Output-%d | time-%0.3fs" % (self.model_identifier, sample_idx, time)
                 draw_arr_out = plot2arr_skeleton(x_out[sample_idx, :, t],
@@ -336,11 +337,8 @@ class GaitSingleSkeletonVAEvisualiser:
                                                 x_lim=(-0.6, 0.6),
                                                 y_lim=(0.6, -0.6))
                 # Build video frame
-                h, w = draw_arr_in.shape[0], draw_arr_in.shape[1]
-                output_arr = np.zeros((h * 2, w * 2, 3))
-                output_arr[0:h, 0:w, :] = draw_arr_in
-                output_arr[h:h * 2, 0:w, :] = draw_arr_out
-                output_arr[0:h, w:w * 2, :] = draw_arr_latent
+                output_arr = build_frame_4by4([draw_arr_in, draw_arr_out, draw_arr_latent])
+                plt.close()
                 vwriter.writeFrame(output_arr)
             print()
             vwriter.close()
@@ -350,10 +348,6 @@ class GaitSingleSkeletonVAEvisualiser:
         z_space, labels_space = self._sample_collapsed_data()
         x_max, y_max = np.quantile(np.abs(z_space[:, 0]), 0.995), np.quantile(np.abs(z_space[:, 1]), 0.995)
         num_scale = int(np.mean([x_max,y_max]))+1
-
-        if z_space.shape[1] > 2:
-            self.pca_fitter = PCA(n_components=z_space.shape[1])
-            z_space = self.pca_fitter.fit_transform(z_space)
 
         # Sample data from the grid lines of the latent space
         x_skeleton, y_skeleton, latents, _ = self._get_latents_results(x_max=x_max,
@@ -370,12 +364,11 @@ class GaitSingleSkeletonVAEvisualiser:
             ske_arr = plot2arr_skeleton(x_skeleton[sample_idx, :],
                                         y_skeleton[sample_idx, :],
                                         title)
-            lataent_arr = plot2arr_latent_space(latents, sample_idx, title,
-                                                x_lim=(-x_max, x_max),
-                                                y_lim=(-y_max, y_max),
-                                                z_info=(z_space, labels_space))
+            latents_arr = plot_latent_space_with_labels(z_space, labels_space, title, x_lim=(-x_max, x_max),
+                                                        y_lim=(-y_max, y_max), alpha=0.5,
+                                                        target_scatter=latents[sample_idx, ])
 
-            output_arr = np.concatenate((ske_arr, lataent_arr), axis=1)
+            output_arr = np.concatenate((ske_arr, latents_arr), axis=1)
             vwriter.writeFrame(output_arr)
         vwriter.close()
 
@@ -408,15 +401,15 @@ class GaitSingleSkeletonVAEvisualiser:
 
     def _get_latents_results(self, x_max, y_max, num_lines, num_steps):
         x_paths, y_paths, color_vals = gen_paths(x_max, y_max, num_lines, num_steps)
-        z_paths = np.vstack((x_paths, y_paths)).T  # (num_samples, 2)
+        z_paths_temp = np.vstack((x_paths, y_paths)).T  # (num_samples, 2)
 
-        if (self.pca_fitter is not None) and (self.latents_dim>2):
-            z_paths_extend = np.zeros((z_paths.shape[0], self.latents_dim))
-            z_paths_extend[:, 0:2] = z_paths
-            z_paths = self.pca_fitter.inverse_transform(z_paths_extend)
-
+        # Pad with 0's if latent dimension > 2
+        if self.latents_dim > 2:
+            z_paths = np.zeros((z_paths_temp.shape[0], self.latents_dim))
+            z_paths[:, 0:2] = z_paths_temp
+        else:
+            z_paths = z_paths_temp
         x_tensor, y_tensor = self.model_container.sample_from_latents(z_paths)
-
         return x_tensor, y_tensor, z_paths, color_vals
 
     def _sample_collapsed_data(self):
@@ -429,104 +422,3 @@ class GaitSingleSkeletonVAEvisualiser:
             break
         z = z.cpu().numpy()
         return z, labels_train
-
-
-class GaitSingleSkeletonVAEvisualiserCollapsed(GaitSingleSkeletonVAEvisualiser):
-    def visualise_vid(self):
-        # Init
-        os.makedirs(self.save_vid_dir, exist_ok=True)
-
-        # Visualise in-out pair
-        for sample_num in range(self.num_samples_pred):
-            (x_in, y_in), (x_out, y_out) = self._get_pred_results()
-
-            save_vid_path = os.path.join(self.save_vid_dir, "Recon-%d.mp4" % (sample_num))
-            vwriter = skv.FFmpegWriter(save_vid_path)
-            for t in range(self.times):
-                time = t / 25
-                print("\rNow writing Recon_sample-%d | time-%0.4fs" % (sample_num, time), flush=True, end="")
-                title_in = "Input: %d | Time = %0.4fs" % (sample_num, time)
-                draw_arr_in = plot2arr_skeleton(x_in, y_in, 0, t, title_in)
-                title_out = "Output: %d | Time = %0.4fs" % (sample_num, time)
-                draw_arr_out = plot2arr_skeleton(x_out, y_out, 0, t, title_out)
-
-                draw_arr_recon = np.concatenate((draw_arr_in, draw_arr_out), axis=1)
-                vwriter.writeFrame(draw_arr_recon)
-            print()
-            vwriter.close()
-
-    def _get_pred_results(self):
-        for (data_train, data_test) in self.data_gen.iterator():
-            data = data_train[0:self.times, ]
-
-            # Forward pass
-            self.model_container.model.eval()
-            with torch.no_grad():
-                in_test = torch.from_numpy(data).float().to(self.model_container.device)
-                out_test, mu, logvar, z = self.model_container.model(in_test)
-                loss = self.model_container.loss_function(in_test, out_test, mu, logvar)
-            break
-
-        out_test_np = out_test.cpu().numpy()
-        x_in, y_in = np.transpose(data[:, :, 0:25], (1, 2, 0)), np.transpose(data[:, :, 25:], (1, 2, 0))
-        x_out, y_out = np.transpose(out_test_np[:, :, 0:25], (1, 2, 0)), np.transpose(out_test_np[:, :, 25:], (1, 2, 0))
-        return (x_in, y_in), (x_out, y_out)
-
-
-def plot2arr_latents(z, title, x_lim=(-1, 1), y_lim=(-1, 1)):
-    fig, ax = plt.subplots()
-    ax.scatter(z[0], z[1], marker="x")
-    fig.suptitle(title)
-    ax.set_xlim(x_lim[0], x_lim[1])
-    ax.set_ylim(y_lim[0], y_lim[1])
-    fig.tight_layout()
-    fig.canvas.draw()
-    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-    plt.close()
-    return data
-
-
-def plot2arr_latent_space(z, sample_idx, title, x_lim=None, y_lim=None, z_info=None):
-    """
-    Parameters
-    ----------
-    z : numpy.darray
-        Latent vectors with shape (num, 2).
-    title : str
-        Title of the plot
-    x_lim : tuple
-        Limits of the x_axix
-    y_lim : tuple
-        Limits of the y_axix
-
-    Returns
-    -------
-    data : numpy.darray
-        Output drawn array
-    """
-    fig, ax = plt.subplots()
-    # Scatter all vectors
-    if z_info is not None:
-        z_space, z_labels = z_info
-        im_space = ax.scatter(z_space[:, 0], z_space[:, 1], c=z_labels, cmap="hsv", marker=".", alpha=0.5)
-        fig.colorbar(im_space)
-
-    # Scatter current vectors
-    ax.scatter(z[sample_idx, 0], z[sample_idx, 1], c="k", marker="x")
-
-    # Title, limits and drawing
-    fig.suptitle(title)
-    if x_lim is not None:
-        ax.set_xlim(x_lim[0], x_lim[1])
-    if y_lim is not None:
-        ax.set_ylim(y_lim[0], y_lim[1])
-    fig.tight_layout()
-    fig.canvas.draw()
-
-    # Data
-    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-    plt.close()
-    return data
-

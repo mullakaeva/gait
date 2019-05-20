@@ -143,29 +143,3 @@ def index2feature(n):
     
     return feature
 
-
-def draw_skeleton(ax, x, y):
-    side_dict = {
-        "m": "k",
-        "l": "r",
-        "r": "b"
-    }
-    for start, end, side in openpose_body_draw_sequence:
-        ax.plot(x[[start, end]], y[[start, end]], c=side_dict[side])
-    return ax
-
-
-def plot2arr_skeleton(x, y, title, x_lim=(-0.6, 0.6), y_lim=(0.6, -0.6)):
-    fig, ax = plt.subplots()
-    ax.scatter(np.delete(x, excluded_points), np.delete(y, excluded_points))
-    ax = draw_skeleton(ax, x, y)
-    fig.suptitle(title)
-    ax.set_xlim(x_lim[0], x_lim[1])
-    ax.set_ylim(y_lim[0], y_lim[1])
-    fig.tight_layout()
-    fig.canvas.draw()
-    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-    plt.close()
-    return data
-

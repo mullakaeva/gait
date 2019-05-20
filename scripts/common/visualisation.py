@@ -1,4 +1,5 @@
-from .utils import read_preprocessed_keypoints, fullfile
+from .utils import read_preprocessed_keypoints, fullfile, gaitclass
+from .keypoints_format import openpose_body_draw_sequence, excluded_points
 from glob import glob
 import numpy as np
 import skvideo.io as skv
@@ -6,6 +7,95 @@ import skimage.io as ski
 from skimage.color import rgba2rgb
 import matplotlib.pyplot as plt
 import os
+
+
+def build_frame_4by4(arrs):
+    h, w = arrs[0].shape[0], arrs[0].shape[1]
+    output_arr = np.zeros((h * 2, w * 2, 3))
+    if len(arrs) == 3:
+        arr1, arr2, arr3 = arrs
+    elif len(arrs) > 3:
+        arr1, arr2, arr3, arr4 = arrs
+        output_arr[h:h * 2, w:w * 2, :] = arr4
+    output_arr[0:h, 0:w, :] = arr1
+    output_arr[h:h * 2, 0:w, :] = arr2
+    output_arr[0:h, w:w * 2, :] = arr3
+
+    return output_arr
+
+def draw_skeleton(ax, x, y):
+    side_dict = {
+        "m": "k",
+        "l": "r",
+        "r": "b"
+    }
+    for start, end, side in openpose_body_draw_sequence:
+        ax.plot(x[[start, end]], y[[start, end]], c=side_dict[side])
+    return ax
+
+def plot2arr_skeleton(x, y, title, x_lim=(-0.6, 0.6), y_lim=(0.6, -0.6)):
+    fig, ax = plt.subplots()
+    ax.scatter(np.delete(x, excluded_points), np.delete(y, excluded_points))
+    ax = draw_skeleton(ax, x, y)
+    fig.suptitle(title)
+    ax.set_xlim(x_lim[0], x_lim[1])
+    ax.set_ylim(y_lim[0], y_lim[1])
+    fig.tight_layout()
+    fig.canvas.draw()
+    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    plt.close()
+    return data
+
+
+def plot_latent_space_with_labels(z_space, z_labels, title, x_lim=None, y_lim=None, alpha=0.5, target_scatter=None,
+                                  figsize=(6.4, 4.8)):
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Scatter all vectors
+    im_space = ax.scatter(z_space[:, 0], z_space[:, 1], c=z_labels, cmap="hsv", marker=".", alpha=alpha)
+    fig.colorbar(im_space)
+
+    # Draw a specific scatter point
+    if target_scatter is not None:
+        ax.scatter(target_scatter[0], target_scatter[1], c="k", marker="x")
+
+    # Title, limits and drawing
+    if x_lim is not None:
+        ax.set_xlim(x_lim[0], x_lim[1])
+    if y_lim is not None:
+        ax.set_ylim(y_lim[0], y_lim[1])
+    fig.suptitle(title)
+    fig.canvas.draw()
+
+    # Convert to numpy array
+    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+
+    return data
+
+
+def plot_umap_with_labels(z, labels, title):
+    fig, ax = plt.subplots(2, 4, figsize=(14, 7))
+    ax = ax.ravel()
+    for class_idx in range(8):
+        embed_this_class = z[labels.astype(int) == class_idx, :]
+        embed_other_classes = z[labels.astype(int) != class_idx, :]
+        ax[class_idx].scatter(embed_other_classes[:, 0], embed_other_classes[:, 1], c="0.1", marker=".", alpha=0.25)
+        ax[class_idx].scatter(embed_this_class[:, 0], embed_this_class[:, 1], c="r", marker=".", alpha=0.1)
+        ax[class_idx].set_title("{}".format(gaitclass(class_idx)))
+        ax[class_idx].axis("off")
+
+    # Title, limits and drawing
+    fig.suptitle(title)
+    fig.canvas.draw()
+
+    # Convert to numpy array
+    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+
+    return data
 
 
 # OP = OpenPose, DE = Detectron
