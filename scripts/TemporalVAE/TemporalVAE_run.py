@@ -248,7 +248,7 @@ class GaitTVAEmodel:
         if self.epoch < start:
             return 0
         elif (self.epoch >= start) and (self.epoch < end):
-            return (const / (end - start))
+            return const * ((self.epoch - start)/(end - start))
         elif self.epoch >= end:
             return const
 

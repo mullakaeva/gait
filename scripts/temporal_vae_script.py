@@ -7,7 +7,6 @@ def run_train_and_vis_on_tvae():
 
     df_path = "/mnt/data/raw_features_zmatrix_row_labels.pickle"
     kld_list = ([100, 150, 0.0001], )
-    # latent_dims_list = (20,)
     latent_dims_list = (100,)
     hidden_units = 512
     dropout_p = 0
@@ -41,7 +40,7 @@ def run_train_and_vis_on_tvae():
             #                      save_chkpt_path=save_model_path)
             # if os.path.isfile(save_model_path):
             #     tvae.load_model(save_model_path)
-            # tvae.train(200)
+            # tvae.train(140)
 
             # # Visualize
             data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=4000, n=times, seed=60)
@@ -56,10 +55,10 @@ def run_train_and_vis_on_tvae():
                                        lr_milestones=lr_milestones,
                                        lr_decay_gamma=lr_decay_gamma
                                        )
-            # viser.visualise_random_reconstruction_label_clusters(5)
+            viser.visualise_random_reconstruction_label_clusters(5)
 
             viser.visualize_umap_embedding(
-                num_vids=5,
+                num_vids=30,
                 neigh=u_neighbors,
                 min_dist=min_dists,
                 metric=metrics,

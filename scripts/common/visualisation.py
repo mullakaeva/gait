@@ -18,8 +18,8 @@ def build_frame_4by4(arrs):
         arr1, arr2, arr3, arr4 = arrs
         output_arr[h:h * 2, w:w * 2, :] = arr4
     output_arr[0:h, 0:w, :] = arr1
-    output_arr[h:h * 2, 0:w, :] = arr2
-    output_arr[0:h, w:w * 2, :] = arr3
+    output_arr[0:h, w:w * 2, :] = arr2
+    output_arr[h:h * 2, 0:w, :] = arr3
 
     return output_arr
 

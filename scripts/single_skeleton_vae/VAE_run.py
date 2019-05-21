@@ -94,8 +94,15 @@ class GaitVAEmodel:
                          kld=self.kld,
                          dropout_p=self.dropout_p).to(self.device)
         params = self.model.parameters()
-        self.loss_train_meter, self.loss_cv_meter = RunningAverageMeter(), RunningAverageMeter()
-        self.loss_recorder = {"train": [], "cv": []}
+        self.loss_meter = {
+            "train_recon": RunningAverageMeter(),
+            "cv_recon": RunningAverageMeter(),
+            "train_kld": RunningAverageMeter(),
+            "cv_kld": RunningAverageMeter()
+        }
+        self.loss_recorder = {
+            "train_recon": [], "cv_recon": [], "train_kld": [], "cv_kld": []
+        }
         self.optimizer = optim.Adam(params, lr=init_lr)
         self.lr_scheduler = MultiStepLR(self.optimizer, milestones=lr_milestones, gamma=lr_decay_gamma)
 
@@ -108,33 +115,39 @@ class GaitVAEmodel:
                     x_test = torch.from_numpy(x_test).float().to(self.device)
                     self.optimizer.zero_grad()
 
-                    # Loss of CV set and training set
+                    # CV set
                     self.model.eval()
                     with torch.no_grad():
                         out_test, mu_test, logvar_test, z_test = self.model(x_test)
-                        loss_test, _ = self.loss_function(x_test, out_test, mu_test, logvar_test)
-                        self.loss_cv_meter.update(loss_test.item())
+                        loss_cv, (recon_loss_cv, kld_loss_cv) = self.loss_function(x_test, out_test, mu_test,
+                                                                                   logvar_test)
+                        self.loss_meter["cv_recon"].update(recon_loss_cv.item())
+                        self.loss_meter["cv_kld"].update(kld_loss_cv.item())
 
-                    # Training
+                    # Train set
                     self.model.train()
                     out, mu, logvar, z = self.model(x)
-                    loss_train, _ = self.loss_function(x, out, mu, logvar)
-                    self.loss_train_meter.update(loss_train.item())
+                    loss, (recon_loss, kld_loss) = self.loss_function(x, out, mu, logvar)
+                    self.loss_meter["train_recon"].update(recon_loss.item())
+                    self.loss_meter["train_kld"].update(kld_loss.item())
 
                     # Back-prop
-                    loss_train.backward()
+                    loss.backward()
                     self.optimizer.step()
-
                     iter_idx += 1
 
                     # Print Info
-                    print("\rEpoch %d/%d at iter %d/%d | Loss: %0.8f | CV Loss: %0.8f" % (self.epoch,
-                                                                                          n_epochs,
-                                                                                          iter_idx,
-                                                                                          self.data_gen.num_rows / self.data_gen.m,
-                                                                                          self.loss_train_meter.avg,
-                                                                                          self.loss_cv_meter.avg)
-                          , flush=True, end="")
+                    print("\rEpoch %d/%d at iter %d/%d | Loss: (%0.8f, %0.8f) | CV Loss: (%0.8f, %0.8f)" % (
+                        self.epoch,
+                        n_epochs,
+                        iter_idx,
+                        self.data_gen.num_rows / self.data_gen.m,
+                        self.loss_meter["train_recon"].avg,
+                        self.loss_meter["train_kld"].avg,
+                        self.loss_meter["cv_recon"].avg,
+                        self.loss_meter["cv_kld"].avg
+                    ),
+                          flush=True, end="")
                 print()
                 # save (overwrite) model file every epoch
                 self._save_model()
@@ -175,12 +188,12 @@ class GaitVAEmodel:
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
-        self.loss_train_meter = checkpoint['loss_train_meter']
-        self.loss_cv_meter = checkpoint['loss_cv_meter']
+        self.loss_meter = checkpoint['loss_meter']
+        self.loss_recorder = checkpoint['loss_recorder']
         self.loss_recorder = checkpoint['loss_recorder']
         self.kld = checkpoint['kld']
         self.dropout_p = checkpoint['dropout_p']
-        self.epoch = len(self.loss_recorder["train"])
+        self.epoch = len(self.loss_recorder["train_recon"])
         print('Loaded ckpt from {}'.format(load_chkpt_path))
 
     def _save_model(self):
@@ -189,8 +202,7 @@ class GaitVAEmodel:
                 'model_state_dict': self.model.state_dict(),
                 'optimizer_state_dict': self.optimizer.state_dict(),
                 'lr_scheduler': self.lr_scheduler.state_dict(),
-                'loss_train_meter': self.loss_train_meter,
-                'loss_cv_meter': self.loss_cv_meter,
+                'loss_meter': self.loss_meter,
                 'loss_recorder': self.loss_recorder,
                 'kld': self.kld,
                 'dropout_p': self.dropout_p
@@ -198,60 +210,64 @@ class GaitVAEmodel:
             print('Stored ckpt at {}'.format(self.save_chkpt_path))
 
     def loss_function(self, x, pred, mu, logvar):
-
-        # Set KLD
+        # Set KLD loss
         if self.kld is None:
-            kld_loss = 0
+            kld_multiplier = 0
         elif isinstance(self.kld, list):
-            # if self.kld is list, then self.kld = [start_epoch, end_epoch, kld_const]
-            kld_const = self.kld[2]
-            kld_range = self.kld[1] - self.kld[0]
-            if self.epoch < self.kld[0]:
-                kld_loss = 0
-            elif (self.epoch >= self.kld[0]) and (self.epoch < self.kld[1]):
-                kld_multiplier = kld_const * (self.epoch - self.kld[0])/kld_range
-                kld_loss = kld_multiplier* (-0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()))
-            elif (self.epoch >= self.kld[1]):
-                kld_loss = kld_const * (-0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()))
+            kld_multiplier = self._get_kld_multiplier(self.kld[0], self.kld[1], self.kld[2])
         elif isinstance(self.kld, int):
-            kld_loss = self.kld * (-0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()))
+            kld_multiplier = self.kld
+        kld_loss_indicator = (-0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()))
+        kld_loss = kld_multiplier * kld_loss_indicator
 
         # Set recon loss
         recon_loss = torch.mean(self.weights_vec * ((x - pred) ** 2))
-
         # Combine different losses
         loss = recon_loss + kld_loss
-        return loss, kld_loss
+        return loss, (recon_loss, kld_loss_indicator)
 
     def _plot_loss(self):
 
         def sliding_plot(epoch_windows, ax1, ax2):
             x_length = np.linspace(self.epoch - epoch_windows, self.epoch - 1, epoch_windows)
-            y_train = self.loss_recorder["train"][self.epoch - epoch_windows:]
-            y_cv = self.loss_recorder["cv"][self.epoch - epoch_windows:]
+            # Retrieve loss
+            y_train_recon = self.loss_recorder["train_recon"][self.epoch - epoch_windows:]
+            y_cv_recon = self.loss_recorder["cv_recon"][self.epoch - epoch_windows:]
+            y_train_kld = self.loss_recorder["train_kld"][self.epoch - epoch_windows:]
+            y_cv_kld = self.loss_recorder["cv_kld"][self.epoch - epoch_windows:]
 
-            y_min_train, y_max_train = np.min(y_train), np.max(y_train)
-            y_min_cv, y_max_cv = np.min(y_cv), np.max(y_cv)
+            # Plot training loss
+            ax1.plot(x_length, y_train_recon, c="b")
+            ax1_kld = ax1.twinx()
+            ax1_kld.plot(x_length, y_train_kld, c="r")
+            ax1.set_ylabel("train_recon")
+            ax1_kld.set_ylabel("train_kld")
 
-            ax1.plot(x_length, y_train, label="train")
-            ax2.plot(x_length, y_cv, label="cv")
-            ax1.set_ylim(y_min_train, y_max_train)
-            ax2.set_ylim(y_min_cv, y_max_cv)
+            # Plot cv loss
+            ax2.plot(x_length, y_cv_recon, c="b")
+            ax2_kld = ax2.twinx()
+            ax2_kld.plot(x_length, y_cv_kld, c="r")
+            ax2.set_ylabel("cv_recon")
+            ax2_kld.set_ylabel("cv_kld")
 
-        epoch_windows_original = 100
+
+        epoch_windows_original = 150
         epoch_windows_zoomed = 20
 
-        self.loss_recorder["train"].append(self.loss_train_meter.avg)
-        self.loss_recorder["cv"].append(self.loss_cv_meter.avg)
-        self.epoch = len(self.loss_recorder["train"])
+        # Recording loss history
+        self.loss_recorder["train_recon"].append(self.loss_meter["train_recon"].avg)
+        self.loss_recorder["train_kld"].append(self.loss_meter["train_kld"].avg)
+        self.loss_recorder["cv_recon"].append(self.loss_meter["cv_recon"].avg)
+        self.loss_recorder["cv_kld"].append(self.loss_meter["cv_kld"].avg)
+
+        self.epoch = len(self.loss_recorder["train_recon"])
         fig, ax = plt.subplots(2, 2, figsize=(12, 12))
 
         # Restrict to show only recent epochs
         if self.epoch > epoch_windows_original:
             sliding_plot(epoch_windows_original, ax[0, 0], ax[1, 0])
         else:
-            ax[0, 0].plot(self.loss_recorder["train"], label="train")
-            ax[1, 0].plot(self.loss_recorder["cv"], label="cv")
+            sliding_plot(self.epoch, ax[0, 0], ax[1, 0])
 
         if self.epoch > epoch_windows_zoomed:
             sliding_plot(epoch_windows_zoomed, ax[0, 1], ax[1, 1])
@@ -269,6 +285,14 @@ class GaitVAEmodel:
 
         weights_vec = torch.from_numpy(weights_vec).float().to(self.device)
         return weights_vec
+
+    def _get_kld_multiplier(self, start, end, const):
+        if self.epoch < start:
+            return 0
+        elif (self.epoch >= start) and (self.epoch < end):
+            return const * ((self.epoch - start)/(end - start))
+        elif self.epoch >= end:
+            return const
 
 class GaitSingleSkeletonVAEvisualiser:
     def __init__(self, data_gen, load_model_path, save_vid_dir, latent_dims=2, input_dims=50, kld=None,
