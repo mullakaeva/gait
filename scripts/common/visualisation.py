@@ -59,7 +59,7 @@ def plot_latent_space_with_labels(z_space, z_labels, title, x_lim=None, y_lim=No
 
     # Draw a specific scatter point
     if target_scatter is not None:
-        ax.scatter(target_scatter[0], target_scatter[1], c="k", marker="x")
+        ax.scatter(target_scatter[0], target_scatter[1], c="k", marker="x", s=400)
 
     # Title, limits and drawing
     if x_lim is not None:

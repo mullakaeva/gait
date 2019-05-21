@@ -250,7 +250,6 @@ class GaitVAEmodel:
             ax2.set_ylabel("cv_recon")
             ax2_kld.set_ylabel("cv_kld")
 
-
         epoch_windows_original = 150
         epoch_windows_zoomed = 20
 
@@ -290,9 +289,10 @@ class GaitVAEmodel:
         if self.epoch < start:
             return 0
         elif (self.epoch >= start) and (self.epoch < end):
-            return const * ((self.epoch - start)/(end - start))
+            return const * ((self.epoch - start) / (end - start))
         elif self.epoch >= end:
             return const
+
 
 class GaitSingleSkeletonVAEvisualiser:
     def __init__(self, data_gen, load_model_path, save_vid_dir, latent_dims=2, input_dims=50, kld=None,
@@ -300,14 +300,13 @@ class GaitSingleSkeletonVAEvisualiser:
                  model_identifier="",
                  data_gen_type="single"):
         # Hard coded stuff
-        self.num_samples_pred = 5
-        self.num_samples_latents = 3
-        self.latents_dim = latent_dims
+        self.num_samples_pred = 10
         self.times = 128
 
         # Init
         self.data_gen = data_gen
         self.load_model_path = load_model_path
+        self.latents_dim = latent_dims
         self.save_vid_dir = save_vid_dir
         self.model_identifier = model_identifier
         self.model_container = GaitVAEmodel(data_gen,
@@ -321,20 +320,20 @@ class GaitSingleSkeletonVAEvisualiser:
     def visualise_vid(self):
         # Init
         os.makedirs(self.save_vid_dir, exist_ok=True)
-        (x_in, y_in), (x_out, y_out), labels, mu = self._get_pred_results()
+        (x_in, y_in), (x_out, y_out), labels_space, mu_space, z_space = self._get_pred_results()
 
-        labels_expanded = np.repeat(labels.reshape(-1,1), self.times, axis=1)
+        # Sample from latent space and rearrange the shape
+        labels_expanded = np.repeat(labels_space.reshape(-1, 1), z_space.shape[2], axis=1)
         labels_flattened = labels_expanded.flatten()
-        z_x, z_y = mu[:, 0, :], mu[:, 1, :]
-        z_space_flattened = np.concatenate((z_x.flatten().reshape(-1, 1), z_y.flatten().reshape(-1,1)), axis=1)
-        # labels ~ (m, )
-        # mu ~ (m, 2, 128)
+        z_space_x, z_space_y = z_space[:, 0, :], z_space[:, 1, :]
+        z_space_flattened = np.concatenate((z_space_x.flatten().reshape(-1, 1), z_space_y.flatten().reshape(-1, 1)),
+                                             axis=1)
 
         for sample_idx in range(self.num_samples_pred):
 
             save_vid_path = os.path.join(self.save_vid_dir,
-                                         "Sample%d_%s.mp4"% (sample_idx,
-                                                             self.model_identifier))
+                                         "Sample%d_%s.mp4" % (sample_idx,
+                                                              self.model_identifier))
             vwriter = skv.FFmpegWriter(save_vid_path)
             for t in range(self.times):
                 time = t / 25
@@ -351,15 +350,15 @@ class GaitSingleSkeletonVAEvisualiser:
                 title_latent = "%s | Latent" % self.model_identifier
 
                 draw_arr_latent = plot_latent_space_with_labels(z_space_flattened, labels_flattened, title_latent,
-                                                                target_scatter=mu[sample_idx, :, t])
+                                                                target_scatter=mu_space[sample_idx, :, t])
 
                 # Plot and draw output
                 title_out = "%s | Output-%d | time-%0.3fs" % (self.model_identifier, sample_idx, time)
                 draw_arr_out = plot2arr_skeleton(x_out[sample_idx, :, t],
-                                                y_out[sample_idx, :, t],
-                                                title_out,
-                                                x_lim=(-0.6, 0.6),
-                                                y_lim=(0.6, -0.6))
+                                                 y_out[sample_idx, :, t],
+                                                 title_out,
+                                                 x_lim=(-0.6, 0.6),
+                                                 y_lim=(0.6, -0.6))
                 # Build video frame
                 output_arr = build_frame_4by4([draw_arr_in, draw_arr_out, draw_arr_latent])
                 plt.close()
@@ -369,14 +368,14 @@ class GaitSingleSkeletonVAEvisualiser:
 
     def visualise_latent_space(self):
         # Randomly sample the data to visualze the latent-label distribution
-        z_space, labels_space = self._sample_collapsed_data()
+        z_space, labels_space, _ = self._sample_collapsed_data()
         x_max, y_max = np.quantile(np.abs(z_space[:, 0]), 0.995), np.quantile(np.abs(z_space[:, 1]), 0.995)
-        num_scale = int(np.mean([x_max,y_max]))+1
+        num_scale = int(np.mean([x_max, y_max])) + 1
 
         # Sample data from the grid lines of the latent space
         x_skeleton, y_skeleton, latents, _ = self._get_latents_results(x_max=x_max,
                                                                        y_max=y_max,
-                                                                       num_lines=num_scale*4,
+                                                                       num_lines=num_scale * 4,
                                                                        num_steps=200)
         num_sample = x_skeleton.shape[0]
         save_vid_path = os.path.join(self.save_vid_dir,
@@ -390,7 +389,7 @@ class GaitSingleSkeletonVAEvisualiser:
                                         title)
             latents_arr = plot_latent_space_with_labels(z_space, labels_space, title, x_lim=(-x_max, x_max),
                                                         y_lim=(-y_max, y_max), alpha=0.5,
-                                                        target_scatter=latents[sample_idx, ])
+                                                        target_scatter=latents[sample_idx,])
 
             output_arr = np.concatenate((ske_arr, latents_arr), axis=1)
             vwriter.writeFrame(output_arr)
@@ -411,17 +410,32 @@ class GaitSingleSkeletonVAEvisualiser:
                 out_test, mu, logvar, z = self.model_container.model(in_test)
             break
 
-        # Unflatten data
-        in_test_np, out_test_np = in_test.cpu().numpy(), out_test.cpu().numpy()
-        in_test_np, out_test_np = in_test_np.reshape(n_samples, n_times, 50), out_test_np.reshape(n_samples, n_times,
-                                                                                                  50)
-        in_test_np, out_test_np = np.transpose(in_test_np, (0, 2, 1)), np.transpose(out_test_np, (0, 2, 1))
-        mu_np = mu.cpu().numpy().reshape(n_samples, n_times, -1)
+        def unflatten_and_convert(x_tensor, split_xy=False):
+            x = x_tensor.cpu().numpy()
+            x = x.reshape(n_samples, n_times, -1)
+            x = np.transpose(x, (0, 2, 1))
+            if split_xy:
+                return x[:, 0:25, :], x[:, 25:50, :]
+            else:
+                return x
 
-        mu_np = np.transpose(mu_np, (0, 2, 1))
-        x_in, y_in = in_test_np[:, 0:25, :], in_test_np[:, 25:50, :]
-        x_out, y_out = out_test_np[:, 0:25, :], out_test_np[:, 25:50, :]
-        return (x_in, y_in), (x_out, y_out), labels_train, mu_np
+        # unflatten_data
+        x_in, y_in = unflatten_and_convert(in_test, split_xy=True)
+        x_out, y_out = unflatten_and_convert(out_test, split_xy=True)
+        mu_np = unflatten_and_convert(mu, split_xy=False)
+        z_np = unflatten_and_convert(z, split_xy=False)
+
+
+        # # Unflatten data
+        # in_test_np, out_test_np = in_test.cpu().numpy(), out_test.cpu().numpy()
+        # in_test_np, out_test_np = in_test_np.reshape(n_samples, n_times, 50), out_test_np.reshape(n_samples, n_times,
+        #                                                                                           50)
+        # in_test_np, out_test_np = np.transpose(in_test_np, (0, 2, 1)), np.transpose(out_test_np, (0, 2, 1))
+        # mu_np = mu.cpu().numpy().reshape(n_samples, n_times, -1)
+        # mu_np = np.transpose(mu_np, (0, 2, 1))
+        # x_in, y_in = in_test_np[:, 0:25, :], in_test_np[:, 25:50, :]
+        # x_out, y_out = out_test_np[:, 0:25, :], out_test_np[:, 25:50, :]
+        return (x_in, y_in), (x_out, y_out), labels_train, mu_np, z_np
 
     def _get_latents_results(self, x_max, y_max, num_lines, num_steps):
         x_paths, y_paths, color_vals = gen_paths(x_max, y_max, num_lines, num_steps)
@@ -445,4 +459,5 @@ class GaitSingleSkeletonVAEvisualiser:
                 out_test, mu, logvar, z = self.model_container.model(in_test)
             break
         z = z.cpu().numpy()
-        return z, labels_train
+        mu = mu.cpu().numpy()
+        return z, labels_train, mu

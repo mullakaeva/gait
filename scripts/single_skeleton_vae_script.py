@@ -28,27 +28,27 @@ def run_train_and_vis_on_ssvae():
             save_model_path = "single_skeleton_vae/model_chkpt/ckpt_{}.pth".format(model_identifier)
             load_model_path = "single_skeleton_vae/model_chkpt/ckpt_{}.pth".format(model_identifier)
             print(model_identifier)
-
-            # Training
-            data_gen = GaitGeneratorFromDFforSingleSkeletonVAE(df_path, m=space_samples, train_portion=0.999)
-            vae = GaitVAEmodel(data_gen=data_gen, input_dims=50, latent_dims=latent_dims, kld=kld, dropout_p=drop_p,
-                               init_lr=init_lr, lr_milestones=lr_milestones, lr_decay_gamma=lr_decay_gamma,
-                               save_chkpt_path=save_model_path, data_gen_type="single")
-
-            if os.path.isfile(load_model_path):
-                vae.load_model(load_model_path)
-            vae.train(100)
-
-            # Visualize low-dimensional space
-            data_gen = GaitGeneratorFromDFforSingleSkeletonVAE(df_path, m=space_samples, train_portion=0.999)
-            viser = GaitSingleSkeletonVAEvisualiser(data_gen=data_gen, load_model_path=load_model_path,
-                                                    save_vid_dir=save_vid_dir, latent_dims=latent_dims,
-                                                    kld=kld, dropout_p=drop_p, model_identifier=model_identifier,
-                                                    data_gen_type="single")
-            viser.visualise_latent_space()
+            #
+            # # Training
+            # data_gen = GaitGeneratorFromDFforSingleSkeletonVAE(df_path, m=space_samples, train_portion=0.999)
+            # vae = GaitVAEmodel(data_gen=data_gen, input_dims=50, latent_dims=latent_dims, kld=kld, dropout_p=drop_p,
+            #                    init_lr=init_lr, lr_milestones=lr_milestones, lr_decay_gamma=lr_decay_gamma,
+            #                    save_chkpt_path=save_model_path, data_gen_type="single")
+            #
+            # if os.path.isfile(load_model_path):
+            #     vae.load_model(load_model_path)
+            # vae.train(100)
+            #
+            # # Visualize low-dimensional space
+            # data_gen = GaitGeneratorFromDFforSingleSkeletonVAE(df_path, m=space_samples, train_portion=0.999)
+            # viser = GaitSingleSkeletonVAEvisualiser(data_gen=data_gen, load_model_path=load_model_path,
+            #                                         save_vid_dir=save_vid_dir, latent_dims=latent_dims,
+            #                                         kld=kld, dropout_p=drop_p, model_identifier=model_identifier,
+            #                                         data_gen_type="single")
+            # viser.visualise_latent_space()
 
             # Visualize action sequence
-            data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=50, seed=60)
+            data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=int(space_samples/128), seed=60)
             viser = GaitSingleSkeletonVAEvisualiser(data_gen=data_gen, load_model_path=load_model_path,
                                                     save_vid_dir=save_vid_dir, latent_dims=latent_dims,
                                                     kld=kld, dropout_p=drop_p, model_identifier=model_identifier,

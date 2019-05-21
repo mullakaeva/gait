@@ -55,7 +55,7 @@ def run_train_and_vis_on_tvae():
                                        lr_milestones=lr_milestones,
                                        lr_decay_gamma=lr_decay_gamma
                                        )
-            viser.visualise_random_reconstruction_label_clusters(5)
+            # viser.visualise_random_reconstruction_label_clusters(5)
 
             viser.visualize_umap_embedding(
                 num_vids=30,
