@@ -98,6 +98,21 @@ def plot_umap_with_labels(z, labels, title):
     return data
 
 
+def plot_pca_explained_var(fitters, title, save_path=None):
+    fig, ax = plt.subplots(len(fitters), figsize=(12,12))
+    for idx, fitter in enumerate(fitters):
+        var = fitter.explained_variance_ratio_
+        x_line = np.arange(var.shape[0])
+        ax[idx].bar(x_line, var)
+
+    fig.suptitle(title)
+    if save_path is None:
+        return fig, ax
+    else:
+        plt.savefig(save_path, dpi=300)
+        plt.close()
+
+
 # OP = OpenPose, DE = Detectron
 class Visualiser2D_OP_DE():
     def __init__(self, preprocessed_2D_OP, preprocessed_2D_DE, input_video_path):

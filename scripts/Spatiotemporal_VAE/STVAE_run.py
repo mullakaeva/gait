@@ -9,7 +9,7 @@ import pprint
 from common.utils import MeterAssembly
 from .Model import SpatioTemporalVAE
 from common.visualisation import plot2arr_skeleton, plot_latent_space_with_labels, plot_umap_with_labels, \
-    build_frame_4by4
+    build_frame_4by4, plot_pca_explained_var
 
 from sklearn.decomposition import PCA
 import skvideo.io as skv
@@ -351,12 +351,16 @@ class STVAEmodel:
         return grad
 
     def _get_classification_acc(self, pred_labels, labels):
-        # import pdb
-        # pdb.set_trace()
         class_loss_indicator = self.class_criterion(pred_labels, labels)
         pred_labels_np, labels_np = pred_labels.cpu().detach().numpy(), labels.cpu().detach().numpy()
         acc = np.mean(np.argmax(pred_labels_np, axis=1) == labels_np) * 100
         return class_loss_indicator, acc
+
+    def save_model_losses_data(self, save_vid_dir, model_identifier):
+        import pandas as pd
+        loss_data = self.loss_meter.get_recorders()
+        df_losses = pd.DataFrame(loss_data)
+        df_losses.to_csv(os.path.join(save_vid_dir, "results_data", "loss_{}.csv".format(model_identifier)))
 
     def vis_reconstruction(self, data_gen, sample_num, save_vid_dir, model_identifier):
         # Refresh data generator
@@ -371,7 +375,7 @@ class STVAEmodel:
         self.model.eval()
         with torch.no_grad():
             recon_motion, pred_labels, (pose_z_seq, pose_mu, pose_logvar), (
-            motion_z, motion_mu, motion_logvar) = self.model(x)
+                motion_z, motion_mu, motion_logvar) = self.model(x)
 
         # Convert to numpy
         x = x.cpu().detach().numpy()
@@ -387,12 +391,18 @@ class STVAEmodel:
         labels_flat[:, :] = labels.reshape(labels.shape[0], 1)
         labels_flat = labels_flat.reshape(-1)
 
-        # PCA
-        pose_pcafitter = PCA(n_components=2)
-        motion_pcafitter = PCA(n_components=2)
+        # PCA: Fit, transform and plot
+        pose_pcafitter = PCA()
+        motion_pcafitter = PCA()
         pose_z_flat = pose_pcafitter.fit_transform(pose_z_flat)
         motion_z = motion_pcafitter.fit_transform(motion_z)
         pose_z_seq_back = np.transpose(pose_z_flat.reshape(pose_z_seq.shape[0], pose_z_seq.shape[2], -1), (0, 2, 1))
+        plot_pca_explained_var([pose_pcafitter, motion_pcafitter],
+                               "Pose: {} | Motion: {}\nModel: {}".format(pose_z_seq.shape[1], motion_z.shape[1],
+                                                                         model_identifier),
+                               save_path=os.path.join(save_vid_dir, "results_data",
+                                                      "PCA_{}.png".format(model_identifier)))
+
 
         # Draw videos
         for sample_idx in range(sample_num):
@@ -400,7 +410,7 @@ class STVAEmodel:
             save_vid_path = os.path.join(save_vid_dir, "ReconVid-{}_{}.mp4".format(sample_idx, model_identifier))
             vwriter = skv.FFmpegWriter(save_vid_path)
 
-            draw_motion_latents = plot_latent_space_with_labels(motion_z, labels, "Motion latents",
+            draw_motion_latents = plot_latent_space_with_labels(motion_z[:, 0:2], labels, "Motion latents",
                                                                 target_scatter=motion_z[sample_idx, 0:2], alpha=1)
 
             # Draw input & output skeleton for every time step
@@ -417,8 +427,9 @@ class STVAEmodel:
                                                  title=" Recon %d | label %d " % (sample_idx, labels[sample_idx])
                                                  )
 
-                draw_pose_latents = plot_latent_space_with_labels(pose_z_flat[0:10000], labels_flat[0:10000], "pose latent",
-                                                                  alpha=0.1,
+                draw_pose_latents = plot_latent_space_with_labels(pose_z_flat[0:10000, 0:2], labels_flat[0:10000],
+                                                                  title="pose latent",
+                                                                  alpha=0.3,
                                                                   target_scatter=pose_z_seq_back[sample_idx, 0:2, t])
 
                 output_frame = build_frame_4by4([draw_arr_in, draw_arr_out, draw_motion_latents, draw_pose_latents])
