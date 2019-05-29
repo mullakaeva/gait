@@ -21,7 +21,7 @@ class Detectron_data_loader():
         data = np.load(data_path, encoding = "latin1")
         return data[()]['boxes'], data[()]['keyps']
 
-class RunningAverageMeter(object):
+class RunningAverageMeter:
     """Computes and stores the average and current value"""
 
     def __init__(self, momentum=0.99):
@@ -38,6 +38,33 @@ class RunningAverageMeter(object):
         else:
             self.avg = self.avg * self.momentum + val * (1 - self.momentum)
         self.val = val
+
+class MeterAssembly:
+
+    def __init__(self, *args):
+        self.meter_dicts = dict()
+        self.recorder = dict()
+        for arg in args:
+            self.meter_dicts[arg] = RunningAverageMeter()
+            self.recorder[arg] = []
+
+    def update_meters(self, **kwargs):
+        for key in kwargs:
+            self.meter_dicts[key].update(kwargs[key])
+
+    def get_meter_avg(self):
+        output_dict = dict()
+        for key in self.meter_dicts.keys():
+            output_dict[key] = self.meter_dicts[key].avg
+        return output_dict
+
+    def update_recorders(self):
+        for key in self.meter_dicts.keys():
+            self.recorder[key].append(self.meter_dicts[key].avg)
+
+    def get_recorders(self):
+        return self.recorder
+
 
 class OnlineFilter_scalar():
     def __init__(self, kernel_size):
@@ -129,6 +156,26 @@ class LabelsReader():
             except TypeError:
                 loaded_df = pickle.load(fh)
         return loaded_df
+
+
+def convert_1d_to_onehot(arr):
+    """
+    Convert 1d numpy array (values parsed to integers) to 2d one-hot vector array.
+    Parameters
+    ----------
+    arr : numpy.darray
+        1d-array
+
+    Returns
+    -------
+        2d-array with one hot vectors along axis 1
+    """
+    arr_int = arr.astype(np.int)
+    label_types = np.unique(arr_int)
+    output = np.zeros((arr_int.shape[0], len(label_types)))
+    for i in range(arr_int.shape[0]):
+        output[i, arr_int[i]] = 1
+    return output
 
 
 def load_df_pickle(df_path):

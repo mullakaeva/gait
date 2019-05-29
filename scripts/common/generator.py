@@ -1,6 +1,6 @@
 from glob import glob
 from abc import ABC, abstractmethod
-from .utils import LabelsReader, fullfile, load_df_pickle
+from .utils import LabelsReader, fullfile, load_df_pickle, convert_1d_to_onehot
 from .keypoints_format import excluded_points_flatten
 import random
 import os
@@ -185,7 +185,8 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         selected_df = df_shuffled.iloc[start:stop, :].copy()
         output_arr_train, labels_train = self._loop_for_array_construction(selected_df, self.m)
         output_arr_test, labels_test = self._loop_for_array_construction(self.df_test, self.df_test.shape[0])
-        return (output_arr_train, labels_train), (output_arr_test, labels_test)
+        labels_train_onehot, labels_test_onehot = convert_1d_to_onehot(labels_train), convert_1d_to_onehot(labels_test)
+        return (output_arr_train, labels_train, labels_train_onehot), (output_arr_test, labels_test, labels_test_onehot)
 
     def _loop_for_array_construction(self, df, num_samples):
         """
