@@ -283,8 +283,8 @@ class STVAEmodel:
         class_loss = self.classification_weight * class_loss_indicator
 
         # Combine different losses
-        loss = recon_loss + posenet_kld_loss + motionnet_kld_loss + recon_grad_loss + pose_latent_grad_loss + class_loss
-
+        # loss = recon_loss + posenet_kld_loss + motionnet_kld_loss + recon_grad_loss + pose_latent_grad_loss + class_loss
+        loss = recon_loss + recon_grad_loss + pose_latent_grad_loss + class_loss
         return loss, (recon_loss, posenet_kld_loss_indicator, motionnet_kld_loss_indicator, recon_grad_loss_indicator,
                       pose_latent_grad_loss_indicator, acc)
 
