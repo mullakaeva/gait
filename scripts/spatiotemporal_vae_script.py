@@ -7,16 +7,15 @@ def run_train_and_vis_on_stvae():
 
     df_path = "/mnt/data/raw_features_zmatrix_row_labels.pickle"
 
-    "ReconVid-0_pose_l-10_d-0_kld-None_grad-0_motion_l-50_d-0_kld-[100, 150, 0.0001]_recongrad-0_class-0"
     seq_dim = 128
-    posenet_latent_dim = 10
+    posenet_latent_dim = 16
     posenet_dropout_p = 0
     posenet_kld = None
-    pose_latent_gradient = 0
-    motionnet_latent_dim = 50
+    pose_latent_gradient = 0.0001
+    motionnet_latent_dim = 128
     motionnet_dropout_p = 0
     motionnet_kld = None
-    recon_gradient = 0
+    recon_gradient = 0.0001
     class_weight = 0
     init_lr = 0.001
     lr_milestones = [75, 150]
@@ -50,7 +49,7 @@ def run_train_and_vis_on_stvae():
                                  classification_weight=class_weight, init_lr=init_lr,
                                  lr_milestones=lr_milestones, lr_decay_gamma=lr_decay_gamma,
                                  save_chkpt_path=save_model_path, load_chkpt_path=load_model_path)
-    # model_container.train(300)
+    model_container.train(300)
 
     # Visualization
     data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=2048, n=seq_dim, seed=60)

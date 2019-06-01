@@ -352,14 +352,16 @@ def sample_and_copy_videos(src_dir, dest_dir, sample_num = 1000, labels_path = "
     print("number of videos copied: %d/%d" % (i,num_videos))
 
 def gaitclass(idx):
-    idx2class = {
-        0: 'Preferred speed',
-        1: 'Slow speed',
-        2: 'Max speed',
-        3: 'Head extended gait',
-        4: 'Dual (verbal)',
-        5: 'Dual (subtraction)',
-        6: 'Dual (tray)',
-        7: 'Eye closed'
-    }
     return idx2class[idx]
+
+
+idx2class = {
+    0: 'Preferred speed',
+    1: 'Slow speed',
+    2: 'Max speed',
+    3: 'Head extended gait',
+    4: 'Dual (verbal)',
+    5: 'Dual (subtraction)',
+    6: 'Dual (tray)',
+    7: 'Eye closed'
+}

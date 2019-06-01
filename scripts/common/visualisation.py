@@ -1,4 +1,4 @@
-from .utils import read_preprocessed_keypoints, fullfile, gaitclass
+from .utils import read_preprocessed_keypoints, fullfile, gaitclass, idx2class
 from .keypoints_format import openpose_body_draw_sequence, excluded_points
 from glob import glob
 import numpy as np
@@ -55,7 +55,9 @@ def plot_latent_space_with_labels(z_space, z_labels, title, x_lim=None, y_lim=No
 
     # Scatter all vectors
     im_space = ax.scatter(z_space[:, 0], z_space[:, 1], c=z_labels, cmap="hsv", marker=".", alpha=alpha)
-    fig.colorbar(im_space)
+    cbar = plt.colorbar(im_space)
+    cbar.set_ticks([x for x in range(7)])
+    cbar.set_ticklabels([idx2class[x] for x in range(7)])
 
     # Draw a specific scatter point
     if target_scatter is not None:

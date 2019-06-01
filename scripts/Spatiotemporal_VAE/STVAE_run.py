@@ -347,7 +347,7 @@ class STVAEmodel:
         return kld_multiplier
 
     def _calc_gradient(self, x):
-        grad = (x[:, :, 0:127] - x[:, :, 1:]) ** 2
+        grad = torch.abs(x[:, :, 0:127] - x[:, :, 1:])
         return grad
 
     def _get_classification_acc(self, pred_labels, labels):
