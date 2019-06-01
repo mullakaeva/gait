@@ -78,16 +78,33 @@ def plot_latent_space_with_labels(z_space, z_labels, title, x_lim=None, y_lim=No
     return data
 
 
-def plot_umap_with_labels(z, labels, title):
+def plot_umap_with_labels(z, labels, title, alphas=[0.1, 0.25]):
+    """
+
+    Parameters
+    ----------
+    z : numpy.darray
+        With shape (n_samples, n_features=2). Only the first 2 features will be used.
+    labels : numpy.darray
+        With shape (n_samples,) values ranged  [0, 7] (integer or rounded float)
+    title : string
+        Tittle of the plot
+    alphas : iterable
+        [alpha_this_class, alpha_other_classes]
+
+    Returns
+    -------
+
+    """
     fig, ax = plt.subplots(2, 4, figsize=(14, 7))
     ax = ax.ravel()
     for class_idx in range(8):
         embed_this_class = z[labels.astype(int) == class_idx, :]
         embed_other_classes = z[labels.astype(int) != class_idx, :]
-        ax[class_idx].scatter(embed_other_classes[:, 0], embed_other_classes[:, 1], c="0.1", marker=".", alpha=0.25)
-        ax[class_idx].scatter(embed_this_class[:, 0], embed_this_class[:, 1], c="r", marker=".", alpha=0.1)
+        ax[class_idx].scatter(embed_other_classes[:, 0], embed_other_classes[:, 1], c="0.1", marker=".", alpha=alphas[1])
+        ax[class_idx].scatter(embed_this_class[:, 0], embed_this_class[:, 1], c="r", marker=".", alpha=alphas[0])
         ax[class_idx].set_title("{}".format(gaitclass(class_idx)))
-        ax[class_idx].axis("off")
+        # ax[class_idx].axis("off")
 
     # Title, limits and drawing
     fig.suptitle(title)

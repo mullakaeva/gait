@@ -180,6 +180,7 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
 
         # Call parent's init
         super(GaitGeneratorFromDFforTemporalVAE, self).__init__(df_pickle_path, m, n, train_portion, seed)
+        self.batch_shape = (m, self.total_fea_dims, n)
 
     def _convert_df_to_data(self, df_shuffled, start, stop):
         selected_df = df_shuffled.iloc[start:stop, :].copy()

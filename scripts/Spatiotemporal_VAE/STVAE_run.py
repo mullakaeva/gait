@@ -6,13 +6,15 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 import pprint
-from common.utils import MeterAssembly
+from common.utils import MeterAssembly, gaitclass, RunningAverageMeter
 from .Model import SpatioTemporalVAE
 from common.visualisation import plot2arr_skeleton, plot_latent_space_with_labels, plot_umap_with_labels, \
     build_frame_4by4, plot_pca_explained_var
 
 from sklearn.decomposition import PCA
 import skvideo.io as skv
+import skimage.io as ski
+import umap
 
 
 class STVAEmodel:
@@ -30,6 +32,7 @@ class STVAEmodel:
                  pose_latent_gradient=0,
                  recon_gradient=0,
                  classification_weight=0,
+                 rmse_weighting_startepoch=None,
                  gpu=0,
                  init_lr=0.001,
                  lr_milestones=[50, 100, 150],
@@ -62,6 +65,8 @@ class STVAEmodel:
         self.motionnet_kld = motionnet_kld
         self.posenet_kld_bool = False if self.posenet_kld is None else True
         self.motionnet_kld_bool = False if self.motionnet_kld is None else True
+        self.rmse_weighting_startepoch = rmse_weighting_startepoch
+        self.rmse_weighting_vec, self.rmse_weighting_vec_meter = self._initilize_rmse_weighting_vec()
 
         self.loss_meter = MeterAssembly(
             "train_total_loss",
@@ -131,6 +136,11 @@ class STVAEmodel:
                                                                                                        class_info,
                                                                                                        pose_stats,
                                                                                                        motion_stats)
+                    # Running average of RMSE weighting
+                    if (self.rmse_weighting_startepoch is not None) and (self.epoch == self.rmse_weighting_startepoch):
+                        squared_diff = (recon_motion - x) ** 2
+                        self._update_rmse_weighting_vec(squared_diff)
+
                     self.loss_meter.update_meters(
                         train_total_loss=loss.item(),
                         train_recon=recon.item(),
@@ -165,6 +175,10 @@ class STVAEmodel:
                 self.epoch = len(self.loss_meter.get_recorders()["train_total_loss"])
                 self.lr_scheduler.step(epoch=self.epoch)
 
+                # Assign the average RMSE_weight to weighting vector
+                if (self.rmse_weighting_startepoch is not None) and (self.epoch == self.rmse_weighting_startepoch):
+                    self.rmse_weighting_vec = self.rmse_weighting_vec_meter.avg.clone()
+
                 # save (overwrite) model file every epoch
                 self._save_model()
                 self._plot_loss()
@@ -196,6 +210,9 @@ class STVAEmodel:
         self.motionnet_kld = checkpoint['motionnet_kld']
         self.posenet_kld_bool = checkpoint['posenet_kld_bool']
         self.motionnet_kld_bool = checkpoint['motionnet_kld_bool']
+        self.rmse_weighting_startepoch = checkpoint['rmse_weighting_startepoch']
+        self.rmse_weighting_vec_meter = checkpoint['rmse_weighting_vec_meter']
+        self.rmse_weighting_vec = checkpoint['rmse_weighting_vec']
 
         # Model initialization
         model, optimizer, lr_scheduler = self._model_initialization()
@@ -227,7 +244,10 @@ class STVAEmodel:
                 'posenet_kld': self.posenet_kld,
                 'motionnet_kld': self.motionnet_kld,
                 'posenet_kld_bool': self.posenet_kld_bool,
-                'motionnet_kld_bool': self.motionnet_kld_bool
+                'motionnet_kld_bool': self.motionnet_kld_bool,
+                'rmse_weighting_startepoch': self.rmse_weighting_startepoch,
+                'rmse_weighting_vec_meter': self.rmse_weighting_vec_meter,
+                'rmse_weighting_vec': self.rmse_weighting_vec
             }, self.save_chkpt_path)
 
             print('Stored ckpt at {}'.format(self.save_chkpt_path))
@@ -249,7 +269,8 @@ class STVAEmodel:
         motionnet_kld_loss = motionnet_kld_multiplier * motionnet_kld_loss_indicator
 
         # Recon loss
-        recon_loss = torch.mean(self.weights_vec * ((x - recon_motion) ** 2))
+        squared_diff = (x - recon_motion) ** 2
+        recon_loss = torch.sum(self.weights_vec * self.rmse_weighting_vec * squared_diff)
 
         # Gradient loss
         recon_grad_loss_indicator = torch.mean(self.weights_vec * self._calc_gradient(recon_motion))
@@ -330,6 +351,17 @@ class STVAEmodel:
         weights_vec = torch.from_numpy(weights_vec).float().to(self.device)
         return weights_vec
 
+    def _initilize_rmse_weighting_vec(self):
+        unnormalized = torch.ones(self.data_gen.batch_shape).float().to(self.device)
+        normalized = torch.mean(unnormalized, dim=0, keepdim=True) / torch.sum(unnormalized)
+        mean_rmse_meter = RunningAverageMeter()
+        mean_rmse_meter.update(normalized)
+        return normalized, mean_rmse_meter
+
+    def _update_rmse_weighting_vec(self, squared_diff):
+        normalized = torch.mean(squared_diff, dim=0, keepdim=True) / torch.sum(squared_diff)
+        self.rmse_weighting_vec_meter.update(normalized)
+
     def _get_kld_multiplier(self, kld_arg):
         # Set KLD loss
         if kld_arg is None:
@@ -365,6 +397,7 @@ class STVAEmodel:
     def vis_reconstruction(self, data_gen, sample_num, save_vid_dir, model_identifier):
         # Refresh data generator
         self.data_gen = data_gen
+        num_seq_for_pose = 128
 
         # Get data from data generator's first loop
         for (x, labels, _), (_, _, _) in self.data_gen.iterator():
@@ -380,29 +413,42 @@ class STVAEmodel:
         # Convert to numpy
         x = x.cpu().detach().numpy()
         recon_motion = recon_motion.cpu().detach().numpy()
-        motion_z = motion_z.cpu().detach().numpy()
-        pose_z_seq = pose_z_seq.cpu().detach().numpy()
-        seq_length = x.shape[2]
+        motion_z = motion_z.cpu().detach().numpy()  # (n_samples, motion_latents_dim)
+        pose_z_seq = pose_z_seq.cpu().detach().numpy()[0:num_seq_for_pose, ]
+        m, seq_length = x.shape[0], x.shape[2]
 
         # Flatten pose latent
-
         pose_z_flat = np.transpose(pose_z_seq, (0, 2, 1)).reshape(pose_z_seq.shape[0] * pose_z_seq.shape[2], -1)
-        labels_flat = np.zeros((labels.shape[0], seq_length))
-        labels_flat[:, :] = labels.reshape(labels.shape[0], 1)
+        labels_flat = np.repeat(labels[0:pose_z_seq.shape[0], np.newaxis], seq_length, axis=1)
         labels_flat = labels_flat.reshape(-1)
 
-        # PCA: Fit, transform and plot
-        pose_pcafitter = PCA()
-        motion_pcafitter = PCA()
-        pose_z_flat = pose_pcafitter.fit_transform(pose_z_flat)
-        motion_z = motion_pcafitter.fit_transform(motion_z)
-        pose_z_seq_back = np.transpose(pose_z_flat.reshape(pose_z_seq.shape[0], pose_z_seq.shape[2], -1), (0, 2, 1))
-        plot_pca_explained_var([pose_pcafitter, motion_pcafitter],
-                               "Pose: {} | Motion: {}\nModel: {}".format(pose_z_seq.shape[1], motion_z.shape[1],
-                                                                         model_identifier),
-                               save_path=os.path.join(save_vid_dir, "results_data",
-                                                      "PCA_{}.png".format(model_identifier)))
+        # Umap embedding and plot
+        pose_z_flat_umap = umap.UMAP(n_neighbors=15,
+                                     n_components=2,
+                                     min_dist=0.1,
+                                     metric="euclidean").fit_transform(pose_z_flat)
+        motion_z_umap = umap.UMAP(n_neighbors=15,
+                                  n_components=2,
+                                  min_dist=0.1,
+                                  metric="euclidean").fit_transform(motion_z)
+        pose_z_umap_flat2seq = np.transpose(pose_z_flat_umap.reshape(pose_z_seq.shape[0], pose_z_seq.shape[2], -1),
+                                            (0, 2, 1))
 
+        # Plot Umap separate clusters
+        umap_plot_pose_arr = plot_umap_with_labels(pose_z_flat_umap, labels_flat,
+                                                   title="Pose: {} | test acc: {} \nModel: {}".format(
+                                                       self.loss_meter["test_acc"].avg, pose_z_seq.shape[1],
+                                                       model_identifier))
+        umap_plot_motion_arr = plot_umap_with_labels(motion_z_umap, labels,
+                                                     title="Motion: {} | test acc: {}\nModel: {}".format(
+                                                         self.loss_meter["test_acc"].avg, motion_z.shape[1],
+                                                         model_identifier),
+                                                     alphas=[0.35, 0.1])
+
+        ski.imsave(os.path.join(save_vid_dir, "results_data", "UmapPose_{}.png".format(model_identifier)),
+                   umap_plot_pose_arr)
+        ski.imsave(os.path.join(save_vid_dir, "results_data", "UmapMotion_{}.png".format(model_identifier)),
+                   umap_plot_motion_arr)
 
         # Draw videos
         for sample_idx in range(sample_num):
@@ -410,8 +456,9 @@ class STVAEmodel:
             save_vid_path = os.path.join(save_vid_dir, "ReconVid-{}_{}.mp4".format(sample_idx, model_identifier))
             vwriter = skv.FFmpegWriter(save_vid_path)
 
-            draw_motion_latents = plot_latent_space_with_labels(motion_z[:, 0:2], labels, "Motion latents",
-                                                                target_scatter=motion_z[sample_idx, 0:2], alpha=1)
+            draw_motion_latents = plot_latent_space_with_labels(motion_z_umap[:, 0:2], labels, "Motion latents",
+                                                                target_scatter=motion_z_umap[sample_idx, 0:2],
+                                                                alpha=0.7)
 
             # Draw input & output skeleton for every time step
             for t in range(seq_length):
@@ -424,13 +471,14 @@ class STVAEmodel:
 
                 draw_arr_out = plot2arr_skeleton(x=recon_motion[sample_idx, 0:25, t],
                                                  y=recon_motion[sample_idx, 25:, t],
-                                                 title=" Recon %d | label %d " % (sample_idx, labels[sample_idx])
+                                                 title=" Recon %d | %s " % (sample_idx, gaitclass(labels[sample_idx]))
                                                  )
 
-                draw_pose_latents = plot_latent_space_with_labels(pose_z_flat[0:10000, 0:2], labels_flat[0:10000],
+                draw_pose_latents = plot_latent_space_with_labels(pose_z_flat_umap, labels_flat,
                                                                   title="pose latent",
-                                                                  alpha=0.3,
-                                                                  target_scatter=pose_z_seq_back[sample_idx, 0:2, t])
+                                                                  alpha=0.2,
+                                                                  target_scatter=pose_z_umap_flat2seq[sample_idx, 0:2,
+                                                                                 t])
 
                 output_frame = build_frame_4by4([draw_arr_in, draw_arr_out, draw_motion_latents, draw_pose_latents])
                 vwriter.writeFrame(output_frame)
