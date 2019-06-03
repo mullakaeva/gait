@@ -283,8 +283,8 @@ class STVAEmodel:
         class_loss = self.classification_weight * class_loss_indicator
 
         # Combine different losses
-        # loss = recon_loss + posenet_kld_loss + motionnet_kld_loss + recon_grad_loss + pose_latent_grad_loss + class_loss
-        loss = recon_loss + recon_grad_loss + pose_latent_grad_loss + class_loss
+        loss = recon_loss + posenet_kld_loss + motionnet_kld_loss + recon_grad_loss + pose_latent_grad_loss + class_loss
+        # loss = recon_loss + recon_grad_loss + pose_latent_grad_loss + class_loss
         return loss, (recon_loss, posenet_kld_loss_indicator, motionnet_kld_loss_indicator, recon_grad_loss_indicator,
                       pose_latent_grad_loss_indicator, acc)
 
@@ -437,11 +437,11 @@ class STVAEmodel:
         # Plot Umap separate clusters
         umap_plot_pose_arr = plot_umap_with_labels(pose_z_flat_umap, labels_flat,
                                                    title="Pose: {} | test acc: {} \nModel: {}".format(
-                                                       self.loss_meter["test_acc"].avg, pose_z_seq.shape[1],
+                                                       self.loss_meter.get_meter_avg()["test_acc"], pose_z_seq.shape[1],
                                                        model_identifier))
         umap_plot_motion_arr = plot_umap_with_labels(motion_z_umap, labels,
                                                      title="Motion: {} | test acc: {}\nModel: {}".format(
-                                                         self.loss_meter["test_acc"].avg, motion_z.shape[1],
+                                                         self.loss_meter.get_meter_avg()["test_acc"], motion_z.shape[1],
                                                          model_identifier),
                                                      alphas=[0.35, 0.1])
 

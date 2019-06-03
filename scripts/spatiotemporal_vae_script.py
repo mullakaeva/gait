@@ -14,10 +14,10 @@ def run_train_and_vis_on_stvae():
     pose_latent_gradient = 0.0001
     motionnet_latent_dim = 128
     motionnet_dropout_p = 0
-    motionnet_kld = None
+    motionnet_kld = [200, 250, 0.0001]
     recon_gradient = 0.0001
     class_weight = 0.001
-    rmse_weighting_startepoch = None
+    rmse_weighting_startepoch = 150
     init_lr = 0.001
     lr_milestones = [75, 150]
     lr_decay_gamma = 0.1
@@ -54,7 +54,7 @@ def run_train_and_vis_on_stvae():
                                  rmse_weighting_startepoch=rmse_weighting_startepoch,
                                  init_lr=init_lr, lr_milestones=lr_milestones, lr_decay_gamma=lr_decay_gamma,
                                  save_chkpt_path=save_model_path, load_chkpt_path=load_model_path)
-    model_container.train(300)
+    # model_container.train(300)
 
     # Visualization
     if model_chkpt_found:
