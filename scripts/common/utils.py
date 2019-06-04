@@ -171,7 +171,7 @@ def convert_1d_to_onehot(arr):
         2d-array with one hot vectors along axis 1
     """
     arr_int = arr.astype(np.int)
-    label_types = np.unique(arr_int)
+    label_types = [0, 1, 2, 3, 4, 5, 6, 7]
     output = np.zeros((arr_int.shape[0], len(label_types)))
     for i in range(arr_int.shape[0]):
         output[i, arr_int[i]] = 1

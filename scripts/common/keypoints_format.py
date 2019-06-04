@@ -80,8 +80,37 @@ openpose_body_draw_sequence = (
     (14, 21, "l"),  # l_ankle to l_heel
     (14, 19, "l"),  # l_ankle to l_bigtoe
     (19, 20, "l")  # l_bigtoe to l_small toe
-
 )
+
+openpose_body_connection_scheme = (
+    (0, 1),  # nose to neck
+    (0, 15),  # nose to r_eye
+    (0, 16),  # nose to l_eye
+    (15, 17),  # r_eye to r_ear
+    (16, 18),  # l_eye to l_ear
+    (18, 1),  # l_ear to neck
+    (17, 1),  # r_ear to neck
+    (1, 5),  # neck to l_shoulder
+    (5, 6),  # l_shoulder to l_elbow
+    (6, 7),  # l_elbow to l_wrist
+    (1, 2),  # neck to r_shoulder
+    (2, 3),  # r_shoulder to r_elbow
+    (3, 4),  # r_elbow to r_wrist
+    (1, 8),  # neck to hip_centre
+    (8, 9),  # hip_centre to r_hip
+    (9, 10),  # r_hip to r_knee
+    (10, 11),  # r_knee to r_ankle
+    (11, 24),  # r_ankle to r_heel
+    (11, 22),  # r_ankle to r_bigtoe
+    (22, 23),  # r_bigtoe to r_smalltoe
+    (8, 12),  # hip_centre to l_hip
+    (12, 13),  # l_hip to l_knee
+    (13, 14),  # l_knee to l_ankle
+    (14, 21),  # l_ankle to l_heel
+    (14, 19),  # l_ankle to l_bigtoe
+    (19, 20)  # l_bigtoe to l_small toe
+)
+
 
 
 openpose2detectron_indexes = [0, 16, 15, 18, 17, 5, 2, 6, 3, 7, 4, 12, 9, 13, 10, 14, 11]

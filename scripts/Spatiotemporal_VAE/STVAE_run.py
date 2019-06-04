@@ -7,7 +7,9 @@ import os
 import matplotlib.pyplot as plt
 import pprint
 from common.utils import MeterAssembly, gaitclass, RunningAverageMeter
+from common.keypoints_format import excluded_points_flatten
 from .Model import SpatioTemporalVAE
+from .GraphModel import GraphSpatioTemporalVAE
 from common.visualisation import plot2arr_skeleton, plot_latent_space_with_labels, plot_umap_with_labels, \
     build_frame_4by4, plot_pca_explained_var
 
@@ -22,6 +24,7 @@ class STVAEmodel:
                  data_gen,
                  fea_dim=50,
                  seq_dim=128,
+                 model_type="normal",
                  posenet_latent_dim=10,
                  posenet_dropout_p=0,
                  posenet_kld=None,
@@ -48,6 +51,7 @@ class STVAEmodel:
 
         # Load parameters
         self.data_gen = data_gen
+        self.model_type = model_type
         self.fea_dim = fea_dim
         self.seq_dim = seq_dim
         self.init_lr = init_lr
@@ -136,9 +140,11 @@ class STVAEmodel:
                                                                                                        class_info,
                                                                                                        pose_stats,
                                                                                                        motion_stats)
+
                     # Running average of RMSE weighting
                     if (self.rmse_weighting_startepoch is not None) and (self.epoch == self.rmse_weighting_startepoch):
-                        squared_diff = (recon_motion - x) ** 2
+                        squared_diff = (recon_motion - x) ** 2  # (n_samples, 50, 128)
+                        squared_diff[:, excluded_points_flatten, :] = 0
                         self._update_rmse_weighting_vec(squared_diff)
 
                     self.loss_meter.update_meters(
@@ -289,7 +295,13 @@ class STVAEmodel:
                       pose_latent_grad_loss_indicator, acc)
 
     def _model_initialization(self):
-        model = SpatioTemporalVAE(
+        if self.model_type == "graph":
+            model_class = GraphSpatioTemporalVAE
+        elif self.model_type == "normal":
+            model_class = SpatioTemporalVAE
+        else:
+            print('Enter either "graph" or "normal" as the argument of model_type')
+        model = model_class(
             fea_dim=self.fea_dim,
             seq_dim=self.seq_dim,
             posenet_latent_dim=self.posenet_latent_dim,
@@ -388,11 +400,11 @@ class STVAEmodel:
         acc = np.mean(np.argmax(pred_labels_np, axis=1) == labels_np) * 100
         return class_loss_indicator, acc
 
-    def save_model_losses_data(self, save_vid_dir, model_identifier):
+    def save_model_losses_data(self, save_loss_dir, model_identifier):
         import pandas as pd
         loss_data = self.loss_meter.get_recorders()
         df_losses = pd.DataFrame(loss_data)
-        df_losses.to_csv(os.path.join(save_vid_dir, "results_data", "loss_{}.csv".format(model_identifier)))
+        df_losses.to_csv(os.path.join(save_loss_dir, "loss_{}.csv".format(model_identifier)))
 
     def vis_reconstruction(self, data_gen, sample_num, save_vid_dir, model_identifier):
         # Refresh data generator
@@ -445,9 +457,9 @@ class STVAEmodel:
                                                          model_identifier),
                                                      alphas=[0.35, 0.1])
 
-        ski.imsave(os.path.join(save_vid_dir, "results_data", "UmapPose_{}.png".format(model_identifier)),
+        ski.imsave(os.path.join(save_vid_dir, "UmapPose_{}.png".format(model_identifier)),
                    umap_plot_pose_arr)
-        ski.imsave(os.path.join(save_vid_dir, "results_data", "UmapMotion_{}.png".format(model_identifier)),
+        ski.imsave(os.path.join(save_vid_dir, "UmapMotion_{}.png".format(model_identifier)),
                    umap_plot_motion_arr)
 
         # Draw videos

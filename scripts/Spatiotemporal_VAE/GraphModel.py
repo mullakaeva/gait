@@ -1,0 +1,627 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+from torch.autograd import Variable
+from .Model import motion_encoding_block, motion_decoding_block, LshapeCounter, Reparameterize, Flatten, UnFlatten, \
+    FlattenLastDim, Transpose, pose_block, Unsqueeze
+
+import numpy as np
+import logging
+
+openpose_body_connection_scheme = (
+    (0, 1),  # nose to neck
+    (0, 15),  # nose to r_eye
+    (0, 16),  # nose to l_eye
+    (15, 17),  # r_eye to r_ear
+    (16, 18),  # l_eye to l_ear
+    (18, 1),  # l_ear to neck
+    (17, 1),  # r_ear to neck
+    (1, 5),  # neck to l_shoulder
+    (5, 6),  # l_shoulder to l_elbow
+    (6, 7),  # l_elbow to l_wrist
+    (1, 2),  # neck to r_shoulder
+    (2, 3),  # r_shoulder to r_elbow
+    (3, 4),  # r_elbow to r_wrist
+    (1, 8),  # neck to hip_centre
+    (8, 9),  # hip_centre to r_hip
+    (9, 10),  # r_hip to r_knee
+    (10, 11),  # r_knee to r_ankle
+    (11, 24),  # r_ankle to r_heel
+    (11, 22),  # r_ankle to r_bigtoe
+    (22, 23),  # r_bigtoe to r_smalltoe
+    (8, 12),  # hip_centre to l_hip
+    (12, 13),  # l_hip to l_knee
+    (13, 14),  # l_knee to l_ankle
+    (14, 21),  # l_ankle to l_heel
+    (14, 19),  # l_ankle to l_bigtoe
+    (19, 20)  # l_bigtoe to l_small toe
+)
+
+
+class GraphConvLinear(nn.Linear):
+    def __init__(self, in_features, out_features, bias=True):
+        super(GraphConvLinear, self).__init__(in_features, out_features, bias=bias)
+        self.fea_dims = 25
+        self.adjacent_matrix = np.zeros((self.fea_dims, self.fea_dims))
+        self.device = torch.device('cuda:0')
+        for sequence in openpose_body_connection_scheme:
+            self.adjacent_matrix[sequence[0], sequence[1]] = 1
+            self.adjacent_matrix[sequence[1], sequence[0]] = 1
+
+        self.adjacent_matrix += np.eye(self.fea_dims)
+        self.A_hat = self._calc_adjacent_hat()
+
+    def _calc_adjacent_hat(self):
+        D = np.sum(self.adjacent_matrix, axis=1)
+        D_snake = np.diag(D ** (-1 / 2))
+        A_hat = np.matmul(np.matmul(D_snake, self.adjacent_matrix), D_snake)
+        A_hat = Variable(torch.from_numpy(A_hat).float()).to(self.device)
+        return A_hat
+
+    def forward(self, input):
+        output = torch.bmm(self.A_hat.expand(input.shape[0], self.fea_dims, self.fea_dims), input)
+        return F.linear(output, self.weight, self.bias)
+
+
+def pose_graph_block(input_channels,
+                     output_channels,
+                     dropout_p=0):
+    # Input should have shape (n_samples, 25, 2), where 2 is "input_channels"
+    LN_layer = GraphConvLinear(input_channels, output_channels)
+    bn_layer = nn.BatchNorm1d(25, track_running_stats=False)
+    relu_layer = nn.ReLU()
+    droput_layer = nn.Dropout(dropout_p)
+    block_list = [
+        LN_layer,
+        bn_layer,
+        relu_layer,
+        droput_layer
+    ]
+    return block_list
+
+
+class UnFlattenLastDim(nn.Module):
+    """
+    Convert tensor from shape (a * b, c) to (a, b, c)
+    """
+
+    def __init__(self, a, b):
+        super(UnFlattenLastDim, self).__init__()
+        self.b = b
+        self.a = a
+
+    def forward(self, x):
+        return x.reshape(-1, self.a, self.b)
+
+
+class SeparateXY(nn.Module):
+    def forward(self, x):
+        output = Variable(torch.Tensor(x.shape[0], 25, 2)).to(x.device)
+        output[:, :, 0], output[:, :, 1] = x[:, 0:25], x[:, 25:]
+        return output
+
+
+class CombineXY(nn.Module):
+    def forward(self, x):
+        output = Variable(torch.Tensor(x.shape[0], 50)).to(x.device)
+        output[:, 0:25] = x[:, :, 0]
+        output[:, 25:] = x[:, :, 1]
+        return output
+
+
+class GraphSpatioTemporalVAE(nn.Module):
+    def __init__(self,
+                 fea_dim=50,
+                 seq_dim=128,
+                 posenet_latent_dim=10,
+                 posenet_dropout_p=0,
+                 posenet_kld=True,
+                 motionnet_latent_dim=25,
+                 motionnet_hidden_dim=512,
+                 motionnet_dropout_p=0,
+                 motionnet_kld=True,
+                 device=None
+                 ):
+        """
+        This network takes input with shape (m, fea_dim, seq_dim), and reconstructs it, where m is number of samples.
+        This network also does classification with the motion's latents. Number of classes is hard-coded as 8 (see below)
+
+        Parameters
+        ----------
+        fea_dim : int
+        seq_dim : int
+        posenet_latent_dim : int
+        posenet_dropout_p : float
+        posenet_kld : bool
+        motionnet_latent_dim : int
+        motionnet_hidden_dim : int
+        motionnet_dropout_p : float
+        motionnet_kld : bool
+        """
+        # # Loading parameters
+        # Data dimension
+        self.fea_dim = fea_dim
+        self.seq_dim = seq_dim
+        self.n_classes = 8
+        # Autoencoder for single pose
+        self.posenet_latent_dim = posenet_latent_dim
+        self.posenet_dropout_p = posenet_dropout_p
+        self.posenet_kld = posenet_kld
+        # Autoencoder for a sequence of poses (motion)
+        self.motionnet_latent_dim = motionnet_latent_dim
+        self.motionnet_hidden_dim = motionnet_hidden_dim
+        self.motionnet_dropout_p = motionnet_dropout_p
+        self.motionnet_kld = motionnet_kld
+        # Others
+        super(GraphSpatioTemporalVAE, self).__init__()
+        self.device = torch.device('cuda:0') if device is None else device
+
+        # # Initializing network architecture
+        self.transpose_layer = Transpose()
+        self.flatten_layer = Flatten()
+        self.unflatten_layer = UnFlatten(self.seq_dim)
+        self.sep_xy = SeparateXY()
+        self.com_xy = CombineXY()
+        self.pose_vae = PoseVAE(fea_dim=self.fea_dim,
+                                latent_dim=self.posenet_latent_dim,
+                                kld=self.posenet_kld,
+                                dropout_p=self.posenet_kld,
+                                device=self.device)
+
+        self.motion_vae = MotionVAE(fea_dim=self.posenet_latent_dim,
+                                    seq_dim=self.seq_dim,
+                                    hidden_dim=self.motionnet_hidden_dim,
+                                    latent_dim=self.motionnet_latent_dim,
+                                    kld=self.motionnet_kld,
+                                    dropout_p=self.motionnet_dropout_p,
+                                    device=self.device)
+
+        self.class_net = ClassNet(input_dim=self.motionnet_latent_dim,
+                                  n_classes=self.n_classes,
+                                  device=self.device)
+
+    def forward(self, x):
+        out = self.transpose_flatten(x)  # Convert (m, fea=50, seq) to (m * seq, fea=50)
+        out = self.sep_xy(out)  # Convert (m * seq, fea=50) to (m * seq, fea_2=25, 2)
+        pose_out = self.pose_encode(out)  # Convert (m * seq, fea) to (m * seq, pose_latent_dim (or *2 if kld=True) )
+        pose_z, pose_mu, pose_logvar = self.pose_bottoleneck(pose_out)  # all outputs (m * seq, pose_latent_dim)
+        pose_z_seq = self.unflatten_transpose(pose_z)  # Convert (m * seq, pose_latent_dim) to (m, pose_latent_dim, seq)
+        out = self.motion_encode(
+            pose_z_seq)  # Convert (m, pose_latent_dim, seq) to (m, motion_latent_dim (or *2 if kld=True) )
+        motion_z, motion_mu, motion_logvar = self.motion_bottoleneck(out)  # all outputs (m, motion_latent_dim)
+        out = self.motion_decode(motion_z)  # Convert (m, motion_latent_dim) to  (m, pose_latent_dim, seq)
+        out = self.transpose_flatten(out)  # Convert (m, pose_latent_dim, seq) to (m * seq, pose_latent_dim)
+        out = self.pose_decode(out)  # Convert (m * seq, pose_latent_dim) to (m * seq, fea)
+        recon_motion = self.unflatten_transpose(out)  # Convert (m * seq, fea) to (m, fea, seq)
+        pred_labels = self.class_net(motion_z)  # Convert (m, motion_latent_dim) to (m, n_classes)
+        return recon_motion, pred_labels, (pose_z_seq, pose_mu, pose_logvar), (motion_z, motion_mu, motion_logvar)
+
+    def pose_encode(self, x):
+        out = self.pose_vae.encode(x)
+        return out
+
+    def pose_bottoleneck(self, x):
+        if self.posenet_kld:
+            z, mu, logvar = self.pose_vae.pose_reparams(x)
+        else:
+            z = x
+            mu = z.clone()  # dummy assignment
+            logvar = mu  # dummy assignment
+
+        return z, mu, logvar
+
+    def pose_decode(self, x):
+        out = self.pose_vae.decode(x)
+        return out
+
+    def motion_encode(self, x):
+        out = self.motion_vae.encode(x)
+        return out
+
+    def motion_bottoleneck(self, x):
+        if self.motionnet_kld:
+            z, mu, logvar = self.motion_vae.motion_reparams(x)
+        else:
+            z = x.clone()
+            mu, logvar = z, z  # dummy assignment
+        return z, mu, logvar
+
+    def motion_decode(self, x):
+        out = self.motion_vae.decode(x)
+        return out
+
+    def transpose_flatten(self, x):
+        out = self.transpose_layer(x)  # Convert (m, fea, seq) to (m, seq, fea)
+        out = self.flatten_layer(out)  # Convert (m, seq, fea) to (m * seq, fea)
+        return out
+
+    def unflatten_transpose(self, x):
+        out = self.unflatten_layer(x)  # Convert (m * seq, fea) to (m, seq, fea)
+        out = self.transpose_layer(out)  # Convert (m, seq, fea) to (m, fea, seq)
+        return out
+
+
+class PoseVAE(nn.Module):
+
+    def __init__(self, fea_dim, latent_dim, kld, dropout_p, device=None):
+        """
+        PoseVAE takes in data with shape (m, input_dims), and reconstructs it with bottleneck layer (m, latent_dims),
+        where m is number of samples.
+
+        Parameters
+        ----------
+        fea_dim : int
+        latent_dim : int
+            A value smaller than the dimension of the last layer (Default=32) before bottleneck layer.
+        kld : bool
+            Stochastic sampling if True, deterministic if False
+        dropout_p : int
+        """
+
+        # Model setting
+        super(PoseVAE, self).__init__()
+        self.kld = kld
+        self.fea_dim, self.latent_dim = fea_dim, latent_dim
+        self.connecting_dim = self.latent_dim * 2 if self.kld else self.latent_dim
+        self.encode_units = [128, 64, 32, 16]
+        self.decode_units = [4, 8, 16, 32]
+        # self.encode_units = [64, 32, 16, 8]
+        # self.decode_units = [8, 16, 32, 64]
+
+        self.device = torch.device('cuda:0') if device is None else device
+
+        # Encoder
+        self.first_layer = GraphConvLinear(2, self.encode_units[0])
+
+        self.en_blk1 = nn.Sequential(*pose_graph_block(input_channels=self.encode_units[0],
+                                                       output_channels=self.encode_units[1],
+                                                       dropout_p=dropout_p))
+        self.en_blk2 = nn.Sequential(*pose_graph_block(input_channels=self.encode_units[1],
+                                                       output_channels=self.encode_units[2],
+                                                       dropout_p=dropout_p))
+        self.en_blk3 = nn.Sequential(*pose_graph_block(input_channels=self.encode_units[2],
+                                                       output_channels=self.encode_units[3],
+                                                       dropout_p=dropout_p))
+        self.before_latents = FlattenLastDim()
+
+        self.en2latents = nn.Linear(self.encode_units[3] * 25, self.connecting_dim)
+
+        self.pose_reparams = Reparameterize(self.device, self.latent_dim)
+
+        # Decode
+        self.latents2de = nn.Linear(self.latent_dim, 50)
+
+        self.after_latents = UnFlattenLastDim(25, 2)
+
+        self.de_blk0 = GraphConvLinear(2, self.decode_units[0])
+
+        self.de_blk1 = nn.Sequential(*pose_graph_block(input_channels=self.decode_units[0],
+                                                       output_channels=self.decode_units[1],
+                                                       dropout_p=dropout_p))
+        self.de_blk2 = nn.Sequential(*pose_graph_block(input_channels=self.decode_units[1],
+                                                       output_channels=self.decode_units[2],
+                                                       dropout_p=dropout_p))
+        self.de_blk3 = nn.Sequential(*pose_graph_block(input_channels=self.decode_units[2],
+                                                       output_channels=self.decode_units[3],
+                                                       dropout_p=dropout_p))
+        self.before_final = FlattenLastDim()
+
+        self.final_layer = nn.Linear(self.decode_units[3] * 25, self.fea_dim)
+
+    def forward(self, x):
+        """
+
+        Parameters
+        ----------
+        x : pytorch.tensor
+
+        Returns
+        -------
+        out : pytorch.tensor
+        mu : pytorch.tensor
+        logvar : pytorch.tensor
+        z : pytorch.tensor
+        """
+        # Encoder
+        out = self.encode(x)
+
+        if self.kld:
+            # Sampling from latents and concatenate with labels
+            z, mu, logvar = self.pose_reparams(out)
+        else:
+            z = out
+            mu = z.clone()  # dummy assignment
+            logvar = z  # dummy assignment
+        out = self.decode(z)
+        return out, mu, logvar, z
+
+    def encode(self, x):
+        logging.debug("PoseNet Input's Shape: %s" % (str(x.shape)))
+
+        out = self.first_layer(x)
+        logging.debug("PoseNet Encode's Shape: %s" % (str(out.shape)))
+
+        out = self.en_blk1(out) + out[:, :, 0:int(self.encode_units[1])]
+        logging.debug("PoseNet Encode's Shape: %s" % (str(out.shape)))
+
+        out = self.en_blk2(out) + out[:, :, 0:int(self.encode_units[2])]
+        logging.debug("PoseNet Encode's Shape: %s" % (str(out.shape)))
+
+        out = self.en_blk3(out) + out[:, :, 0:int(self.encode_units[3])]
+        logging.debug("PoseNet Encode's Shape: %s" % (str(out.shape)))
+
+        out = self.before_latents(out)
+        logging.debug("PoseNet Encode's Shape: %s" % (str(out.shape)))
+
+        out = self.en2latents(out)
+        logging.debug("PoseNet Last Encode's Shape: %s" % (str(out.shape)))
+        return out
+
+    def decode(self, z):
+        logging.debug("PoseNet z's Shape: %s" % (str(z.shape)))
+
+        out = self.latents2de(z)
+        logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
+
+        out = self.after_latents(out)
+        logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
+
+        out = self.de_blk0(out)
+        logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
+
+        out = self.de_blk1(out)
+        logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
+
+        out = self.de_blk2(out)
+        logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
+
+        out = self.de_blk3(out)
+        logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
+
+        out = self.before_final(out)
+        logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
+
+        out = self.final_layer(out)
+        logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
+        return out
+
+
+class MotionVAE(nn.Module):
+    def __init__(self, fea_dim=50, seq_dim=128, hidden_dim=1024, latent_dim=8, kld=False, dropout_p=0, device=None):
+        """
+        Temporal Variational Autoencoder (TemporalVAE)
+        In Gait analysis. we want a VAE function f(x) that follows the shapes:
+
+            x = (N, C, L), where N = batch_size, C = n_features + n_labels, L = sequence length (time), specifically,
+            C = 25*2+8.
+
+            f(x) = (N, C_2, L), where C_2 = 25*2, denoting the x, y-coordinates of the 25 keypoints.
+
+        Parameters
+        ----------
+        fea_dim : int
+            Number of channels (C). In gait analysis, n_channels = 25 * 2 + 8, which is (n_features + n_labels).
+        seq_dim : int
+            The length of input sequence. In gait analysis, it is the sequence length.
+        """
+
+        # Init
+        super(MotionVAE, self).__init__()
+        self.fea_dim, self.seq_dim, self.latent_dim = fea_dim, seq_dim, latent_dim
+        self.kld = kld
+        self.connecting_dim = self.latent_dim * 2 if self.kld else self.latent_dim
+        self.device = torch.device('cuda:0') if device is None else device
+
+        # Record the time dimension
+        self.L_encode_counter = LshapeCounter(seq_dim)
+        self.encoding_kernels = [5, 5, 5, 5, 5]
+        self.encoding_strides = [1, 2, 2, 2, 2]
+        self.decoding_kernels = [5, 5, 5, 5, 8]
+        self.decoding_strides = [1, 2, 2, 2, 2]
+        self.Ls_encode = [self.L_encode_counter.updateL(kernel_size=x, stride=y) for x, y, in
+                          zip(self.encoding_kernels, self.encoding_strides)]
+
+        # Encoder
+        self.first_layer = nn.Conv1d(self.fea_dim,
+                                     hidden_dim,
+                                     kernel_size=self.encoding_kernels[0],
+                                     stride=self.encoding_strides[0])
+        self.en_blk1 = nn.Sequential(*motion_encoding_block(hidden_dim,
+                                                            hidden_dim,
+                                                            kernel_size=self.encoding_kernels[1],
+                                                            stride=self.encoding_strides[1],
+                                                            dropout_p=dropout_p))
+        self.en_blk2 = nn.Sequential(*motion_encoding_block(hidden_dim,
+                                                            hidden_dim,
+                                                            kernel_size=self.encoding_kernels[2],
+                                                            stride=self.encoding_strides[2],
+                                                            dropout_p=dropout_p))
+        self.en_blk3 = nn.Sequential(*motion_encoding_block(hidden_dim,
+                                                            hidden_dim,
+                                                            kernel_size=self.encoding_kernels[3],
+                                                            stride=self.encoding_strides[3],
+                                                            dropout_p=dropout_p))
+        self.en_blk4 = nn.Sequential(*motion_encoding_block(hidden_dim,
+                                                            hidden_dim,
+                                                            kernel_size=self.encoding_kernels[4],
+                                                            stride=self.encoding_strides[4],
+                                                            dropout_p=dropout_p))
+        self.en2latents = nn.Sequential(
+            FlattenLastDim(),
+            nn.Linear(hidden_dim * int(self.Ls_encode[4]), self.connecting_dim)
+        )
+
+        self.motion_reparams = Reparameterize(self.device, self.latent_dim)
+
+        self.latents2de = nn.Sequential(
+            Unsqueeze(),
+            nn.ConvTranspose1d(self.latent_dim,
+                               hidden_dim,
+                               kernel_size=self.decoding_kernels[0],
+                               stride=self.decoding_strides[0])
+        )
+
+        self.de_blk1 = nn.Sequential(*motion_decoding_block(hidden_dim,
+                                                            hidden_dim,
+                                                            kernel_size=self.decoding_kernels[1],
+                                                            stride=self.decoding_strides[1]))
+        self.de_blk2 = nn.Sequential(*motion_decoding_block(hidden_dim,
+                                                            hidden_dim,
+                                                            kernel_size=self.decoding_kernels[2],
+                                                            stride=self.decoding_strides[2]))
+        self.de_blk3 = nn.Sequential(*motion_decoding_block(hidden_dim,
+                                                            hidden_dim,
+                                                            kernel_size=self.decoding_kernels[3],
+                                                            stride=self.decoding_strides[3]))
+        self.de_blk4 = nn.Sequential(*motion_decoding_block(hidden_dim,
+                                                            hidden_dim,
+                                                            kernel_size=self.decoding_kernels[4],
+                                                            stride=self.decoding_strides[4]))
+        self.final_layer = nn.Sequential(
+            nn.Conv1d(hidden_dim, self.fea_dim, kernel_size=1)
+        )
+
+    def forward(self, x):
+        # Encoder
+        out = self.encode(x)
+
+        if self.kld:
+            z, mu, logvar = self.motion_reparams(out)
+        else:
+            z = out
+            mu = z.clone()  # dummy assignment
+            logvar = mu  # dummy assignment
+
+        out = self.decode(z)
+        return out, mu, logvar, z
+
+    def encode(self, x):
+        logging.debug("MotionNet Input's Shape: %s" % (str(x.shape)))
+
+        out = self.first_layer(x)
+        logging.debug("MotionNet Encode's Shape: %s" % (str(out.shape)))
+
+        out = self.en_blk1(out) + out[:, :, 0:int(self.Ls_encode[1])]
+        logging.debug("MotionNet Encode's Shape: %s" % (str(out.shape)))
+
+        out = self.en_blk2(out) + out[:, :, 0:int(self.Ls_encode[2])]
+        logging.debug("MotionNet Encode's Shape: %s" % (str(out.shape)))
+
+        out = self.en_blk3(out) + out[:, :, 0:int(self.Ls_encode[3])]
+        logging.debug("MotionNet Encode's Shape: %s" % (str(out.shape)))
+
+        out = self.en_blk4(out) + out[:, :, 0:int(self.Ls_encode[4])]
+        logging.debug("MotionNet Encode's Shape: %s" % (str(out.shape)))
+
+        out = self.en2latents(out)
+        logging.debug("MotionNet Last Encode's Shape: %s" % (str(out.shape)))
+        return out
+
+    def decode(self, z):
+        logging.debug("MotionNet z's Shape: %s" % (str(z.shape)))
+
+        out = self.latents2de(z)
+        logging.debug("MotionNet Decode's Shape: %s" % (str(out.shape)))
+
+        out = self.de_blk1(out)
+        logging.debug("MotionNet Decode's Shape: %s" % (str(out.shape)))
+
+        out = self.de_blk2(out)
+        logging.debug("MotionNet Decode's Shape: %s" % (str(out.shape)))
+
+        out = self.de_blk3(out)
+        logging.debug("MotionNet Decode's Shape: %s" % (str(out.shape)))
+
+        out = self.de_blk4(out)
+        logging.debug("MotionNet Decode's Shape: %s" % (str(out.shape)))
+
+        out = self.final_layer(out)
+        logging.debug("MotionNet Decode's Shape: %s" % (str(out.shape)))
+        return out
+
+
+class ClassNet(nn.Module):
+
+    def __init__(self, input_dim, n_classes, device=None):
+        """
+        PoseVAE takes in data with shape (m, input_dims), and reconstructs it with bottleneck layer (m, latent_dims),
+        where m is number of samples.
+
+        Parameters
+        ----------
+        input_dim : int
+        n_classes : int
+            Also the dimension of final layer
+        """
+
+        # Model setting
+        super(ClassNet, self).__init__()
+        self.input_dim, self.n_classes = input_dim, n_classes
+        self.device = torch.device('cuda:0') if device is None else device
+        self.encode_units = [128, 64, 32, 16]
+
+        # Encoder
+        self.first_layer = nn.Linear(self.input_dim, self.encode_units[0])
+
+        self.en_blk1 = nn.Sequential(*pose_block(input_channels=self.encode_units[0],
+                                                       output_channels=self.encode_units[1]
+                                                       ))
+        self.en_blk2 = nn.Sequential(*pose_block(input_channels=self.encode_units[1],
+                                                       output_channels=self.encode_units[2]
+                                                       ))
+        self.en_blk3 = nn.Sequential(*pose_block(input_channels=self.encode_units[2],
+                                                       output_channels=self.encode_units[3]
+                                                       ))
+        self.final_layer = nn.Linear(self.encode_units[3], self.n_classes)
+        self.sigmoid_layer = nn.Sigmoid()
+
+    def forward(self, x):
+        out = self.encode(x)
+        out = self.sigmoid_layer(out)
+        return out
+
+    def encode(self, x):
+        logging.debug("ClassNet Input's Shape: %s" % (str(x.shape)))
+
+        out = self.first_layer(x)
+        logging.debug("ClassNet Encode's Shape: %s" % (str(out.shape)))
+
+        out = self.en_blk1(out) + out[:, 0:int(self.encode_units[1])]
+        logging.debug("ClassNet Encode's Shape: %s" % (str(out.shape)))
+
+        out = self.en_blk2(out) + out[:, 0:int(self.encode_units[2])]
+        logging.debug("ClassNet Encode's Shape: %s" % (str(out.shape)))
+
+        out = self.en_blk3(out) + out[:, 0:int(self.encode_units[3])]
+        logging.debug("ClassNet Encode's Shape: %s" % (str(out.shape)))
+
+        out = self.final_layer(out)
+        logging.debug("ClassNet Last Encode's Shape: %s" % (str(out.shape)))
+        return out
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG)
+    device = torch.device('cuda:0')
+
+    combined_model = GraphSpatioTemporalVAE(
+        device=device
+    ).to(device)
+
+    sample_pose = torch.rand(size=(30 * 128, 50)).float().to(device)
+    sample_motion = torch.rand(size=(30, 50, 128)).float().to(device)
+
+    combined_params = combined_model.parameters()
+
+    params = list(combined_params)
+    optimizer = optim.Adam(params, lr=0.001)
+    for i in range(50):
+        optimizer.zero_grad()
+        recon_motion, z, (pose_z, pose_mu, pose_logvar), (motion_z, motion_mu, motion_logvar) = combined_model(
+            sample_motion)
+        loss = torch.mean((sample_motion - recon_motion) ** 2)
+
+        print(loss)
+        loss.backward()
+        optimizer.step()
