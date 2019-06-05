@@ -25,7 +25,7 @@ def run_train_and_vis_on_stvae():
     lr_decay_gamma = 0.1
 
     # Train
-    data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=512, n=seq_dim)
+    data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=256, n=seq_dim)
     model_identifier = "{}_pose_l-{}_d-{}_kld-{}_grad-{}_motion_l-{}_d-{}_kld-{}_recongrad-{}_class-{}_rmseW-{}".format(
         model_type,
         posenet_latent_dim,
@@ -61,11 +61,11 @@ def run_train_and_vis_on_stvae():
                                  rmse_weighting_startepoch=rmse_weighting_startepoch,
                                  init_lr=init_lr, lr_milestones=lr_milestones, lr_decay_gamma=lr_decay_gamma,
                                  save_chkpt_path=save_model_path, load_chkpt_path=load_model_path)
-    model_container.train(300)
+    # model_container.train(50)
 
     # Visualization
     if model_chkpt_found:
-        data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=4096, n=seq_dim, seed=60)
+        data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=512, n=seq_dim, seed=60)
         model_container.vis_reconstruction(data_gen2, 10, save_vid_dir, model_identifier)
         model_container.save_model_losses_data(save_vid_dir, model_identifier)
     else:
