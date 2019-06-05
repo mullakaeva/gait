@@ -110,6 +110,13 @@ class GaitGeneratorFromDF:
         self.label_range = np.max(self.df["labels"]) - np.min(self.df["labels"])
 
     def iterator(self):
+        """
+        Randomly sample the indexes from data frame, and yield the sampled batch with the same indexes
+
+        Returns
+        -------
+
+        """
         duration_indices = []
         start = 0
         for stop in range(0, self.num_rows, self.m):
@@ -130,7 +137,7 @@ class GaitGeneratorFromDF:
         selected_df = df_shuffled.iloc[start:stop, :].copy()
         output_arr, times = self._loop_for_array_construction(selected_df, self.m)
         output_arr_test, _ = self._loop_for_array_construction(self.df_test, self.m)
-        output_arr = output_arr.reshape(self.m, self.n, 25*3)
+        output_arr = output_arr.reshape(self.m, self.n, 25 * 3)
         output_arr_test = output_arr_test.reshape(self.m, self.n, 25 * 3)
         return (output_arr, output_arr_test), times
 
@@ -138,7 +145,6 @@ class GaitGeneratorFromDF:
         output_arr = np.zeros((num_samples, self.n, 25, 3))
 
         for i in range(num_samples):
-
             # Get features and labels
             fea_vec = df["features"].iloc[i]  # numpy.darray (num_frames, 25, 2)
             label = df["labels"].iloc[i] / self.label_range  # numpy.int64
@@ -171,12 +177,11 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
     where features_train/test has shape (m, num_features=50, n), and labels_train/test has shape (m, )
 
     """
+
     def __init__(self, df_pickle_path, m=32, n=128, train_portion=0.95, seed=None):
         # Hard-coded params
         self.keyps_x_dims, self.keyps_y_dims = 25, 25
         self.total_fea_dims = self.keyps_x_dims + self.keyps_y_dims
-        self.weighting_vec = np.ones(self.total_fea_dims) # Construct weighting vector
-        self.weighting_vec[excluded_points_flatten] = 0 # masked out nose, two eyes
 
         # Call parent's init
         super(GaitGeneratorFromDFforTemporalVAE, self).__init__(df_pickle_path, m, n, train_portion, seed)
@@ -184,10 +189,10 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
 
     def _convert_df_to_data(self, df_shuffled, start, stop):
         selected_df = df_shuffled.iloc[start:stop, :].copy()
-        output_arr_train, labels_train = self._loop_for_array_construction(selected_df, self.m)
-        output_arr_test, labels_test = self._loop_for_array_construction(self.df_test, self.df_test.shape[0])
-        labels_train_onehot, labels_test_onehot = convert_1d_to_onehot(labels_train), convert_1d_to_onehot(labels_test)
-        return (output_arr_train, labels_train, labels_train_onehot), (output_arr_test, labels_test, labels_test_onehot)
+        output_arr_train, labels_train, nan_mask_train = self._loop_for_array_construction(selected_df, self.m)
+        output_arr_test, labels_test, nan_mask_test = self._loop_for_array_construction(self.df_test, self.df_test.shape[0])
+        # labels_train_onehot, labels_test_onehot = convert_1d_to_onehot(labels_train), convert_1d_to_onehot(labels_test)
+        return (output_arr_train, labels_train, nan_mask_train), (output_arr_test, labels_test, nan_mask_test)
 
     def _loop_for_array_construction(self, df, num_samples):
         """
@@ -208,26 +213,30 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
 
         """
         features_arr = np.zeros((num_samples, self.total_fea_dims, self.n))
+        nan_arr = np.zeros(features_arr.shape)
         label_arr = np.zeros(num_samples)
         for i in range(num_samples):
-
             # Get features and labels
             fea_vec = df["features"].iloc[i]  # numpy.darray (num_frames, 25, 2)
             label = df["labels"].iloc[i]  # numpy.int64
-            fea_vec = fea_vec - np.mean(fea_vec, axis = 1, keepdims=True)
+            nan_mask = df["nan_masks"].iloc[i]  # numpy.bool (num_frames, 25, 2)
 
             # Slice to the receptive window
             slice_start = np.random.choice(fea_vec.shape[0] - self.n)
             fea_vec_sliced = fea_vec[slice_start:slice_start + self.n, :, :]
+            nan_arr_sliced = nan_mask[slice_start:slice_start + self.n, :, :]
 
             # Put integer label into numpy.darray
             label_arr[i] = label
 
             # Construct output
-            features_arr[i, 0:self.keyps_x_dims, :] = fea_vec_sliced[:, :, 0].T # Store x-coordinates
-            features_arr[i, self.keyps_x_dims:self.total_fea_dims, :] = fea_vec_sliced[:, :, 1].T # Store y-coordinates
+            features_arr[i, 0:self.keyps_x_dims, :] = fea_vec_sliced[:, :, 0].T  # Store x-coordinates
+            features_arr[i, self.keyps_x_dims:self.total_fea_dims, :] = fea_vec_sliced[:, :, 1].T  # Store y-coordinates
+            nan_arr[i, 0:self.keyps_x_dims, :] = nan_arr_sliced[:, :, 0].T  # Store x-coordinates
+            nan_arr[i, self.keyps_x_dims:self.total_fea_dims, :] = nan_arr_sliced[:, :, 1].T  # Store y-coordinates
 
-        return features_arr, label_arr
+        return features_arr, label_arr, nan_arr
+
 
 class GaitGeneratorFromDFforSingleSkeletonVAE:
     def __init__(self, df_pickle_path, m=32, train_portion=0.95):
@@ -246,7 +255,7 @@ class GaitGeneratorFromDFforSingleSkeletonVAE:
         self.weighting_vec[excluded_points_flatten] = 0  # masked out nose, two eyes
 
         # Construct train and test set
-        split_idx = int(self.total_num_rows*train_portion)
+        split_idx = int(self.total_num_rows * train_portion)
         self.data_train = output_arr[0:split_idx, ]
         self.labels_train = labels[0:split_idx, ]
         self.data_test = output_arr[split_idx:, ]
@@ -263,8 +272,8 @@ class GaitGeneratorFromDFforSingleSkeletonVAE:
                 duration_indices.append((start, stop))
                 start = stop
         ran_vec = np.random.permutation(self.num_rows)
-        arr_train_shuffled = self.data_train[ran_vec, ]
-        labels_train_shuffled = self.labels_train[ran_vec, ]
+        arr_train_shuffled = self.data_train[ran_vec,]
+        labels_train_shuffled = self.labels_train[ran_vec,]
 
         for start, stop in duration_indices:
             sampled_data = self._convert_arr_to_data(arr_train_shuffled, start, stop)

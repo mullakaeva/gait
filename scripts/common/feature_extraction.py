@@ -8,7 +8,6 @@ from .keypoints_format import openpose_L_indexes, openpose_R_indexes, openpose_c
 from sklearn.metrics.pairwise import pairwise_distances
 
 
-
 class Imputator():
     def __init__(self, data, detect_allnan=False):
         """
@@ -34,10 +33,10 @@ class Imputator():
 
         self.data[nan_mask] = mean_keyps_expanded[nan_mask]
 
-        return self.data
+        return self.data, nan_mask
 
     def _search_for_nan(self):
-        nan_mask = np.isnan(self.data) # (num_frames, 25, 3)
+        nan_mask = np.isnan(self.data)  # (num_frames, 25, 2)
         if self.detect_allnan:
             sum_mask = np.sum(nan_mask, axis=0)
             all_nan_deetected = (sum_mask == self.data.shape[0]).any()
@@ -64,7 +63,7 @@ class CustomMeanImputator(Imputator):
             mean_keyps = self._calc_means()
         mean_keyps_expanded = np.ones(self.data.shape) * mean_keyps
         self.data[nan_mask] = mean_keyps_expanded[nan_mask]
-        return self.data
+        return self.data, nan_mask
 
     def _use_existing_means(self):
         return self.mean
@@ -180,8 +179,8 @@ class FeatureExtractor():
     @staticmethod
     def _mean_single_imputation(data, mean):
         imputor = CustomMeanImputator(data, mean)
-        data_imputed = imputor.mean_imputation()
-        return data_imputed
+        data_imputed, nan_mask = imputor.mean_imputation()
+        return data_imputed, nan_mask
 
     @staticmethod
     def _clipping_rescaling(data, min_val=0, max_val=250, mul_factor=1 / 250):
@@ -207,6 +206,7 @@ class FeatureExtractorForODE(FeatureExtractor):
 
     The class handles input data that were first preprocessed by "OpenposePreprocesser".
     """
+
     def __init__(self, scr_keyps_dir, labels_path, df_save_path):
         """
 
@@ -229,6 +229,7 @@ class FeatureExtractorForODE(FeatureExtractor):
         self.lreader = LabelsReader(labels_path)
         self.df_save_path = df_save_path
         self.vid_name_roots_list, self.features_list, self.labels_list = [], [], []
+        self.nan_masks_list = []
         super(FeatureExtractorForODE, self).__init__(scr_keyps_dir, None)
         self.data_grand_mean = self._incremental_mean_estimation()  # Shape = (25, 3)
 
@@ -245,7 +246,6 @@ class FeatureExtractorForODE(FeatureExtractor):
             None
         """
         for idx, arr_path in enumerate(self.arrs_paths):
-
             # Print progress
             print("\rSecond preprocessing %d/%d" % (idx, self.total_paths_num), flush=True, end="")
 
@@ -255,8 +255,8 @@ class FeatureExtractorForODE(FeatureExtractor):
             # First column: vid_name_root
             vid_name_root = os.path.splitext(os.path.split(arr_path)[1])[0]
 
-            # Second column: features
-            feature = self._transform_to_features(keyps_arr)
+            # Second column: features + Forth column: nan_mask
+            feature, nan_mask = self._transform_to_features(keyps_arr)
 
             # Third column: labels
             label = self.lreader.get_label(vid_name_root + ".mp4")
@@ -265,11 +265,13 @@ class FeatureExtractorForODE(FeatureExtractor):
             self.vid_name_roots_list.append(vid_name_root)
             self.features_list.append(feature)
             self.labels_list.append(label)
+            self.nan_masks_list.append(np.invert(nan_mask))
 
         # Create dataframe
         self.df["vid_name_roots"] = self.vid_name_roots_list
         self.df["features"] = self.features_list
         self.df["labels"] = self.labels_list
+        self.df["nan_masks"] = self.nan_masks_list
 
         # Filter rows with numbe of frames smaller than "filter_window"
         if (filter_window is not None) and (isinstance(filter_window, int)):
@@ -289,9 +291,12 @@ class FeatureExtractorForODE(FeatureExtractor):
         keyps_arr_clipped = np.clip(keyps_arr, boundary[0], boundary[1])
 
         # Imputation (nan -> mean)
-        keyps_imputed = self._mean_single_imputation(keyps_arr_clipped, self.data_grand_mean) # (num_frames, 25, 2)
+        keyps_imputed, nan_mask = self._mean_single_imputation(keyps_arr_clipped, self.data_grand_mean)  # (num_frames, 25, 2)
 
         # Rescaling (./250)
-        keyps_rescaled = keyps_imputed/boundary[1]
+        keyps_rescaled = keyps_imputed / boundary[1]
 
-        return keyps_rescaled
+        # Translation to hip_centre (index = 8)
+        keyps_translated = keyps_rescaled - keyps_rescaled[:, [8], :]
+
+        return keyps_translated, nan_mask

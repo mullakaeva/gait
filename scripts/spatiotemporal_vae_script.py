@@ -5,29 +5,30 @@ def run_train_and_vis_on_stvae():
     from common.generator import GaitGeneratorFromDFforTemporalVAE
     import os
 
-    df_path = "/mnt/data/raw_features_zmatrix_row_labels.pickle"
-    model_chkpt_found = False
+    df_path = "/mnt/data/raw_features_zmatrix_row_labels_withNanMasks.pickle"
     seq_dim = 128
-    model_type = "graph"
-    # model_type = "normal"
+    # model_type = "graph"
+    model_type = "normal"
+    recon_weight = 1
     posenet_latent_dim = 16
     posenet_dropout_p = 0
     posenet_kld = None
-    pose_latent_gradient = 0.0001
+    pose_latent_gradient = 0  # 0.0001
     motionnet_latent_dim = 128
     motionnet_dropout_p = 0
-    motionnet_kld = [200, 250, 0.0001]
-    recon_gradient = 0.0001
-    class_weight = 0.001
-    rmse_weighting_startepoch = 150
+    motionnet_kld = None  # [200, 250, 0.0001]
+    recon_gradient = 0  # 0.0001
+    class_weight = 0  # 0.001
+    rmse_weighting_startepoch = None
     init_lr = 0.001
-    lr_milestones = [75, 150]
+    lr_milestones = [50, 150]
     lr_decay_gamma = 0.1
 
     # Train
-    data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=256, n=seq_dim)
-    model_identifier = "{}_pose_l-{}_d-{}_kld-{}_grad-{}_motion_l-{}_d-{}_kld-{}_recongrad-{}_class-{}_rmseW-{}".format(
+    data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=512, n=seq_dim)
+    model_identifier = "{}_ReconW-{}_pose_l-{}_d-{}_kld-{}_grad-{}_motion_l-{}_d-{}_kld-{}_recongrad-{}_class-{}_rmseW-{}".format(
         model_type,
+        recon_weight,
         posenet_latent_dim,
         posenet_dropout_p,
         posenet_kld,
@@ -46,7 +47,6 @@ def run_train_and_vis_on_stvae():
 
     if os.path.isfile(save_model_path):
         print("Model checkpoint identified.")
-        model_chkpt_found = True
         load_model_path = save_model_path
     else:
         load_model_path = None
@@ -61,12 +61,13 @@ def run_train_and_vis_on_stvae():
                                  rmse_weighting_startepoch=rmse_weighting_startepoch,
                                  init_lr=init_lr, lr_milestones=lr_milestones, lr_decay_gamma=lr_decay_gamma,
                                  save_chkpt_path=save_model_path, load_chkpt_path=load_model_path)
-    # model_container.train(50)
+    model_container.train(300)
 
     # Visualization
-    if model_chkpt_found:
+    if os.path.isfile(save_model_path):
         data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=512, n=seq_dim, seed=60)
         model_container.vis_reconstruction(data_gen2, 10, save_vid_dir, model_identifier)
         model_container.save_model_losses_data(save_vid_dir, model_identifier)
     else:
-        print("Required chkpt file cannot be found")
+        print("Chkpt cannot be found")
+

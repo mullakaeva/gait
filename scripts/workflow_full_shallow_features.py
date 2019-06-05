@@ -1,5 +1,4 @@
 # from common.preprocess import openpose_preprocess_wrapper
-# from common.feature_extraction import FeatureExtractorForODE
 # from common.generator import GaitGeneratorFromDF
 # from neuralODE.analysis_neuralODE import gait_neural_ode_train, gait_neural_ode_vis
 
@@ -27,9 +26,10 @@
 
 # %% ======================== Step 3: Extracting feature for ODE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
+# from common.feature_extraction import FeatureExtractorForODE
 # scr_keyps_dir = "/mnt/data/preprocessed_keypoints"
 # labels_path = "/mnt/data/labels/z_matrix/df_gait_vid_linked_190718.pkl"
-# df_save_path = "/mnt/data/raw_features_zmatrix_row_labels.pickle"
+# df_save_path = "/mnt/data/raw_features_zmatrix_row_labels_withNanMasks.pickle"
 # minimum_sequence_window = 128
 # extractor = FeatureExtractorForODE(scr_keyps_dir=scr_keyps_dir,
 #                                    labels_path=labels_path,

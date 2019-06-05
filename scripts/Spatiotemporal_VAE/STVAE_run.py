@@ -32,6 +32,7 @@ class STVAEmodel:
                  motionnet_hidden_dim=512,
                  motionnet_dropout_p=0,
                  motionnet_kld=None,
+                 recon_weight=1,
                  pose_latent_gradient=0,
                  recon_gradient=0,
                  classification_weight=0,
@@ -62,6 +63,7 @@ class STVAEmodel:
         self.motionnet_latent_dim = motionnet_latent_dim
         self.motionnet_dropout_p = motionnet_dropout_p
         self.motionnet_hidden_dim = motionnet_hidden_dim
+        self.recon_weight = recon_weight
         self.pose_latent_gradient = pose_latent_gradient
         self.recon_gradient = recon_gradient
         self.classification_weight = classification_weight
@@ -88,7 +90,6 @@ class STVAEmodel:
             "test_latent_grad",
             "test_acc"
         )
-        self.weights_vec = self._get_weights_vec()
         self.class_criterion = CrossEntropyLoss()
         # Initialize model, params, optimizer, loss
         if load_chkpt_path is None:
@@ -100,12 +101,14 @@ class STVAEmodel:
         try:
             for epoch in range(n_epochs):
                 iter_idx = 0
-                for (x, labels, _), (x_test, labels_test, _) in self.data_gen.iterator():
+                for (x, labels, nan_masks), (x_test, labels_test, nan_masks_test) in self.data_gen.iterator():
                     # Convert numpy to torch.tensor
                     x = torch.from_numpy(x).float().to(self.device)
                     x_test = torch.from_numpy(x_test).float().to(self.device)
                     labels = torch.from_numpy(labels).long().to(self.device)
                     labels_test = torch.from_numpy(labels_test).long().to(self.device)
+                    nan_masks = torch.from_numpy(nan_masks * 1).float().to(self.device)
+                    nan_masks_test = torch.from_numpy(nan_masks_test * 1).float().to(self.device)
 
                     # Clear optimizer's previous gradients
                     self.optimizer.zero_grad()
@@ -120,7 +123,8 @@ class STVAEmodel:
                             recon_info_t,
                             class_info_t,
                             pose_stats_t,
-                            motion_stats_t
+                            motion_stats_t,
+                            nan_masks_test
                         )
                         self.loss_meter.update_meters(
                             test_total_loss=loss_t.item(),
@@ -139,12 +143,12 @@ class STVAEmodel:
                     loss, (recon, posekld, motionkld, recongrad, latentgrad, acc) = self.loss_function(recon_info,
                                                                                                        class_info,
                                                                                                        pose_stats,
-                                                                                                       motion_stats)
+                                                                                                       motion_stats,
+                                                                                                       nan_masks)
 
                     # Running average of RMSE weighting
                     if (self.rmse_weighting_startepoch is not None) and (self.epoch == self.rmse_weighting_startepoch):
-                        squared_diff = (recon_motion - x) ** 2  # (n_samples, 50, 128)
-                        squared_diff[:, excluded_points_flatten, :] = 0
+                        squared_diff = nan_masks((recon_motion - x) ** 2)  # (n_samples, 50, 128)
                         self._update_rmse_weighting_vec(squared_diff)
 
                     self.loss_meter.update_meters(
@@ -209,6 +213,7 @@ class STVAEmodel:
         self.motionnet_latent_dim = checkpoint['motionnet_latent_dim']
         self.motionnet_dropout_p = checkpoint['motionnet_dropout_p']
         self.motionnet_hidden_dim = checkpoint['motionnet_hidden_dim']
+        self.recon_weight = checkpoint['recon_weight']
         self.pose_latent_gradient = checkpoint['pose_latent_gradient']
         self.recon_gradient = checkpoint['recon_gradient']
         self.classification_weight = checkpoint['classification_weight']
@@ -244,6 +249,7 @@ class STVAEmodel:
                 'motionnet_latent_dim': self.motionnet_latent_dim,
                 'motionnet_dropout_p': self.motionnet_dropout_p,
                 'motionnet_hidden_dim': self.motionnet_hidden_dim,
+                'recon_weight': self.recon_weight,
                 'pose_latent_gradient': self.pose_latent_gradient,
                 'recon_gradient': self.recon_gradient,
                 'classification_weight': self.classification_weight,
@@ -258,7 +264,7 @@ class STVAEmodel:
 
             print('Stored ckpt at {}'.format(self.save_chkpt_path))
 
-    def loss_function(self, recon_info, class_info, pose_stats, motion_stats):
+    def loss_function(self, recon_info, class_info, pose_stats, motion_stats, nan_masks):
         x, recon_motion = recon_info
         labels, pred_labels = class_info
         pose_z_seq, pose_mu, pose_logvar = pose_stats
@@ -275,11 +281,14 @@ class STVAEmodel:
         motionnet_kld_loss = motionnet_kld_multiplier * motionnet_kld_loss_indicator
 
         # Recon loss
-        squared_diff = (x - recon_motion) ** 2
-        recon_loss = torch.sum(self.weights_vec * self.rmse_weighting_vec * squared_diff)
+        squared_diff = nan_masks * ((x - recon_motion) ** 2)
+        recon_loss_indicator = torch.sum(self.rmse_weighting_vec * squared_diff)
+        recon_loss = self.recon_weight * recon_loss_indicator
 
         # Gradient loss
-        recon_grad_loss_indicator = torch.mean(self.weights_vec * self._calc_gradient(recon_motion))
+        nan_mask_negibour_sum = self._calc_gradient_sum(nan_masks)
+        gradient_mask = (nan_mask_negibour_sum == 2).float()  # If the adjacent entries are both 1
+        recon_grad_loss_indicator = torch.mean(gradient_mask * self._calc_gradient(recon_motion))
         pose_latent_grad_loss_indicator = torch.mean(self._calc_gradient(pose_z_seq))
         recon_grad_loss = self.recon_gradient * recon_grad_loss_indicator
         pose_latent_grad_loss = self.pose_latent_gradient * pose_latent_grad_loss_indicator
@@ -289,10 +298,18 @@ class STVAEmodel:
         class_loss = self.classification_weight * class_loss_indicator
 
         # Combine different losses
+        ## KLD has to be set to 0 manually if it is turned off, otherwise it is not numerically stable
+        motionnet_kld_loss = 0 if self.motionnet_kld is None else motionnet_kld_loss
+        posenet_kld_loss = 0 if self.posenet_kld is None else posenet_kld_loss
         loss = recon_loss + posenet_kld_loss + motionnet_kld_loss + recon_grad_loss + pose_latent_grad_loss + class_loss
-        # loss = recon_loss + recon_grad_loss + pose_latent_grad_loss + class_loss
-        return loss, (recon_loss, posenet_kld_loss_indicator, motionnet_kld_loss_indicator, recon_grad_loss_indicator,
-                      pose_latent_grad_loss_indicator, acc)
+
+        # if loss is np.nan:
+        #     import pdb
+        #     pdb.set_trace()
+
+        return loss, (
+            recon_loss_indicator, posenet_kld_loss_indicator, motionnet_kld_loss_indicator, recon_grad_loss_indicator,
+            pose_latent_grad_loss_indicator, acc)
 
     def _model_initialization(self):
         if self.model_type == "graph":
@@ -358,11 +375,6 @@ class STVAEmodel:
         fig.suptitle(os.path.splitext(os.path.split(self.save_chkpt_path)[1])[0])
         plt.savefig(self.save_chkpt_path + ".png", dpi=300)
 
-    def _get_weights_vec(self):
-        weights_vec = self.data_gen.weighting_vec.copy().reshape(1, -1, 1)
-        weights_vec = torch.from_numpy(weights_vec).float().to(self.device)
-        return weights_vec
-
     def _initilize_rmse_weighting_vec(self):
         unnormalized = torch.ones(self.data_gen.batch_shape).float().to(self.device)
         normalized = torch.mean(unnormalized, dim=0, keepdim=True) / torch.sum(unnormalized)
@@ -390,8 +402,14 @@ class STVAEmodel:
             kld_multiplier = kld_arg
         return kld_multiplier
 
-    def _calc_gradient(self, x):
+    @staticmethod
+    def _calc_gradient(x):
         grad = torch.abs(x[:, :, 0:127] - x[:, :, 1:])
+        return grad
+
+    @staticmethod
+    def _calc_gradient_sum(x):
+        grad = x[:, :, 0:127] + x[:, :, 1:]
         return grad
 
     def _get_classification_acc(self, pred_labels, labels):
