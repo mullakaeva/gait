@@ -13,15 +13,15 @@ def run_train_and_vis_on_stvae():
     posenet_latent_dim = 16
     posenet_dropout_p = 0
     posenet_kld = None
-    pose_latent_gradient = 0  # 0.0001
+    pose_latent_gradient = 0.001  # 0.0001
     motionnet_latent_dim = 128
     motionnet_dropout_p = 0
     motionnet_kld = None  # [200, 250, 0.0001]
-    recon_gradient = 0  # 0.0001
+    recon_gradient = 0.001  # 0.0001
     class_weight = 0  # 0.001
     rmse_weighting_startepoch = None
     init_lr = 0.001
-    lr_milestones = [50, 150]
+    lr_milestones = [75, 150]
     lr_decay_gamma = 0.1
 
     # Train
@@ -65,7 +65,7 @@ def run_train_and_vis_on_stvae():
 
     # Visualization
     if os.path.isfile(save_model_path):
-        data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=512, n=seq_dim, seed=60)
+        data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=4096, n=seq_dim, seed=60)
         model_container.vis_reconstruction(data_gen2, 10, save_vid_dir, model_identifier)
         model_container.save_model_losses_data(save_vid_dir, model_identifier)
     else:
