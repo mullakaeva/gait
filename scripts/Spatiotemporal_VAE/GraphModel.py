@@ -40,6 +40,7 @@ openpose_body_connection_scheme = (
 )
 
 def construct_edge_indices():
+
     num_edges = len(openpose_body_connection_scheme)
     edge_index = torch.zeros((2, num_edges*2)).long()
     for idx, edge_tuple in enumerate(openpose_body_connection_scheme):
@@ -49,8 +50,8 @@ def construct_edge_indices():
         edge_tensor = torch.from_numpy(np.array(edge_np)).long()
         edge_tensor_reverse = torch.from_numpy(np.array(edge_np_reverse)).long()
 
-        edge_index[idx, :] = edge_tensor
-        edge_index[num_edges + idx, :] = edge_tensor_reverse
+        edge_index[:, idx] = edge_tensor
+        edge_index[:, num_edges + idx] = edge_tensor_reverse
     return edge_index
 
 class GraphConvLinear(nn.Linear):
@@ -358,6 +359,9 @@ class PoseVAE(nn.Module):
 
     def encode(self, x):
         logging.debug("PoseNet Input's Shape: %s" % (str(x.shape)))
+
+        import pdb
+        pdb.set_trace()
 
         out = self.first_layer(x, self.edge_index)
         logging.debug("PoseNet Encode's Shape: %s" % (str(out.shape)))
