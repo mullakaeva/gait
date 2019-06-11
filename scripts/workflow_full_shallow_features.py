@@ -48,6 +48,7 @@
 
 # %% ======================== Step A.C.4: Train and visualize on combined_VAE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
+# nvidia-docker run -it -e NVIDIA_VISIBLE_DEVICES=0 -u root -v /data/hoi/gait_analysis:/mnt yyhhoi/pytorch_geometric:2 bash
 from spatiotemporal_vae_script import run_train_and_vis_on_stvae
 run_train_and_vis_on_stvae()
 

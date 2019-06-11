@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from torch_geometric.nn import GCNConv
 from torch.autograd import Variable
 from .Model import motion_encoding_block, motion_decoding_block, LshapeCounter, Reparameterize, Flatten, UnFlatten, \
     FlattenLastDim, Transpose, pose_block, Unsqueeze
@@ -38,6 +39,19 @@ openpose_body_connection_scheme = (
     (19, 20)  # l_bigtoe to l_small toe
 )
 
+def construct_edge_indices():
+    num_edges = len(openpose_body_connection_scheme)
+    edge_index = torch.zeros((2, num_edges*2)).long()
+    for idx, edge_tuple in enumerate(openpose_body_connection_scheme):
+        edge_np = np.array(edge_tuple)
+        edge_np_reverse = np.array(edge_tuple)[::-1]
+
+        edge_tensor = torch.from_numpy(np.array(edge_np)).long()
+        edge_tensor_reverse = torch.from_numpy(np.array(edge_np_reverse)).long()
+
+        edge_index[idx, :] = edge_tensor
+        edge_index[num_edges + idx, :] = edge_tensor_reverse
+    return edge_index
 
 class GraphConvLinear(nn.Linear):
     def __init__(self, in_features, out_features, bias=True):
@@ -68,12 +82,10 @@ def pose_graph_block(input_channels,
                      output_channels,
                      dropout_p=0):
     # Input should have shape (n_samples, 25, 2), where 2 is "input_channels"
-    LN_layer = GraphConvLinear(input_channels, output_channels)
     bn_layer = nn.BatchNorm1d(25, track_running_stats=False)
     relu_layer = nn.ReLU()
     droput_layer = nn.Dropout(dropout_p)
     block_list = [
-        LN_layer,
         bn_layer,
         relu_layer,
         droput_layer
@@ -261,25 +273,30 @@ class PoseVAE(nn.Module):
 
         # Model setting
         super(PoseVAE, self).__init__()
+        self.device = torch.device('cuda:0') if device is None else device
         self.kld = kld
         self.fea_dim, self.latent_dim = fea_dim, latent_dim
         self.connecting_dim = self.latent_dim * 2 if self.kld else self.latent_dim
-        self.encode_units = [128, 64, 32, 16]
-        self.decode_units = [4, 8, 16, 32]
+        self.edge_index = construct_edge_indices().to(self.device)
+        self.encode_units = [32, 32, 32, 32]
+        self.decode_units = [32, 32, 32, 32]
         # self.encode_units = [64, 32, 16, 8]
         # self.decode_units = [8, 16, 32, 64]
 
-        self.device = torch.device('cuda:0') if device is None else device
 
         # Encoder
-        self.first_layer = GraphConvLinear(2, self.encode_units[0])
+        self.first_layer = GCNConv(2, self.encode_units[0])
 
+        self.en_blk1_graph = GCNConv(self.encode_units[0], self.encode_units[1])
         self.en_blk1 = nn.Sequential(*pose_graph_block(input_channels=self.encode_units[0],
                                                        output_channels=self.encode_units[1],
                                                        dropout_p=dropout_p))
+
+        self.en_blk2_graph = GCNConv(self.encode_units[1], self.encode_units[2])
         self.en_blk2 = nn.Sequential(*pose_graph_block(input_channels=self.encode_units[1],
                                                        output_channels=self.encode_units[2],
                                                        dropout_p=dropout_p))
+        self.en_blk3_graph = GCNConv(self.encode_units[2], self.encode_units[3])
         self.en_blk3 = nn.Sequential(*pose_graph_block(input_channels=self.encode_units[2],
                                                        output_channels=self.encode_units[3],
                                                        dropout_p=dropout_p))
@@ -294,14 +311,17 @@ class PoseVAE(nn.Module):
 
         self.after_latents = UnFlattenLastDim(25, 2)
 
-        self.de_blk0 = GraphConvLinear(2, self.decode_units[0])
+        self.de_blk0 = GCNConv(2, self.decode_units[0])
 
+        self.de_blk1_graph = GCNConv(self.decode_units[0], self.decode_units[1])
         self.de_blk1 = nn.Sequential(*pose_graph_block(input_channels=self.decode_units[0],
                                                        output_channels=self.decode_units[1],
                                                        dropout_p=dropout_p))
+        self.de_blk2_graph = GCNConv(self.decode_units[1], self.decode_units[2])
         self.de_blk2 = nn.Sequential(*pose_graph_block(input_channels=self.decode_units[1],
                                                        output_channels=self.decode_units[2],
                                                        dropout_p=dropout_p))
+        self.de_blk3_graph = GCNConv(self.decode_units[2], self.decode_units[3])
         self.de_blk3 = nn.Sequential(*pose_graph_block(input_channels=self.decode_units[2],
                                                        output_channels=self.decode_units[3],
                                                        dropout_p=dropout_p))
@@ -339,16 +359,19 @@ class PoseVAE(nn.Module):
     def encode(self, x):
         logging.debug("PoseNet Input's Shape: %s" % (str(x.shape)))
 
-        out = self.first_layer(x)
+        out = self.first_layer(x, self.edge_index)
         logging.debug("PoseNet Encode's Shape: %s" % (str(out.shape)))
 
-        out = self.en_blk1(out) + out[:, :, 0:int(self.encode_units[1])]
+        out = self.en_blk1_graph(out, self.edge_index)
+        out = self.en_blk1(out)
         logging.debug("PoseNet Encode's Shape: %s" % (str(out.shape)))
 
-        out = self.en_blk2(out) + out[:, :, 0:int(self.encode_units[2])]
+        out = self.en_blk2_graph(out, self.edge_index)
+        out = self.en_blk2(out)
         logging.debug("PoseNet Encode's Shape: %s" % (str(out.shape)))
 
-        out = self.en_blk3(out) + out[:, :, 0:int(self.encode_units[3])]
+        out = self.en_blk3_graph(out, self.edge_index)
+        out = self.en_blk3(out)
         logging.debug("PoseNet Encode's Shape: %s" % (str(out.shape)))
 
         out = self.before_latents(out)
@@ -367,15 +390,18 @@ class PoseVAE(nn.Module):
         out = self.after_latents(out)
         logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
 
-        out = self.de_blk0(out)
+        out = self.de_blk0(out, self.edge_index)
         logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
 
+        out = self.de_blk1_graph(out, self.edge_index)
         out = self.de_blk1(out)
         logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
 
+        out = self.de_blk2_graph(out, self.edge_index)
         out = self.de_blk2(out)
         logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
 
+        out = self.de_blk3_graph(out, self.edge_index)
         out = self.de_blk3(out)
         logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
 
