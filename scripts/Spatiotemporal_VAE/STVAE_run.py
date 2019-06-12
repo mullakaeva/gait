@@ -22,7 +22,7 @@ import umap
 class STVAEmodel:
     def __init__(self,
                  data_gen,
-                 fea_dim=50,
+                 fea_dim=25,
                  seq_dim=128,
                  model_type="normal",
                  posenet_latent_dim=10,
@@ -288,8 +288,8 @@ class STVAEmodel:
         # Gradient loss
         nan_mask_negibour_sum = self._calc_gradient_sum(nan_masks)
         gradient_mask = (nan_mask_negibour_sum == 2).float()  # If the adjacent entries are both 1
-        recon_grad_loss_indicator = torch.mean(gradient_mask * self._calc_gradient(recon_motion))
-        pose_latent_grad_loss_indicator = torch.mean(self._calc_gradient(pose_z_seq))
+        recon_grad_loss_indicator = torch.mean(gradient_mask * self._calc_gradient(recon_motion, "recon"))
+        pose_latent_grad_loss_indicator = torch.mean(self._calc_gradient(pose_z_seq, "pose"))
         recon_grad_loss = self.recon_gradient * recon_grad_loss_indicator
         pose_latent_grad_loss = self.pose_latent_gradient * pose_latent_grad_loss_indicator
 
@@ -402,14 +402,15 @@ class STVAEmodel:
             kld_multiplier = kld_arg
         return kld_multiplier
 
-    @staticmethod
-    def _calc_gradient(x):
-        grad = torch.abs(x[:, :, 0:127] - x[:, :, 1:])
+    def _calc_gradient(self, x, tag):
+        if tag == "recon":
+            grad = torch.abs(x[:, 0:x.shape[1]-1, ] - x[:, 1:, ])
+        elif tag == "pose":
+            grad = torch.abs(x[:, :, 0:x.shape[2]-1 ] - x[:, :, 1:])
         return grad
 
-    @staticmethod
-    def _calc_gradient_sum(x):
-        grad = x[:, :, 0:127] + x[:, :, 1:]
+    def _calc_gradient_sum(self, x):
+        grad = x[:, 0:x.shape[1]-1, ] + x[:, 1:, ]
         return grad
 
     def _get_classification_acc(self, pred_labels, labels):
@@ -441,11 +442,11 @@ class STVAEmodel:
                 motion_z, motion_mu, motion_logvar) = self.model(x)
 
         # Convert to numpy
-        x = x.cpu().detach().numpy()
-        recon_motion = recon_motion.cpu().detach().numpy()
-        motion_z = motion_z.cpu().detach().numpy()  # (n_samples, motion_latents_dim)
-        pose_z_seq = pose_z_seq.cpu().detach().numpy()[0:num_seq_for_pose, ]
-        m, seq_length = x.shape[0], x.shape[2]
+        x = x.cpu().detach().numpy()  # (m, seq, node_dim, node_fea_dim)
+        recon_motion = recon_motion.cpu().detach().numpy()  # (m, seq, node_dim, node_fea_dim)
+        motion_z = motion_z.cpu().detach().numpy()  # (m, motion_latents_dim)
+        pose_z_seq = pose_z_seq.cpu().detach().numpy()[0:num_seq_for_pose, ]  # (m, pose_latent_dim, seq)
+        m, seq_length = x.shape[0], x.shape[1]
 
         # Flatten pose latent
         pose_z_flat = np.transpose(pose_z_seq, (0, 2, 1)).reshape(pose_z_seq.shape[0] * pose_z_seq.shape[2], -1)
@@ -494,13 +495,13 @@ class STVAEmodel:
             for t in range(seq_length):
                 time = t / 25
                 print("\rNow writing Recon_sample-%d | time-%0.4fs" % (sample_idx, time), flush=True, end="")
-                draw_arr_in = plot2arr_skeleton(x=x[sample_idx, 0:25, t],
-                                                y=x[sample_idx, 25:, t],
+                draw_arr_in = plot2arr_skeleton(x=x[sample_idx, t, :, 0],
+                                                y=x[sample_idx, t, :, 1],
                                                 title="%d | " % sample_idx + model_identifier
                                                 )
 
-                draw_arr_out = plot2arr_skeleton(x=recon_motion[sample_idx, 0:25, t],
-                                                 y=recon_motion[sample_idx, 25:, t],
+                draw_arr_out = plot2arr_skeleton(x=recon_motion[sample_idx, t, :, 0],
+                                                 y=recon_motion[sample_idx, t, :, 1],
                                                  title=" Recon %d | %s " % (sample_idx, gaitclass(labels[sample_idx]))
                                                  )
 

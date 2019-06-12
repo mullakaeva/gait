@@ -16,17 +16,20 @@ def run_train_and_vis_on_stvae():
     pose_latent_gradient = 0  # 0.0001
     motionnet_latent_dim = 128
     motionnet_dropout_p = 0
-    motionnet_kld = None  # [200, 250, 0.0001]
+    motionnet_kld = [20, 25, 0.0001]  # [200, 250, 0.0001]
     recon_gradient = 0  # 0.0001
     class_weight = 0  # 0.001
     rmse_weighting_startepoch = None
     init_lr = 0.001
-    lr_milestones = [75, 150]
+    lr_milestones = [5, 15]  # [75, 150]
     lr_decay_gamma = 0.1
 
     # Train
-    data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=512, n=seq_dim)
-    model_identifier = "{}_ReconW-{}_pose_l-{}_d-{}_kld-{}_grad-{}_motion_l-{}_d-{}_kld-{}_recongrad-{}_class-{}_rmseW-{}".format(
+    train_batch_size = 512 if model_type == "normal" else 128
+    vis_batch_size = 4096 if model_type == "normal" else 512
+
+    data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=train_batch_size, n=seq_dim)
+    model_identifier = "archi2_{}_ReconW-{}_pose_l-{}_d-{}_kld-{}_grad-{}_motion_l-{}_d-{}_kld-{}_recongrad-{}_class-{}_rmseW-{}".format(
         model_type,
         recon_weight,
         posenet_latent_dim,
@@ -51,7 +54,7 @@ def run_train_and_vis_on_stvae():
     else:
         load_model_path = None
 
-    model_container = STVAEmodel(data_gen=data_gen, fea_dim=50, seq_dim=seq_dim, model_type=model_type,
+    model_container = STVAEmodel(data_gen=data_gen, fea_dim=25, seq_dim=seq_dim, model_type=model_type,
                                  posenet_latent_dim=posenet_latent_dim,
                                  posenet_dropout_p=posenet_dropout_p, posenet_kld=posenet_kld,
                                  motionnet_latent_dim=motionnet_latent_dim, motionnet_hidden_dim=512,
@@ -61,13 +64,12 @@ def run_train_and_vis_on_stvae():
                                  rmse_weighting_startepoch=rmse_weighting_startepoch,
                                  init_lr=init_lr, lr_milestones=lr_milestones, lr_decay_gamma=lr_decay_gamma,
                                  save_chkpt_path=save_model_path, load_chkpt_path=load_model_path)
-    model_container.train(300)
+    model_container.train(30)
 
     # Visualization
     if os.path.isfile(save_model_path):
-        data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=4096, n=seq_dim, seed=60)
+        data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=vis_batch_size, n=seq_dim, seed=60)
         model_container.vis_reconstruction(data_gen2, 10, save_vid_dir, model_identifier)
         model_container.save_model_losses_data(save_vid_dir, model_identifier)
     else:
         print("Chkpt cannot be found")
-

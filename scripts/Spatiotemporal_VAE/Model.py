@@ -104,34 +104,70 @@ class Reparameterize(nn.Module):
 
 
 class Flatten(nn.Module):
-    """
-    Convert tensor from shape (a, b, c) to (a * b, c)
-    """
+    def __init__(self, dim):
+        """
+        if dim == 2:
+            Convert tensor from shape (a, b, c) to (a * b, c)
+        if dim == 3:
+            Convert tensor from shape (a, b, c, d) to (a * b, c, d)
+        """
+        super(Flatten, self).__init__()
+        self.dim = dim
 
     def forward(self, x):
-        return x.reshape(x.size(0) * x.size(1), x.size(2))
+        if self.dim == 2:
+            return x.reshape(x.size(0) * x.size(1), x.size(2))
+        elif self.dim == 3:
+            return x.reshape(x.size(0) * x.size(1), x.size(2), x.size(3))
 
 
 class UnFlatten(nn.Module):
-    """
-    Convert tensor from shape (a * b, c) to (a, b, c)
-    """
+    def __init__(self, b, dim=2):
+        """
+        if dim = 2:
+            Convert tensor from shape (a * b, c) to (a, b, c)
+        if dim = 3:
+            Convert tensor from shape (a * b, c, d) to (a, b, c, d)
 
-    def __init__(self, b):
+        """
         super(UnFlatten, self).__init__()
+        self.dim = dim
         self.b = b
 
     def forward(self, x):
-        return x.reshape(-1, self.b, x.size(1))
+        if self.dim == 2:
+            return x.reshape(-1, self.b, x.size(1))
+        elif self.dim == 3:
+            return x.reshape(-1, self.b, x.size(1), x.size(2))
 
 
 class FlattenLastDim(nn.Module):
-    """
-    Convert tensor from shape (a, b, c) to (a, b * c)
-    """
+    def __init__(self, dim):
+        """
+        if dim == 2:
+            Convert tensor from shape (a, b, c) to (a, b * c)
+        if dim == 3:
+            Convert tensor from shape (a, b, c, d) to (a, b, c * d)
+        """
+        super(FlattenLastDim, self).__init__()
+        self.dim = dim
+    def forward(self, x):
+        if self.dim == 2:
+            return x.reshape(x.size(0), -1)
+        elif self.dim == 3:
+            return x.reshape(x.size(0), x.size(1), -1)
+
+
+class UnflattenLastDim(nn.Module):
+    def __init__(self, c):
+        """
+        Convert tensor from shape (a, b * c) to (a, b, c)
+        """
+        super(UnflattenLastDim, self).__init__()
+        self.c = c
 
     def forward(self, x):
-        return x.reshape(x.size(0), -1)
+        return x.reshape(x.size(0), -1, self.c)
 
 
 class Unsqueeze(nn.Module):
@@ -154,7 +190,7 @@ class Transpose(nn.Module):
 
 class SpatioTemporalVAE(nn.Module):
     def __init__(self,
-                 fea_dim=50,
+                 fea_dim=25,
                  seq_dim=128,
                  posenet_latent_dim=10,
                  posenet_dropout_p=0,
@@ -166,7 +202,7 @@ class SpatioTemporalVAE(nn.Module):
                  device=None
                  ):
         """
-        This network takes input with shape (m, fea_dim, seq_dim), and reconstructs it, where m is number of samples.
+        This network takes input with shape (m, seq_dim, fea, 2), and reconstructs it, where m is number of samples.
         This network also does classification with the motion's latents. Number of classes is hard-coded as 8 (see below)
 
         Parameters
@@ -200,10 +236,14 @@ class SpatioTemporalVAE(nn.Module):
         self.device = torch.device('cuda:0') if device is None else device
 
         # # Initializing network architecture
+        self.flatten_lastdim_layer = FlattenLastDim(dim=3)
+        self.unflattent_lastdim_layer = UnflattenLastDim(2)
         self.transpose_layer = Transpose()
-        self.flatten_layer = Flatten()
-        self.unflatten_layer = UnFlatten(self.seq_dim)
-        self.pose_vae = PoseVAE(fea_dim=self.fea_dim,
+        self.flatten_dim2_layer = Flatten(dim=2)
+        self.unflatten_dim2_layer = UnFlatten(self.seq_dim, dim=2)
+        self.unflatten_dim3_layer = UnFlatten(self.seq_dim, dim=3)
+
+        self.pose_vae = PoseVAE(fea_dim=self.fea_dim*2,
                                 latent_dim=self.posenet_latent_dim,
                                 kld=self.posenet_kld,
                                 dropout_p=self.posenet_kld,
@@ -222,18 +262,22 @@ class SpatioTemporalVAE(nn.Module):
                                   device=self.device)
 
     def forward(self, x):
-        out = self.transpose_flatten(x)  # Convert (m, fea, seq) to (m * seq, fea)
-        pose_out = self.pose_encode(out)  # Convert (m * seq, fea) to (m * seq, pose_latent_dim (or *2 if kld=True) )
+        out = self.flatten_lastdim_layer(x)  # (m, seq, fea, 2) to (m, seq, fea * 2)
+        out = self.flatten_dim2_layer(out)  # (m, seq, fea * 2) to (m * seq, fea * 2)
+        pose_out = self.pose_encode(out)  # (m * seq, fea * 2) to (m * seq, pose_latent_dim (or *2 if kld=True) )
         pose_z, pose_mu, pose_logvar = self.pose_bottoleneck(pose_out)  # all outputs (m * seq, pose_latent_dim)
-        pose_z_seq = self.unflatten_transpose(pose_z)  # Convert (m * seq, pose_latent_dim) to (m, pose_latent_dim, seq)
+        pose_z_seq = self.unflatten_dim2_layer(pose_z)  # (m * seq, pose_latent_dim) to (m, seq, pose_latent_dim)
+        pose_z_seq = self.transpose_layer(pose_z_seq)  # (m, seq, pose_latent_dim) to (m, pose_latent_dim, seq)
         out = self.motion_encode(
             pose_z_seq)  # Convert (m, pose_latent_dim, seq) to (m, motion_latent_dim (or *2 if kld=True) )
         motion_z, motion_mu, motion_logvar = self.motion_bottoleneck(out)  # all outputs (m, motion_latent_dim)
-        out = self.motion_decode(motion_z)  # Convert (m, motion_latent_dim) to  (m, pose_latent_dim, seq)
-        out = self.transpose_flatten(out)  # Convert (m, pose_latent_dim, seq) to (m * seq, pose_latent_dim)
-        out = self.pose_decode(out)  # Convert (m * seq, pose_latent_dim) to (m * seq, fea)
-        recon_motion = self.unflatten_transpose(out)  # Convert (m * seq, fea) to (m, fea, seq)
-        pred_labels = self.class_net(motion_z)  # Convert (m, motion_latent_dim) to (m, n_classes)
+        out = self.motion_decode(motion_z)  # (m, motion_latent_dim) to  (m, pose_latent_dim, seq)
+        out = self.transpose_layer(out)  # (m, pose_latent_dim, seq) to (m, seq, pose_latent_dim)
+        out = self.flatten_dim2_layer(out)  # (m, seq, pose_latent_dim) to (m * seq, pose_latent_dim)
+        out = self.pose_decode(out)  # (m * seq, pose_latent_dim) to (m * seq, fea * 2)
+        out = self.unflattent_lastdim_layer(out)  # (m * seq, fea * 2) to (m * seq, fea, 2)
+        recon_motion = self.unflatten_dim3_layer(out)  # (m * seq, fea, 2) to (m, seq, fea, 2)
+        pred_labels = self.class_net(motion_z)  # (m, motion_latent_dim) to (m, n_classes)
         return recon_motion, pred_labels, (pose_z_seq, pose_mu, pose_logvar), (motion_z, motion_mu, motion_logvar)
 
     def pose_encode(self, x):
@@ -268,16 +312,6 @@ class SpatioTemporalVAE(nn.Module):
 
     def motion_decode(self, x):
         out = self.motion_vae.decode(x)
-        return out
-
-    def transpose_flatten(self, x):
-        out = self.transpose_layer(x)  # Convert (m, fea, seq) to (m, seq, fea)
-        out = self.flatten_layer(out)  # Convert (m, seq, fea) to (m * seq, fea)
-        return out
-
-    def unflatten_transpose(self, x):
-        out = self.unflatten_layer(x)  # Convert (m * seq, fea) to (m, seq, fea)
-        out = self.transpose_layer(out)  # Convert (m, seq, fea) to (m, fea, seq)
         return out
 
 
@@ -464,7 +498,7 @@ class MotionVAE(nn.Module):
                                                             stride=self.encoding_strides[4],
                                                             dropout_p=dropout_p))
         self.en2latents = nn.Sequential(
-            FlattenLastDim(),
+            FlattenLastDim(dim=2),
             nn.Linear(hidden_dim * int(self.Ls_encode[4]), self.connecting_dim)
         )
 
