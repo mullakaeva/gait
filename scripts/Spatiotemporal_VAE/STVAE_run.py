@@ -404,13 +404,13 @@ class STVAEmodel:
 
     def _calc_gradient(self, x, tag):
         if tag == "recon":
-            grad = torch.abs(x[:, 0:x.shape[1]-1, ] - x[:, 1:, ])
+            grad = torch.abs(x[:, 0:x.shape[1] - 1, ] - x[:, 1:, ])
         elif tag == "pose":
-            grad = torch.abs(x[:, :, 0:x.shape[2]-1 ] - x[:, :, 1:])
+            grad = torch.abs(x[:, :, 0:x.shape[2] - 1] - x[:, :, 1:])
         return grad
 
     def _calc_gradient_sum(self, x):
-        grad = x[:, 0:x.shape[1]-1, ] + x[:, 1:, ]
+        grad = x[:, 0:x.shape[1] - 1, ] + x[:, 1:, ]
         return grad
 
     def _get_classification_acc(self, pred_labels, labels):
@@ -425,14 +425,18 @@ class STVAEmodel:
         df_losses = pd.DataFrame(loss_data)
         df_losses.to_csv(os.path.join(save_loss_dir, "loss_{}.csv".format(model_identifier)))
 
-    def vis_reconstruction(self, data_gen, sample_num, save_vid_dir, model_identifier):
+    def vis_reconstruction(self, data_gen, sample_num, save_vid_dir, model_identifier, mode="train"):
         # Refresh data generator
         self.data_gen = data_gen
         num_seq_for_pose = 128
 
         # Get data from data generator's first loop
-        for (x, labels, _), (_, _, _) in self.data_gen.iterator():
-            x = torch.from_numpy(x).float().to(self.device)
+        for (x, labels, _), (x_test, labels_test, _) in self.data_gen.iterator():
+            if mode == "train":
+                x = torch.from_numpy(x).float().to(self.device)
+            elif mode == "test":
+                x = torch.from_numpy(x_test).float().to(self.device)
+                labels = labels_test
             break
 
         # Forward pass
@@ -444,6 +448,7 @@ class STVAEmodel:
         # Convert to numpy
         x = x.cpu().detach().numpy()  # (m, seq, node_dim, node_fea_dim)
         recon_motion = recon_motion.cpu().detach().numpy()  # (m, seq, node_dim, node_fea_dim)
+
         motion_z = motion_z.cpu().detach().numpy()  # (m, motion_latents_dim)
         pose_z_seq = pose_z_seq.cpu().detach().numpy()[0:num_seq_for_pose, ]  # (m, pose_latent_dim, seq)
         m, seq_length = x.shape[0], x.shape[1]
@@ -484,7 +489,8 @@ class STVAEmodel:
         # Draw videos
         for sample_idx in range(sample_num):
 
-            save_vid_path = os.path.join(save_vid_dir, "ReconVid-{}_{}.mp4".format(sample_idx, model_identifier))
+            save_vid_path = os.path.join(save_vid_dir,
+                                         "ReconVid({})-{}_{}.mp4".format(mode, sample_idx, model_identifier))
             vwriter = skv.FFmpegWriter(save_vid_path)
 
             draw_motion_latents = plot_latent_space_with_labels(motion_z_umap[:, 0:2], labels, "Motion latents",
@@ -497,12 +503,13 @@ class STVAEmodel:
                 print("\rNow writing Recon_sample-%d | time-%0.4fs" % (sample_idx, time), flush=True, end="")
                 draw_arr_in = plot2arr_skeleton(x=x[sample_idx, t, :, 0],
                                                 y=x[sample_idx, t, :, 1],
-                                                title="%d | " % sample_idx + model_identifier
+                                                title="%s %d | " % (mode, sample_idx) + model_identifier
                                                 )
 
                 draw_arr_out = plot2arr_skeleton(x=recon_motion[sample_idx, t, :, 0],
                                                  y=recon_motion[sample_idx, t, :, 1],
-                                                 title=" Recon %d | %s " % (sample_idx, gaitclass(labels[sample_idx]))
+                                                 title=" Recon %s %d | %s " % (
+                                                 mode, sample_idx, gaitclass(labels[sample_idx]))
                                                  )
 
                 draw_pose_latents = plot_latent_space_with_labels(pose_z_flat_umap, labels_flat,

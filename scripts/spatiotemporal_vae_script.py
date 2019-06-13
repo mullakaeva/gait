@@ -64,12 +64,13 @@ def run_train_and_vis_on_stvae():
                                  rmse_weighting_startepoch=rmse_weighting_startepoch,
                                  init_lr=init_lr, lr_milestones=lr_milestones, lr_decay_gamma=lr_decay_gamma,
                                  save_chkpt_path=save_model_path, load_chkpt_path=load_model_path)
-    model_container.train(30)
+    # model_container.train(30)
 
     # Visualization
     if os.path.isfile(save_model_path):
         data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=vis_batch_size, n=seq_dim, seed=60)
-        model_container.vis_reconstruction(data_gen2, 10, save_vid_dir, model_identifier)
+        model_container.vis_reconstruction(data_gen2, 10, save_vid_dir, model_identifier, mode="test")
+        model_container.vis_reconstruction(data_gen2, 10, save_vid_dir, model_identifier, mode="train")
         model_container.save_model_losses_data(save_vid_dir, model_identifier)
     else:
         print("Chkpt cannot be found")
