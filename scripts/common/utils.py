@@ -4,22 +4,26 @@ import numpy as np
 import re
 import pickle
 
+
 class Detectron_data_loader():
     def __init__(self, data_path):
         self.boxes, self.keyps = self.read_detectron_output(data_path)
 
     def getbox(self, frame_idx):
         return self.boxes[frame_idx][1][0]
-    def getkeyps(self,frame_idx):
+
+    def getkeyps(self, frame_idx):
         return self.keyps[frame_idx][1][0]
+
     def __len__(self):
         return len(self.keyps)
 
     @staticmethod
     def read_detectron_output(data_path):
         # output: bbox (dict), keypoints (dict), with key = frame index
-        data = np.load(data_path, encoding = "latin1")
+        data = np.load(data_path, encoding="latin1")
         return data[()]['boxes'], data[()]['keyps']
+
 
 class RunningAverageMeter:
     """Computes and stores the average and current value"""
@@ -38,6 +42,7 @@ class RunningAverageMeter:
         else:
             self.avg = self.avg * self.momentum + val * (1 - self.momentum)
         self.val = val
+
 
 class MeterAssembly:
 
@@ -71,6 +76,7 @@ class OnlineFilter_scalar():
         self.kernel_size = kernel_size
         self.input_records = np.zeros(kernel_size)
         self.input_times = 0
+
     def add(self, input_val):
         if self.input_times < self.kernel_size:
             self.input_records[self.input_times] = input_val
@@ -81,9 +87,11 @@ class OnlineFilter_scalar():
             self.input_records[arr_idx] = input_val
             self.input_times += 1
             return np.mean(self.input_records)
+
     def get_last(self):
         if self.input_times > 0:
             return self.input_records[-1]
+
 
 class OnlineFilter_np():
     def __init__(self, input_size, kernel_size):
@@ -91,20 +99,22 @@ class OnlineFilter_np():
         self.kernel_size = kernel_size
         self.input_records = self._create_records_arr()
         self.input_times = 0
+
     def add(self, input_val):
         assert input_val.shape == self.input_size
         if self.input_times < self.kernel_size:
-            self.input_records[self.input_times, ] = input_val
+            self.input_records[self.input_times,] = input_val
             self.input_times += 1
-            return np.nanmean(self.input_records[0:self.input_times, ], axis = 0)
+            return np.nanmean(self.input_records[0:self.input_times, ], axis=0)
         else:
             arr_idx = self.input_times % self.kernel_size
-            self.input_records[arr_idx, ] = input_val
+            self.input_records[arr_idx,] = input_val
             self.input_times += 1
-            return np.nanmean(self.input_records, axis = 0)
+            return np.nanmean(self.input_records, axis=0)
+
     def get_last(self):
         if self.input_times > 0:
-            return self.input_records[-1, ]
+            return self.input_records[-1,]
 
     def _create_records_arr(self):
         """
@@ -117,20 +127,23 @@ class OnlineFilter_np():
         input_records = np.zeros(records_size)
         return input_records
 
+
 class LabelsReader():
     def __init__(self, labels_path):
         self.labels_path = labels_path
         self.loaded_df = self._read_data_meta_info()
         self.all_filenames = []
         self.vid2label, self.label2vid = self._construct_conversion_dict()
-        
+
     def get_label(self, vid_name):
         return self.vid2label[vid_name]
+
     def get_vid(self, label):
         return self.label2vid[label]
 
     def get_vid2label(self):
         return self.vid2label
+
     def get_label2vid(self):
         return self.label2vid
 
@@ -186,10 +199,10 @@ def load_df_pickle(df_path):
             loaded_df = pickle.load(fh)
     return loaded_df
 
+
 def write_df_pickle(df, write_path):
     with open(write_path, "wb") as fh:
         pickle.dump(df, fh)
-
 
 
 def moving_average(arr, kernel_size):
@@ -200,15 +213,15 @@ def moving_average(arr, kernel_size):
     arr_size = arr.shape[0]
     num_to_pad = arr_size - (arr_size - kernel_size + 1)
     if num_to_pad % 2 != 0:
-        start_num = np.floor(num_to_pad/2)
-        end_num = np.ceil(num_to_pad/2)
+        start_num = np.floor(num_to_pad / 2)
+        end_num = np.ceil(num_to_pad / 2)
     else:
-        start_num, end_num = num_to_pad/2, num_to_pad/2
+        start_num, end_num = num_to_pad / 2, num_to_pad / 2
     start_element, end_element = arr[0], arr[-1]
     front_arr = np.ones(int(start_num)) * start_element
     end_arr = np.ones(int(end_num)) * end_element
     padded_arr = np.concatenate((front_arr, arr, end_arr))
-    moving_average = np.convolve(padded_arr, np.ones(kernel_size)/kernel_size, 'valid')
+    moving_average = np.convolve(padded_arr, np.ones(kernel_size) / kernel_size, 'valid')
     assert moving_average.shape[0] == arr.shape[0]
     return moving_average
 
@@ -222,14 +235,20 @@ def fullfile(file_path):
 
     base_dir, file_name = os.path.split(file_path)
     file_root_name, extension = os.path.splitext(file_name)
-    
+
     return (file_name, (base_dir, file_root_name, extension))
+
+
+def dict2json(json_path, data):
+    with open(json_path, "w") as f:
+        json.dump(data, f, sort_keys=True, indent=4)
 
 
 def json2dict(json_path):
     with open(json_path) as f:
         data = json.load(f)
     return data
+
 
 def read_preprocessed_keypoints(data_path):
     return np.load(data_path)['positions_2d'][()]['S1']['Directions 1'].squeeze()
@@ -255,9 +274,9 @@ def read_openpose_keypoints(json_path):
     num_people = len(keypoints_dict['people'])
     return keypoints_dict, num_people, frame_idx
 
+
 def read_oenpose_preprocessed_keypoints(np_path):
     return np.load(np_path)['positions_2d']
-
 
 
 def read_and_select_openpose_keypoints(json_path):
@@ -271,22 +290,20 @@ def read_and_select_openpose_keypoints(json_path):
     """
     keypoints_dict, num_people, _ = read_openpose_keypoints(json_path)
     if num_people == 0:
-        return np.zeros((3,25))
+        return np.zeros((3, 25))
     elif num_people == 1:
         data_flat = np.asarray(keypoints_dict['people'][0]['pose_keypoints_2d'])
-        data = data_flat.reshape(int(len(data_flat)/3), 3).T
+        data = data_flat.reshape(int(len(data_flat) / 3), 3).T
         return data
     elif num_people > 1:
         all_people_keypoints = []
         for i in range(num_people):
             data_flat_each_person = np.asarray(keypoints_dict['people'][i]['pose_keypoints_2d'])
-            data_each_person = data_flat_each_person.reshape(int(len(data_flat_each_person)/3), 3).T # (3, 25)
+            data_each_person = data_flat_each_person.reshape(int(len(data_flat_each_person) / 3), 3).T  # (3, 25)
             all_people_keypoints.append(data_each_person)
         all_people_keypoints_np = np.asarray(all_people_keypoints)
-        person_idx = np.argmax(np.mean(all_people_keypoints_np[:, [0], :], axis = 2), axis =0)
+        person_idx = np.argmax(np.mean(all_people_keypoints_np[:, [0], :], axis=2), axis=0)
         return all_people_keypoints_np[int(person_idx), :, :]
-
-
 
 
 def rename_files(folder, replace_arg):
@@ -302,7 +319,7 @@ def rename_files(folder, replace_arg):
         print("renamed to:\n{}\n".format(new_path))
 
 
-def sample_subset_of_videos(src_dir, sample_num = 1000, labels_path = "", seed = 50, with_labels = True):
+def sample_subset_of_videos(src_dir, sample_num=1000, labels_path="", seed=50, with_labels=True):
     """
     This function sample a number (sample_num, int) of .mp4 videos from source directory (src_dir, str) 
     with a state of randomness (seed, int) and copy them to destination directory (dest_dir, str), 
@@ -337,7 +354,9 @@ def sample_subset_of_videos(src_dir, sample_num = 1000, labels_path = "", seed =
 
     return selected_videos
 
-def sample_and_copy_videos(src_dir, dest_dir, sample_num = 1000, labels_path = "", seed = 50, write_log = False, with_labels = True):
+
+def sample_and_copy_videos(src_dir, dest_dir, sample_num=1000, labels_path="", seed=50, write_log=False,
+                           with_labels=True):
     import shutil
     videos_list_np = sample_subset_of_videos(src_dir, sample_num, labels_path, seed, with_labels)
     num_videos = videos_list_np.shape[0]
@@ -347,9 +366,10 @@ def sample_and_copy_videos(src_dir, dest_dir, sample_num = 1000, labels_path = "
         shutil.copy(vid_path, dest_dir)
         if write_log:
             with open("sampled_videos_subset.txt", "a") as fh:
-                fh.write("%s"%vid_path)
+                fh.write("%s" % vid_path)
         i += 1
-    print("number of videos copied: %d/%d" % (i,num_videos))
+    print("number of videos copied: %d/%d" % (i, num_videos))
+
 
 def gaitclass(idx):
     return idx2class[idx]

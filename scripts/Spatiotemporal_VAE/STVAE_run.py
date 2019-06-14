@@ -11,7 +11,7 @@ from common.keypoints_format import excluded_points_flatten
 from .Model import SpatioTemporalVAE
 from .GraphModel import GraphSpatioTemporalVAE
 from common.visualisation import plot2arr_skeleton, plot_latent_space_with_labels, plot_umap_with_labels, \
-    build_frame_4by4, plot_pca_explained_var
+    build_frame_4by4, plot_pca_explained_var, gen_videos
 
 from sklearn.decomposition import PCA
 import skvideo.io as skv
@@ -37,6 +37,7 @@ class STVAEmodel:
                  recon_gradient=0,
                  classification_weight=0,
                  rmse_weighting_startepoch=None,
+                 latent_recon_loss=None,  # None = disabled
                  gpu=0,
                  init_lr=0.001,
                  lr_milestones=[50, 100, 150],
@@ -73,6 +74,7 @@ class STVAEmodel:
         self.motionnet_kld_bool = False if self.motionnet_kld is None else True
         self.rmse_weighting_startepoch = rmse_weighting_startepoch
         self.rmse_weighting_vec, self.rmse_weighting_vec_meter = self._initilize_rmse_weighting_vec()
+        self.latent_recon_loss = latent_recon_loss
 
         self.loss_meter = MeterAssembly(
             "train_total_loss",
@@ -96,6 +98,7 @@ class STVAEmodel:
             self.model, self.optimizer, self.lr_scheduler = self._model_initialization()
         else:
             self.model, self.optimizer, self.lr_scheduler = self._load_model()
+        # self._save_model()  # Enabled only for renewing newly introduced hyper-parameters
 
     def train(self, n_epochs=50):
         try:
@@ -259,7 +262,8 @@ class STVAEmodel:
                 'motionnet_kld_bool': self.motionnet_kld_bool,
                 'rmse_weighting_startepoch': self.rmse_weighting_startepoch,
                 'rmse_weighting_vec_meter': self.rmse_weighting_vec_meter,
-                'rmse_weighting_vec': self.rmse_weighting_vec
+                'rmse_weighting_vec': self.rmse_weighting_vec,
+                'latent_recon_loss': self.latent_recon_loss
             }, self.save_chkpt_path)
 
             print('Stored ckpt at {}'.format(self.save_chkpt_path))
@@ -267,7 +271,7 @@ class STVAEmodel:
     def loss_function(self, recon_info, class_info, pose_stats, motion_stats, nan_masks):
         x, recon_motion = recon_info
         labels, pred_labels = class_info
-        pose_z_seq, pose_mu, pose_logvar = pose_stats
+        pose_z_seq, recon_pose_z_seq, pose_mu, pose_logvar = pose_stats
         motion_z, motion_mu, motion_logvar = motion_stats
 
         # Posenet kld
@@ -285,6 +289,11 @@ class STVAEmodel:
         recon_loss_indicator = torch.sum(self.rmse_weighting_vec * squared_diff)
         recon_loss = self.recon_weight * recon_loss_indicator
 
+        # Latent recon loss
+        squared_pose_z_seq = ((pose_z_seq - recon_pose_z_seq) ** 2)
+        recon_latent_loss_indicator = torch.mean(squared_pose_z_seq)
+        recon_latent_loss = 0 if self.latent_recon_loss is None else self.latent_recon_loss * recon_latent_loss_indicator
+
         # Gradient loss
         nan_mask_negibour_sum = self._calc_gradient_sum(nan_masks)
         gradient_mask = (nan_mask_negibour_sum == 2).float()  # If the adjacent entries are both 1
@@ -301,11 +310,7 @@ class STVAEmodel:
         ## KLD has to be set to 0 manually if it is turned off, otherwise it is not numerically stable
         motionnet_kld_loss = 0 if self.motionnet_kld is None else motionnet_kld_loss
         posenet_kld_loss = 0 if self.posenet_kld is None else posenet_kld_loss
-        loss = recon_loss + posenet_kld_loss + motionnet_kld_loss + recon_grad_loss + pose_latent_grad_loss + class_loss
-
-        # if loss is np.nan:
-        #     import pdb
-        #     pdb.set_trace()
+        loss = recon_loss + posenet_kld_loss + motionnet_kld_loss + recon_grad_loss + pose_latent_grad_loss + recon_latent_loss + class_loss
 
         return loss, (
             recon_loss_indicator, posenet_kld_loss_indicator, motionnet_kld_loss_indicator, recon_grad_loss_indicator,
@@ -427,90 +432,110 @@ class STVAEmodel:
     def vis_reconstruction(self, data_gen, sample_num, save_vid_dir, model_identifier):
         # Refresh data generator
         self.data_gen = data_gen
-        num_seq_for_pose = 128
+        num_samples_pose_z_seq = 128
 
         # Get data from data generator's first loop
-        for (x, labels, _), (_, _, _) in self.data_gen.iterator():
+        for (x, labels, _), (x_test, labels_test, _) in self.data_gen.iterator():
             x = torch.from_numpy(x).float().to(self.device)
+            x_test = torch.from_numpy(x_test).float().to(self.device)
             break
 
         # Forward pass
         self.model.eval()
         with torch.no_grad():
-            recon_motion, pred_labels, (pose_z_seq, pose_mu, pose_logvar), (
-                motion_z, motion_mu, motion_logvar) = self.model(x)
+            recon_motion, pred_labels, pose_z_info, motion_z_info = self.model(x)
+            recon_motion_test, pred_labels_test, pose_z_info_test, motion_z_info_test = self.model(x_test)
 
-        # Convert to numpy
-        x = x.cpu().detach().numpy()
-        recon_motion = recon_motion.cpu().detach().numpy()
-        motion_z = motion_z.cpu().detach().numpy()  # (n_samples, motion_latents_dim)
-        pose_z_seq = pose_z_seq.cpu().detach().numpy()[0:num_seq_for_pose, ]
-        m, seq_length = x.shape[0], x.shape[2]
+            (pose_z_seq, recon_pose_z_seq, pose_mu, pose_logvar) = pose_z_info
+            (pose_z_seq_test, recon_pose_z_seq_test, pose_mu_test, pose_logvar_test) = pose_z_info_test
 
-        # Flatten pose latent
-        pose_z_flat = np.transpose(pose_z_seq, (0, 2, 1)).reshape(pose_z_seq.shape[0] * pose_z_seq.shape[2], -1)
-        labels_flat = np.repeat(labels[0:pose_z_seq.shape[0], np.newaxis], seq_length, axis=1)
-        labels_flat = labels_flat.reshape(-1)
+            (motion_z, motion_mu, motion_logvar) = motion_z_info
+            (motion_z_test, motion_mu_test, motion_logvar_test) = motion_z_info_test
 
-        # Umap embedding and plot
-        pose_z_flat_umap = umap.UMAP(n_neighbors=15,
-                                     n_components=2,
-                                     min_dist=0.1,
-                                     metric="euclidean").fit_transform(pose_z_flat)
-        motion_z_umap = umap.UMAP(n_neighbors=15,
-                                  n_components=2,
-                                  min_dist=0.1,
-                                  metric="euclidean").fit_transform(motion_z)
-        pose_z_umap_flat2seq = np.transpose(pose_z_flat_umap.reshape(pose_z_seq.shape[0], pose_z_seq.shape[2], -1),
-                                            (0, 2, 1))
+        # Videos and Umap plots for Train data
+        gen_videos(x=x, recon_motion=recon_motion, motion_z=motion_z, pose_z_seq=pose_z_seq, labels=labels,
+                   pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"], sample_num=sample_num,
+                   save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="train")
 
-        # Plot Umap separate clusters
-        umap_plot_pose_arr = plot_umap_with_labels(pose_z_flat_umap, labels_flat,
-                                                   title="Pose: {} | test acc: {} \nModel: {}".format(
-                                                       self.loss_meter.get_meter_avg()["test_acc"], pose_z_seq.shape[1],
-                                                       model_identifier))
-        umap_plot_motion_arr = plot_umap_with_labels(motion_z_umap, labels,
-                                                     title="Motion: {} | test acc: {}\nModel: {}".format(
-                                                         self.loss_meter.get_meter_avg()["test_acc"], motion_z.shape[1],
-                                                         model_identifier),
-                                                     alphas=[0.35, 0.1])
-
-        ski.imsave(os.path.join(save_vid_dir, "UmapPose_{}.png".format(model_identifier)),
-                   umap_plot_pose_arr)
-        ski.imsave(os.path.join(save_vid_dir, "UmapMotion_{}.png".format(model_identifier)),
-                   umap_plot_motion_arr)
-
-        # Draw videos
-        for sample_idx in range(sample_num):
-
-            save_vid_path = os.path.join(save_vid_dir, "ReconVid-{}_{}.mp4".format(sample_idx, model_identifier))
-            vwriter = skv.FFmpegWriter(save_vid_path)
-
-            draw_motion_latents = plot_latent_space_with_labels(motion_z_umap[:, 0:2], labels, "Motion latents",
-                                                                target_scatter=motion_z_umap[sample_idx, 0:2],
-                                                                alpha=0.7)
-
-            # Draw input & output skeleton for every time step
-            for t in range(seq_length):
-                time = t / 25
-                print("\rNow writing Recon_sample-%d | time-%0.4fs" % (sample_idx, time), flush=True, end="")
-                draw_arr_in = plot2arr_skeleton(x=x[sample_idx, 0:25, t],
-                                                y=x[sample_idx, 25:, t],
-                                                title="%d | " % sample_idx + model_identifier
-                                                )
-
-                draw_arr_out = plot2arr_skeleton(x=recon_motion[sample_idx, 0:25, t],
-                                                 y=recon_motion[sample_idx, 25:, t],
-                                                 title=" Recon %d | %s " % (sample_idx, gaitclass(labels[sample_idx]))
-                                                 )
-
-                draw_pose_latents = plot_latent_space_with_labels(pose_z_flat_umap, labels_flat,
-                                                                  title="pose latent",
-                                                                  alpha=0.2,
-                                                                  target_scatter=pose_z_umap_flat2seq[sample_idx, 0:2,
-                                                                                 t])
-
-                output_frame = build_frame_4by4([draw_arr_in, draw_arr_out, draw_motion_latents, draw_pose_latents])
-                vwriter.writeFrame(output_frame)
-            print()
-            vwriter.close()
+        # Videos and Umap plots for Test data
+        gen_videos(x=x_test, recon_motion=recon_motion_test, motion_z=motion_z_test, pose_z_seq=pose_z_seq_test,
+                   labels=labels_test,
+                   pred_labels=pred_labels_test, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
+                   sample_num=sample_num,
+                   save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="test")
+        # # Convert to numpy
+        # x = x.cpu().detach().numpy()
+        # recon_motion = recon_motion.cpu().detach().numpy()
+        # motion_z = motion_z.cpu().detach().numpy()  # (n_samples, motion_latents_dim)
+        # pose_z_seq = pose_z_seq.cpu().detach().numpy()[0:num_samples_pose_z_seq, ]
+        # m, seq_length = x.shape[0], x.shape[2]
+        #
+        # # Flatten pose latent
+        # pose_z_flat = np.transpose(pose_z_seq, (0, 2, 1)).reshape(pose_z_seq.shape[0] * pose_z_seq.shape[2], -1)
+        # labels_flat = np.repeat(labels[0:pose_z_seq.shape[0], np.newaxis], seq_length, axis=1)
+        # labels_flat = labels_flat.reshape(-1)
+        #
+        # # Umap embedding and plot
+        # pose_z_flat_umap = umap.UMAP(n_neighbors=15,
+        #                              n_components=2,
+        #                              min_dist=0.1,
+        #                              metric="euclidean").fit_transform(pose_z_flat)
+        # motion_z_umap = umap.UMAP(n_neighbors=15,
+        #                           n_components=2,
+        #                           min_dist=0.1,
+        #                           metric="euclidean").fit_transform(motion_z)
+        # pose_z_umap_flat2seq = np.transpose(pose_z_flat_umap.reshape(pose_z_seq.shape[0], pose_z_seq.shape[2], -1),
+        #                                     (0, 2, 1))
+        #
+        # # Plot Umap separate clusters
+        # umap_plot_pose_arr = plot_umap_with_labels(pose_z_flat_umap, labels_flat,
+        #                                            title="Pose: {} | test acc: {} \nModel: {}".format(
+        #                                                pose_z_seq.shape[1], self.loss_meter.get_meter_avg()["test_acc"],
+        #                                                model_identifier))
+        # umap_plot_motion_arr = plot_umap_with_labels(motion_z_umap, labels,
+        #                                              title="Motion: {} | test acc: {}\nModel: {}".format(
+        #                                                  motion_z.shape[1], self.loss_meter.get_meter_avg()["test_acc"],
+        #                                                  model_identifier),
+        #                                              alphas=[0.35, 0.1])
+        #
+        # ski.imsave(os.path.join(save_vid_dir, "UmapPose_{}.png".format(model_identifier)),
+        #            umap_plot_pose_arr)
+        # ski.imsave(os.path.join(save_vid_dir, "UmapMotion_{}.png".format(model_identifier)),
+        #            umap_plot_motion_arr)
+        #
+        # # Draw videos
+        # for sample_idx in range(sample_num):
+        #
+        #     save_vid_path = os.path.join(save_vid_dir,
+        #                                  "ReconVid({})-{}_{}.mp4".format(mode, sample_idx, model_identifier))
+        #     vwriter = skv.FFmpegWriter(save_vid_path)
+        #
+        #     draw_motion_latents = plot_latent_space_with_labels(motion_z_umap[:, 0:2], labels, "Motion latents",
+        #                                                         target_scatter=motion_z_umap[sample_idx, 0:2],
+        #                                                         alpha=0.7)
+        #
+        #     # Draw input & output skeleton for every time step
+        #     for t in range(seq_length):
+        #         time = t / 25
+        #         print("\rNow writing Recon_sample-%d | time-%0.4fs" % (sample_idx, time), flush=True, end="")
+        #         draw_arr_in = plot2arr_skeleton(x=x[sample_idx, 0:25, t],
+        #                                         y=x[sample_idx, 25:, t],
+        #                                         title="%s %d | " % (mode, sample_idx) + model_identifier
+        #                                         )
+        #
+        #         draw_arr_out = plot2arr_skeleton(x=recon_motion[sample_idx, 0:25, t],
+        #                                          y=recon_motion[sample_idx, 25:, t],
+        #                                          title=" Recon %s %d | %s " % (
+        #                                              mode, sample_idx, gaitclass(labels[sample_idx]))
+        #                                          )
+        #
+        #         draw_pose_latents = plot_latent_space_with_labels(pose_z_flat_umap, labels_flat,
+        #                                                           title="pose latent",
+        #                                                           alpha=0.2,
+        #                                                           target_scatter=pose_z_umap_flat2seq[sample_idx, 0:2,
+        #                                                                          t])
+        #
+        #         output_frame = build_frame_4by4([draw_arr_in, draw_arr_out, draw_motion_latents, draw_pose_latents])
+        #         vwriter.writeFrame(output_frame)
+        #     print()
+        #     vwriter.close()
