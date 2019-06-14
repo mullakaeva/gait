@@ -111,8 +111,6 @@ openpose_body_connection_scheme = (
     (19, 20)  # l_bigtoe to l_small toe
 )
 
-
-
 openpose2detectron_indexes = [0, 16, 15, 18, 17, 5, 2, 6, 3, 7, 4, 12, 9, 13, 10, 14, 11]
 openpose_L_indexes = [5, 6, 7, 12, 13, 14, 16, 18, 19, 20, 21]
 openpose_R_indexes = [2, 3, 4, 9, 10, 11, 15, 17, 22, 23, 24]
@@ -171,4 +169,3 @@ def index2feature(n):
         feature = "*(ASY) {}-{}".format(x[2:], anchor)
     
     return feature
-

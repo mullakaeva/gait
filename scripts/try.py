@@ -1,51 +1,88 @@
-from common.utils import load_df_pickle
-from common.visualisation import plot2arr_skeleton
-import matplotlib.pyplot as plt
+import torch
+import torch.nn as nn
 import numpy as np
-import skvideo.io as skv
-
-# Checking the sanity of nan-masked skeleton
-
-
-def give_arr(fig, ax):
-    ax.set_xlim(-0.6, 0.6)
-    ax.set_ylim(0.6, -0.6)
-
-    fig.tight_layout()
-    fig.canvas.draw()
-    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-    plt.close()
-    return data
+from torch_geometric.data import Data, DataLoader
+from torch_geometric.nn import GCNConv
+from torch_scatter import scatter_mean
 
 
-df_path = "/mnt/data/raw_features_zmatrix_row_labels_withNanMasks.pickle"
-df = load_df_pickle(df_path)
+class Net(torch.nn.Module):
+    def __init__(self, input_ch, output_ch):
+        super(Net, self).__init__()
 
-for i in range(5):
-    print("i = {}".format(i))
-    features_each_vid = df["features"][i]
-    nan_masks_each_vid = df["nan_masks"][i]
+        self.layer1 = GCNConv(input_ch, output_ch)
 
-    vwriter = skv.FFmpegWriter("Mov_{}.mp4".format(i))
+    def forward(self, data):
+        print("=====================================================")
+        x, edge_index, batch = data.x, data.edge_index, data.batch
 
-    for t in range(128):
-        fea_frame = features_each_vid[t, :, :]
-        nan_mask = nan_masks_each_vid[t, :, :]
-        fea_frame_masked = fea_frame * nan_mask
+        return x
 
-        # Original vid
-        fig, ax = plt.subplots()
-        ax.scatter(fea_frame[:, 0], fea_frame[:, 1])
-        data_ori = give_arr(fig, ax)
+def construct_batch_edge_index(x, edge_index):
+    """
 
-        # masked arr
-        fig2, ax2 = plt.subplots()
-        ax2.scatter(fea_frame_masked[:, 0], fea_frame_masked[:, 1])
-        data_masked = give_arr(fig2, ax2)
+    Parameters
+    ----------
+    x : torch.tensor
+        Shape = (m, num_nodes, node_fea)
+    edge_index : torch.tensor
+        Shape = (2, num_edges), data type = long
+    Returns
+    -------
+    x_flat : torch.tensor
+        Shape = (m * num_nodes, node_fea)
+    all_edge_index : torch.tensor
+        Shape = (2, num_edges * m), data type = long
+    """
 
-        # Concat
-        draw_arr = np.concatenate([data_ori, data_masked], axis=1)
-        vwriter.writeFrame(draw_arr)
+    single_num_edges = edge_index.shape[1]
+    num_samples = x.shape[0]
 
-    vwriter.close()
+    # Flatten x
+    x_flat = x.view(-1, x.shape[2])
+
+    # Repeat Edge index
+    all_edge_index = torch.zeros((2, num_samples * single_num_edges))
+    all_edge_index[:, 0:single_num_edges] = edge_index.clone()
+
+    for i in range(num_samples):
+        new_edge_index = (edge_index + 25 * i)
+        all_edge_index[:, i * single_num_edges: (i+1) * single_num_edges ] = new_edge_index
+    return x_flat, all_edge_index.long()
+
+
+
+batch_size = 10
+num_nodes = 25
+
+np.random.seed(50)
+x = np.random.randint(1, 10, (num_nodes, 2))
+x = np.repeat(x[np.newaxis], batch_size, axis=0)
+
+x_tensor = torch.from_numpy(x)
+edge_index = torch.tensor(([1, 2, 3, 4], [3, 4, 1, 10])).long()
+data_list = [Data(x = x_tensor_each, edge_index=edge_index) for x_tensor_each in x_tensor]
+loader = DataLoader(data_list, batch_size=batch_size, shuffle=False)
+
+x_tensor_recon, batch_edge_index_recon = construct_batch_edge_index(x_tensor, edge_index)
+
+for data_batch in loader:
+    output = data_batch.x
+
+
+    # Convert to np
+    output_np = output.numpy()
+    x_tensor_recon = x_tensor_recon.numpy()
+    batch_edge_index = data_batch.edge_index.numpy()
+    batch_edge_index_recon = batch_edge_index_recon.numpy()
+
+
+    # Compare
+    arr_flag = np.array_equal(x_tensor_recon, output_np)
+    edge_flag = np.array_equal(batch_edge_index, batch_edge_index_recon)
+    print("Same input arr = ", arr_flag)
+    print("Same edge_index = ", edge_flag)
+    print("edge_index_ori = \n", edge_index)
+    print("edge_index_collated = \n", batch_edge_index)
+    print("edge_index_recon = \n", batch_edge_index_recon)
+
