@@ -19,23 +19,25 @@ def run_train_and_vis_on_stvae():
     lr_decay_gamma = 0.1
 
     # Naming of models: N=Normal
-    model_identifier = "NB"
+    model_identifier = "NB-K-G"
 
     # Hyper-parameters
     hyper_params = {
+        "model_name": model_identifier,
         "model_type": "normal",
         "recon_weight": 1,
         "posenet_latent_dim": 16,
         "posenet_dropout_p": 0,
         "posenet_kld": None,
-        "pose_latent_gradient": 0,  # 0.0001
+        "pose_latent_gradient": 0.0001,  # 0.0001
         "motionnet_latent_dim": 128,
         "motionnet_dropout_p": 0,
-        "motionnet_kld": None,  # [200, 250, 0.0001]
-        "recon_gradient": 0,  # 0.0001
+        "motionnet_kld": [200, 250, 0.0001], # [200, 250, 0.0001],
+        "recon_gradient": 0.0001,  # 0.0001
         "class_weight": 0,  # 0.001
         "rmse_weighting_startepoch": None,
-        "latent_recon_loss": None
+        "latent_recon_loss": None,
+        "recon_loss_power": 2
     }
 
     # Define paths
@@ -78,9 +80,11 @@ def run_train_and_vis_on_stvae():
                                  latent_recon_loss=hyper_params["latent_recon_loss"],
                                  init_lr=init_lr, lr_milestones=lr_milestones, lr_decay_gamma=lr_decay_gamma,
                                  save_chkpt_path=save_model_path, load_chkpt_path=load_model_path)
-    # model_container.train(300)
+    # model_container._save_model()
 
-    # Visualization
+    model_container.train(300)
+
+    # # Visualization
     if os.path.isfile(save_model_path):
         data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=4096, n=seq_dim, seed=60)
         model_container.vis_reconstruction(data_gen2, 10, save_vid_dir, model_identifier)

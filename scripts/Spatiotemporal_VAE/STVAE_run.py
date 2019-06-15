@@ -38,6 +38,7 @@ class STVAEmodel:
                  classification_weight=0,
                  rmse_weighting_startepoch=None,
                  latent_recon_loss=None,  # None = disabled
+                 recon_loss_power=2,  # Can also be list, e.g. [2, 4, 50]
                  gpu=0,
                  init_lr=0.001,
                  lr_milestones=[50, 100, 150],
@@ -75,6 +76,7 @@ class STVAEmodel:
         self.rmse_weighting_startepoch = rmse_weighting_startepoch
         self.rmse_weighting_vec, self.rmse_weighting_vec_meter = self._initilize_rmse_weighting_vec()
         self.latent_recon_loss = latent_recon_loss
+        self.recon_loss_power = recon_loss_power
 
         self.loss_meter = MeterAssembly(
             "train_total_loss",
@@ -227,6 +229,8 @@ class STVAEmodel:
         self.rmse_weighting_startepoch = checkpoint['rmse_weighting_startepoch']
         self.rmse_weighting_vec_meter = checkpoint['rmse_weighting_vec_meter']
         self.rmse_weighting_vec = checkpoint['rmse_weighting_vec']
+        self.latent_recon_loss = checkpoint['latent_recon_loss']
+        self.recon_loss_power = checkpoint['recon_loss_power']
 
         # Model initialization
         model, optimizer, lr_scheduler = self._model_initialization()
@@ -263,7 +267,8 @@ class STVAEmodel:
                 'rmse_weighting_startepoch': self.rmse_weighting_startepoch,
                 'rmse_weighting_vec_meter': self.rmse_weighting_vec_meter,
                 'rmse_weighting_vec': self.rmse_weighting_vec,
-                'latent_recon_loss': self.latent_recon_loss
+                'latent_recon_loss': self.latent_recon_loss,
+                'recon_loss_power' : self.recon_loss_power
             }, self.save_chkpt_path)
 
             print('Stored ckpt at {}'.format(self.save_chkpt_path))
@@ -275,19 +280,21 @@ class STVAEmodel:
         motion_z, motion_mu, motion_logvar = motion_stats
 
         # Posenet kld
-        posenet_kld_multiplier = self._get_kld_multiplier(self.posenet_kld)
+        posenet_kld_multiplier = self._get_interval_multiplier(self.posenet_kld)
         posenet_kld_loss_indicator = -0.5 * torch.mean(1 + pose_logvar - pose_mu.pow(2) - pose_logvar.exp())
         posenet_kld_loss = posenet_kld_multiplier * posenet_kld_loss_indicator
 
         # Motionnet kld
-        motionnet_kld_multiplier = self._get_kld_multiplier(self.motionnet_kld)
+        motionnet_kld_multiplier = self._get_interval_multiplier(self.motionnet_kld)
         motionnet_kld_loss_indicator = -0.5 * torch.mean(1 + motion_logvar - motion_mu.pow(2) - motion_logvar.exp())
         motionnet_kld_loss = motionnet_kld_multiplier * motionnet_kld_loss_indicator
 
         # Recon loss
-        squared_diff = nan_masks * ((x - recon_motion) ** 2)
-        recon_loss_indicator = torch.sum(self.rmse_weighting_vec * squared_diff)
-        recon_loss = self.recon_weight * recon_loss_indicator
+        diff = x - recon_motion
+        recon_loss_indicator = torch.sum(self.rmse_weighting_vec * nan_masks * (diff ** 2))  # For evaluation
+        power = self._get_step_multiplier(self.recon_loss_power)
+        power_diff = torch.sum(self.rmse_weighting_vec * nan_masks * torch.pow(diff, power))
+        recon_loss = self.recon_weight * power_diff  # For error propagation
 
         # Latent recon loss
         squared_pose_z_seq = ((pose_z_seq - recon_pose_z_seq) ** 2)
@@ -391,21 +398,57 @@ class STVAEmodel:
         normalized = torch.mean(squared_diff, dim=0, keepdim=True) / torch.sum(squared_diff)
         self.rmse_weighting_vec_meter.update(normalized)
 
-    def _get_kld_multiplier(self, kld_arg):
-        # Set KLD loss
-        if kld_arg is None:
-            kld_multiplier = 0
-        elif isinstance(kld_arg, list):
-            start, end, const = kld_arg[0], kld_arg[1], kld_arg[2]
+    def _get_interval_multiplier(self, quantity_arg):
+        """
+
+        Parameters
+        ----------
+        quantity_arg : int or float or list
+            Multiplier. If list, e.g. [50, 100, 0.1], then the function returns 0 before self.epoch < 50,
+            the returned value linearly increases from 0 to 0.1 between 50th and 100th epoch, and remains as 0.1 after self.epoch > 100
+        Returns
+        -------
+        quantity_multiplier : int or float
+
+        """
+
+        if quantity_arg is None:
+            quantity_multiplier = 0
+        elif isinstance(quantity_arg, list):
+            start, end, const = quantity_arg[0], quantity_arg[1], quantity_arg[2]
             if self.epoch < start:
-                kld_multiplier = 0
+                quantity_multiplier = 0
             elif (self.epoch >= start) and (self.epoch < end):
-                kld_multiplier = const * ((self.epoch - start) / (end - start))
+                quantity_multiplier = const * ((self.epoch - start) / (end - start))
             elif self.epoch >= end:
-                kld_multiplier = const
-        elif isinstance(kld_arg, int) or isinstance(kld_arg, float):
-            kld_multiplier = kld_arg
-        return kld_multiplier
+                quantity_multiplier = const
+        elif isinstance(quantity_arg, int) or isinstance(quantity_arg, float):
+            quantity_multiplier = quantity_arg
+        return quantity_multiplier
+
+    def _get_step_multiplier(self, quantity_arg):
+        """
+
+        Parameters
+        ----------
+        quantity_arg : int or float or list
+            if list, e.g. [2, 4, 50], it returns 2 before 50th epoch, and returns 4 at or after 50th epoch
+            if int  or float, e.g. 2, it always returns 2
+        Returns
+        -------
+        quantity_multiplier : int or float
+        """
+        quantity_muliiplier = None
+        if isinstance(quantity_arg, int) or isinstance(quantity_arg, float):
+            quantity_muliiplier = quantity_arg
+        elif isinstance(quantity_arg, list) and len(quantity_arg) == 3:
+            if self.epoch < quantity_arg[2]:
+                quantity_muliiplier = quantity_arg[0]
+            elif self.epoch >= quantity_arg[2]:
+                quantity_muliiplier = quantity_arg[1]
+
+        return quantity_muliiplier
+
 
     @staticmethod
     def _calc_gradient(x):
