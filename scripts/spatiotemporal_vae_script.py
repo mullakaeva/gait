@@ -19,7 +19,7 @@ def run_train_and_vis_on_stvae():
     lr_decay_gamma = 0.1
 
     # Naming of models: N=Normal
-    model_identifier = "NB-L4"
+    model_identifier = "NB-L05"
 
     # Hyper-parameters
     hyper_params = {
@@ -37,7 +37,7 @@ def run_train_and_vis_on_stvae():
         "class_weight": 0,  # 0.001
         "rmse_weighting_startepoch": None,
         "latent_recon_loss": None,
-        "recon_loss_power": 4
+        "recon_loss_power": [2, 0.5, 80]
     }
 
     # Define paths
