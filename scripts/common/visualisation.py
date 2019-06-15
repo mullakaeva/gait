@@ -25,6 +25,31 @@ def build_frame_4by4(arrs):
     return output_arr
 
 
+def build_frame_2by3(*args):
+    """
+    Combine 6 two-dimensional frames with identical shape to a single array (2x3 grid). Starting left to right, top to bottom.
+
+    Parameters
+    ----------
+    args : numpy.darray
+        input frames, each with (h, w, c) shape. Number of arguments <= 6
+
+    Returns
+    -------
+    output_arr : numpy.darray
+        Array combining the <=6 input frames.
+    """
+    h, w, _ = args[0].shape
+    output_arr = np.zeros((h*2, w*3, 3))
+    iter_idx, max_iter_idx = 0, len(args)-1
+    for i in range(2):
+        for j in range(3):
+            if iter_idx <= max_iter_idx:
+                output_arr[h*i : h*(i+1), w*j : w*(j+1), :] = args[iter_idx]
+            iter_idx += 1
+    return output_arr
+
+
 def draw_skeleton(ax, x, y):
     side_dict = {
         "m": "k",
@@ -135,7 +160,7 @@ def plot_pca_explained_var(fitters, title, save_path=None):
         plt.close()
 
 
-def gen_videos(x, recon_motion, motion_z, pose_z_seq, labels, pred_labels, test_acc,
+def gen_videos(x, recon_motion, motion_z, pose_z_seq, recon_pose_z_seq, labels, pred_labels, test_acc,
                sample_num, save_vid_dir, model_identifier,
                mode, num_samples_pose_z_seq=128):
     """
@@ -149,6 +174,8 @@ def gen_videos(x, recon_motion, motion_z, pose_z_seq, labels, pred_labels, test_
     motion_z : torch.tensor
         (n_samples, motion_latents_dim)
     pose_z_seq : torch.tensor
+        (n_samples, pose_latents_dim, seq)
+    recon_pose_z_seq : torch.tensor
         (n_samples, pose_latents_dim, seq)
     labels : numpy.darray
         (n_samples, )
@@ -168,33 +195,45 @@ def gen_videos(x, recon_motion, motion_z, pose_z_seq, labels, pred_labels, test_
     -------
 
     """
+
+    def seq2flat(x_flat):
+        return np.transpose(x_flat, (0, 2, 1)).reshape(x_flat.shape[0] * x_flat.shape[2], -1)
+
+    def flat2seq(x_flat, x_seq):
+        return np.transpose(x_flat.reshape(x_seq.shape[0], x_seq.shape[2], -1), (0, 2, 1))
     # Convert torch.tensor to numpy
     x = x.cpu().detach().numpy()
     recon_motion = recon_motion.cpu().detach().numpy()
     motion_z = motion_z.cpu().detach().numpy()  # (n_samples, motion_latents_dim)
     pose_z_seq = pose_z_seq.cpu().detach().numpy()
+    recon_pose_z_seq = recon_pose_z_seq.cpu().detach().numpy()
     pred_labels = pred_labels.cpu().detach().numpy()
     pred_labels = np.argmax(pred_labels, axis=1)
     if num_samples_pose_z_seq is not None:
         pose_z_seq = pose_z_seq[0: num_samples_pose_z_seq, ]
+        recon_pose_z_seq = recon_pose_z_seq[0: num_samples_pose_z_seq, ]
     m, seq_length = x.shape[0], x.shape[2]
 
     # Flatten pose latent
-    pose_z_flat = np.transpose(pose_z_seq, (0, 2, 1)).reshape(pose_z_seq.shape[0] * pose_z_seq.shape[2], -1)
+    pose_z_flat, recon_pose_z_flat = seq2flat(pose_z_seq), seq2flat(recon_pose_z_seq)
     labels_flat = np.repeat(labels[0:pose_z_seq.shape[0], np.newaxis], seq_length, axis=1)
     labels_flat = labels_flat.reshape(-1)
 
     # Umap embedding and plot
-    pose_z_flat_umap = umap.UMAP(n_neighbors=15,
-                                 n_components=2,
-                                 min_dist=0.1,
-                                 metric="euclidean").fit_transform(pose_z_flat)
+    pose_umapper = umap.UMAP(n_neighbors=15,
+                             n_components=2,
+                             min_dist=0.1,
+                             metric="euclidean")
+    pose_umapper.fit(pose_z_flat)
+    pose_z_flat_umap = pose_umapper.transform(pose_z_flat)
+    recon_pose_z_flat_umap = pose_umapper.transform(recon_pose_z_flat)
+
     motion_z_umap = umap.UMAP(n_neighbors=15,
                               n_components=2,
                               min_dist=0.1,
                               metric="euclidean").fit_transform(motion_z)
-    pose_z_umap_flat2seq = np.transpose(pose_z_flat_umap.reshape(pose_z_seq.shape[0], pose_z_seq.shape[2], -1),
-                                        (0, 2, 1))
+    pose_z_umap_flat2seq = flat2seq(pose_z_flat_umap, pose_z_seq)
+    recon_pose_z_flat_umap_flat2seq = flat2seq(recon_pose_z_flat_umap, recon_pose_z_seq)
 
     # Plot Umap separate clusters
     umap_plot_pose_arr = plot_umap_with_labels(pose_z_flat_umap, labels_flat,
@@ -231,7 +270,7 @@ def gen_videos(x, recon_motion, motion_z, pose_z_seq, labels, pred_labels, test_
             draw_arr_in = plot2arr_skeleton(x=x[sample_idx, 0:25, t],
                                             y=x[sample_idx, 25:, t],
                                             title="%s %d | %s | GT = %s" % (
-                                            mode, sample_idx, model_identifier, gaitclass(labels[sample_idx]))
+                                                mode, sample_idx, model_identifier, gaitclass(labels[sample_idx]))
                                             )
 
             draw_arr_out = plot2arr_skeleton(x=recon_motion[sample_idx, 0:25, t],
@@ -246,8 +285,14 @@ def gen_videos(x, recon_motion, motion_z, pose_z_seq, labels, pred_labels, test_
                                                               alpha=0.2,
                                                               target_scatter=pose_z_umap_flat2seq[sample_idx, 0:2,
                                                                              t])
-
-            output_frame = build_frame_4by4([draw_arr_in, draw_arr_out, draw_motion_latents, draw_pose_latents])
+            draw_recon_pose_latents = plot_latent_space_with_labels(recon_pose_z_flat_umap, labels_flat,
+                                                                    title="pose latent (Recon)",
+                                                                    alpha=0.2,
+                                                                    target_scatter=recon_pose_z_flat_umap_flat2seq[
+                                                                                   sample_idx, 0:2,
+                                                                                   t])
+            output_frame = build_frame_2by3(draw_arr_in, draw_arr_out, draw_motion_latents, draw_pose_latents
+                                            , draw_recon_pose_latents)
             vwriter.writeFrame(output_frame)
             plt.close()
         print()
