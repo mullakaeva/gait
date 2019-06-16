@@ -19,7 +19,7 @@ def run_train_and_vis_on_stvae():
     lr_decay_gamma = 0.1
 
     # Naming of models: N=Normal
-    model_identifier = "NB-L05"
+    model_identifier = "NB_K_C_L05"
 
     # Hyper-parameters
     hyper_params = {
@@ -32,9 +32,9 @@ def run_train_and_vis_on_stvae():
         "pose_latent_gradient": 0,  # 0.0001
         "motionnet_latent_dim": 128,
         "motionnet_dropout_p": 0,
-        "motionnet_kld": None, # [200, 250, 0.0001],
+        "motionnet_kld": [200, 250, 0.0001], # [200, 250, 0.0001],
         "recon_gradient": 0,  # 0.0001
-        "class_weight": 0,  # 0.001
+        "class_weight": 0.001,  # 0.001
         "rmse_weighting_startepoch": None,
         "latent_recon_loss": None,
         "recon_loss_power": [2, 0.5, 80]
