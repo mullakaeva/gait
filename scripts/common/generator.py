@@ -5,9 +5,7 @@ from .keypoints_format import excluded_points_flatten
 import random
 import os
 import numpy as np
-import torch
-from torch_geometric.data import Data, DataLoader
-from torch_geometric.nn import GCNConv
+
 
 # Abbreviations:
 # SSF = simple shallow features analysis
@@ -103,9 +101,12 @@ class GaitGeneratorFromDF:
         split_index = int(self.total_num_rows * train_portion)
         self.df_train = self.df.iloc[0:split_index, :].reset_index(drop=True)
         self.df_test = self.df.iloc[split_index:, :].reset_index(drop=True)
+
         self.seed = seed
+
         self.num_rows = self.df_train.shape[0]
         self.m, self.n = m, n
+
         self.label_range = np.max(self.df["labels"]) - np.min(self.df["labels"])
 
     def iterator(self):
@@ -134,10 +135,8 @@ class GaitGeneratorFromDF:
     def _convert_df_to_data(self, df_shuffled, start, stop):
 
         selected_df = df_shuffled.iloc[start:stop, :].copy()
-        selected_df_test = self.df_test.iloc[start:stop, :].copy()
-
         output_arr, times = self._loop_for_array_construction(selected_df, self.m)
-        output_arr_test, _ = self._loop_for_array_construction(selected_df_test, self.m)
+        output_arr_test, _ = self._loop_for_array_construction(self.df_test, self.m)
         output_arr = output_arr.reshape(self.m, self.n, 25 * 3)
         output_arr_test = output_arr_test.reshape(self.m, self.n, 25 * 3)
         return (output_arr, output_arr_test), times
@@ -186,7 +185,7 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
 
         # Call parent's init
         super(GaitGeneratorFromDFforTemporalVAE, self).__init__(df_pickle_path, m, n, train_portion, seed)
-        self.batch_shape = (m, n, self.keyps_x_dims, 2)
+        self.batch_shape = (m, self.total_fea_dims, n)
 
     def _convert_df_to_data(self, df_shuffled, start, stop):
         selected_df = df_shuffled.iloc[start:stop, :].copy()
@@ -208,13 +207,12 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         Returns
         -------
         input_features : numpy.darray
-            It has shape (num_samples, num_time_window, num_features=25, 2), as input array to the network
+            It has shape (num_samples, num_features=50, num_time_window), as input array to the network
         labels : numpy.darray
             It has shape (num_samples, ) numpy.int64 [0, 7], as the labels for visualisation
-        nan_arr : numpy.darray
-            It has shape (num_samples, num_time_window, num_features=25, 2), as masks to the loww
+
         """
-        features_arr = np.zeros((num_samples, self.n, self.keyps_x_dims, 2))
+        features_arr = np.zeros((num_samples, self.total_fea_dims, self.n))
         nan_arr = np.zeros(features_arr.shape)
         label_arr = np.zeros(num_samples)
         for i in range(num_samples):
@@ -232,12 +230,10 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
             label_arr[i] = label
 
             # Construct output
-            features_arr[i, ] = fea_vec_sliced
-            nan_arr[i, ] = nan_arr_sliced
-            # features_arr[i, 0:self.keyps_x_dims, :] = fea_vec_sliced[:, :, 0].T  # Store x-coordinates
-            # features_arr[i, self.keyps_x_dims:self.total_fea_dims, :] = fea_vec_sliced[:, :, 1].T  # Store y-coordinates
-            # nan_arr[i, 0:self.keyps_x_dims, :] = nan_arr_sliced[:, :, 0].T  # Store x-coordinates
-            # nan_arr[i, self.keyps_x_dims:self.total_fea_dims, :] = nan_arr_sliced[:, :, 1].T  # Store y-coordinates
+            features_arr[i, 0:self.keyps_x_dims, :] = fea_vec_sliced[:, :, 0].T  # Store x-coordinates
+            features_arr[i, self.keyps_x_dims:self.total_fea_dims, :] = fea_vec_sliced[:, :, 1].T  # Store y-coordinates
+            nan_arr[i, 0:self.keyps_x_dims, :] = nan_arr_sliced[:, :, 0].T  # Store x-coordinates
+            nan_arr[i, self.keyps_x_dims:self.total_fea_dims, :] = nan_arr_sliced[:, :, 1].T  # Store y-coordinates
 
         return features_arr, label_arr, nan_arr
 
@@ -317,4 +313,3 @@ class GaitGeneratorFromDFforSingleSkeletonVAE:
         label_arr = np.concatenate(label_vec_list)  # (num_frames * num_samples, )
 
         return output_arr, label_arr
-

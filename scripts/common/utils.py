@@ -67,6 +67,10 @@ class MeterAssembly:
         for key in self.meter_dicts.keys():
             self.recorder[key].append(self.meter_dicts[key].avg)
 
+    def append_recorders(self, **kwargs):
+        for key in kwargs:
+            self.recorder[key].append(kwargs[key])
+
     def get_recorders(self):
         return self.recorder
 

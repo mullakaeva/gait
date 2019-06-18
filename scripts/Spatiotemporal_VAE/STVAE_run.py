@@ -2,21 +2,17 @@ import torch
 import torch.optim as optim
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.nn import CrossEntropyLoss
+
 import numpy as np
 import os
 import matplotlib.pyplot as plt
 import pprint
-from common.utils import MeterAssembly, gaitclass, RunningAverageMeter
-from common.keypoints_format import excluded_points_flatten
+import re
+from glob import glob
+from common.utils import MeterAssembly, RunningAverageMeter, dict2json
+from common.visualisation import gen_videos
 from .Model import SpatioTemporalVAE
 from .GraphModel import GraphSpatioTemporalVAE
-from common.visualisation import plot2arr_skeleton, plot_latent_space_with_labels, plot_umap_with_labels, \
-    build_frame_4by4, plot_pca_explained_var, gen_videos
-
-from sklearn.decomposition import PCA
-import skvideo.io as skv
-import skimage.io as ski
-import umap
 
 
 class STVAEmodel:
@@ -465,16 +461,20 @@ class STVAEmodel:
         acc = np.mean(np.argmax(pred_labels_np, axis=1) == labels_np) * 100
         return class_loss_indicator, acc
 
-    def save_model_losses_data(self, save_loss_dir, model_identifier):
+    def save_model_losses_data(self, project_dir, model_identifier):
         import pandas as pd
         loss_data = self.loss_meter.get_recorders()
         df_losses = pd.DataFrame(loss_data)
-        df_losses.to_csv(os.path.join(save_loss_dir, "loss_{}.csv".format(model_identifier)))
+        df_losses.to_csv(os.path.join(project_dir, "vis", model_identifier, "loss_{}.csv".format(model_identifier)))
 
-    def vis_reconstruction(self, data_gen, sample_num, save_vid_dir, model_identifier):
+    def vis_reconstruction(self, data_gen, vid_sample_num, project_dir, model_identifier):
+        # Define paths
+        save_vid_dir = os.path.join(project_dir, "vis", model_identifier)
+        if os.path.isdir(save_vid_dir) is not True:
+            os.makedirs(save_vid_dir)
+
         # Refresh data generator
         self.data_gen = data_gen
-        num_samples_pose_z_seq = 128
 
         # Get data from data generator's first loop
         for (x, labels, _), (x_test, labels_test, _) in self.data_gen.iterator():
@@ -497,7 +497,8 @@ class STVAEmodel:
         # Videos and Umap plots for Train data
         gen_videos(x=x, recon_motion=recon_motion, motion_z=motion_z, pose_z_seq=pose_z_seq,
                    recon_pose_z_seq=recon_pose_z_seq, labels=labels,
-                   pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"], sample_num=sample_num,
+                   pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
+                   sample_num=vid_sample_num,
                    save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="train")
 
         # Videos and Umap plots for Test data
@@ -505,5 +506,150 @@ class STVAEmodel:
                    recon_pose_z_seq=recon_pose_z_seq_test,
                    labels=labels_test,
                    pred_labels=pred_labels_test, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
-                   sample_num=sample_num,
+                   sample_num=vid_sample_num,
                    save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="test")
+
+    def evaluate_all_models(self, data_gen, project_dir, model_list, draw_vid=False):
+
+        def cale_additional_stasts(x, recon_motion, nan_masks):
+            x_np, recon_motion_np, nan_masks_np = x.cpu().detach().numpy(), recon_motion.cpu().detach().numpy(), nan_masks.cpu().detach().numpy()
+            nan_masks_np[nan_masks_np == 0] = np.nan  # convert 0 to nan, s.t. they can be masked
+            masked_sq_diff = nan_masks_np * ((x_np - recon_motion_np) ** 2)
+            joint_RSE = np.nanmean(np.nanmean(masked_sq_diff, axis=2), axis=0)
+            rmse_q99 = np.nanquantile(np.nanmean(np.nanmean(masked_sq_diff, axis=2), axis=1), 0.99)
+            return rmse_q99, joint_RSE, np.nanmean(masked_sq_diff)
+
+        # Define the paths of the set of models to be evaluated
+        print("Entering eval mode. Now models will be reloaded")
+        model_subset = True if isinstance(model_list, list) and len(model_list) > 0 else False
+        models_dir = os.path.join(project_dir, "model_chkpt")
+        model_paths = []
+        if model_subset:
+            print("A subset of models are selected =\n", model_list)
+            for model_name in model_subset:
+                model_paths.append(os.path.join(models_dir, "ckpt_%s.pth" % model_name))
+        else:
+            print("Searching for all models in {}".format(models_dir))
+            model_paths = glob(os.path.join(models_dir, "ckpt*.pth"))
+        eval_results_dir = os.path.join(project_dir, "evaluation")
+        if os.path.isdir(eval_results_dir) is not True:
+            os.makedirs(eval_results_dir)
+
+        # Refresh data generator
+        self.data_gen = data_gen
+
+        for idx, model_path in enumerate(model_paths):
+
+            # Load model
+            self.load_chkpt_path = model_path
+            self.model, self.optimizer, self.lr_scheduler = self._load_model()
+            self.model.eval()
+            model_file_name = os.path.split(model_path)[1]
+            model_identifier = re.match("ckpt_(.*?).pth", model_file_name).group(1)
+            save_vid_dir = os.path.join(project_dir, "vis", model_identifier)
+            if os.path.isdir(save_vid_dir) is not True:
+                os.makedirs(save_vid_dir)
+            print("Now evalulating model {}\n".format(model_identifier))
+            batch_idx = 1
+
+            # Quantities to evaluate
+            eval_meter = MeterAssembly(
+                "train_RMSE",
+                "train_q99_RMSE",
+                "train_joint_RSE",
+                "train_recon_grad",
+                "train_latent_grad",
+                "train_acc",
+                "test_RMSE",
+                "test_q99_RMSE",
+                "test_joint_RSE",
+                "test_recon_grad",
+                "test_latent_grad",
+                "test_acc"
+            )
+
+            # Load batches of training/testing data
+            for (x, labels, nan_masks), (x_test, labels_test, nan_masks_test) in self.data_gen.iterator():
+                print("\r Model {}/{} Current progress : {}/{}".format(idx, len(model_paths), batch_idx, self.data_gen.num_rows / self.data_gen.m),
+                      flush=True, end="")
+
+                # Convert numpy to torch.tensor
+                x = torch.from_numpy(x).float().to(self.device)
+                x_test = torch.from_numpy(x_test).float().to(self.device)
+                labels = torch.from_numpy(labels).long().to(self.device)
+                labels_test = torch.from_numpy(labels_test).long().to(self.device)
+                nan_masks = torch.from_numpy(nan_masks * 1).float().to(self.device)
+                nan_masks_test = torch.from_numpy(nan_masks_test * 1).float().to(self.device)
+
+                # Forward pass
+                with torch.no_grad():
+                    recon_motion_t, pred_labels_t, pose_stats_t, motion_stats_t = self.model(x_test)
+                    recon_info_t, class_info_t = (x_test, recon_motion_t), (labels_test, pred_labels_t)
+                    loss_t, (
+                        recon_t, posekld_t, motionkld_t, recongrad_t, latentgrad_t, acc_t) = self.loss_function(
+                        recon_info_t,
+                        class_info_t,
+                        pose_stats_t,
+                        motion_stats_t,
+                        nan_masks_test
+                    )
+                    recon_motion, pred_labels, pose_stats, motion_stats = self.model(x)
+                    recon_info, class_info = (x, recon_motion), (labels, pred_labels)
+                    loss, (recon, posekld, motionkld, recongrad, latentgrad, acc) = self.loss_function(recon_info,
+                                                                                                       class_info,
+                                                                                                       pose_stats,
+                                                                                                       motion_stats,
+                                                                                                       nan_masks)
+
+
+                # draw videos if enabled
+                if draw_vid and (batch_idx==1):
+                    (pose_z_seq, recon_pose_z_seq, pose_mu, pose_logvar) = pose_stats
+                    (pose_z_seq_test, recon_pose_z_seq_test, pose_mu_test, pose_logvar_test) = pose_stats_t
+                    (motion_z, motion_mu, motion_logvar) = motion_stats
+                    (motion_z_test, motion_mu_test, motion_logvar_test) = motion_stats_t
+
+
+                    # Videos and Umap plots for Train data
+                    gen_videos(x=x, recon_motion=recon_motion, motion_z=motion_z, pose_z_seq=pose_z_seq,
+                               recon_pose_z_seq=recon_pose_z_seq, labels=labels.cpu().detach().numpy(),
+                               pred_labels=pred_labels, test_acc=acc.item(),
+                               sample_num=1,
+                               save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="train")
+
+                    # Videos and Umap plots for Test data
+                    gen_videos(x=x_test, recon_motion=recon_motion_t, motion_z=motion_z_test,
+                               pose_z_seq=pose_z_seq_test,
+                               recon_pose_z_seq=recon_pose_z_seq_test,
+                               labels=labels_test.cpu().detach().numpy(),
+                               pred_labels=pred_labels_t, test_acc=acc_t.item(),
+                               sample_num=1,
+                               save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="test")
+
+                rmse_q99, joint_RSE, rmse = cale_additional_stasts(x, recon_motion, nan_masks)
+                rmse_q99_t, joint_RSE_t, rmse_t = cale_additional_stasts(x_test, recon_motion_t, nan_masks_test)
+
+                # Add quantity of interest to lists
+                eval_meter.append_recorders(
+                    train_RMSE=rmse.item(),
+                    train_q99_RMSE=rmse_q99,
+                    train_joint_RSE=joint_RSE,
+                    train_recon_grad=recongrad.item(),
+                    train_latent_grad=latentgrad.item(),
+                    train_acc=acc.item(),
+                    test_RMSE=rmse_t.item(),
+                    test_q99_RMSE=rmse_q99_t,
+                    test_joint_RSE=joint_RSE_t,
+                    test_recon_grad=recongrad_t.item(),
+                    test_latent_grad=latentgrad_t.item(),
+                    test_acc=acc_t.item()
+                )
+                batch_idx += 1
+            print("\nEvaluating...")
+
+            eval_dict = dict()
+            for key in eval_meter.recorder.keys():
+                arr_np = np.array(eval_meter.recorder[key])
+                mean_val = np.nanmean(arr_np, axis=0)
+                eval_dict[key] = mean_val.tolist()
+            dict2json(os.path.join(eval_results_dir, "{}.json".format(model_file_name)), eval_dict)

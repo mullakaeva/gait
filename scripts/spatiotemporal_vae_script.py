@@ -15,11 +15,11 @@ def run_train_and_vis_on_stvae():
     # Hard-coded stuffs
     seq_dim = 128
     init_lr = 0.001
-    lr_milestones = [75, 150]
+    lr_milestones = [75]
     lr_decay_gamma = 0.1
 
     # Naming of models: N=Normal
-    model_identifier = "NB_K_C_L05"
+    model_identifier = "NB_K_S2_NoDecay"
 
     # Hyper-parameters
     hyper_params = {
@@ -32,21 +32,19 @@ def run_train_and_vis_on_stvae():
         "pose_latent_gradient": 0,  # 0.0001
         "motionnet_latent_dim": 128,
         "motionnet_dropout_p": 0,
-        "motionnet_kld": [200, 250, 0.0001], # [200, 250, 0.0001],
+        "motionnet_kld": [200, 250, 0.0001],  # [200, 250, 0.0001],
         "recon_gradient": 0,  # 0.0001
-        "class_weight": 0.001,  # 0.001
+        "class_weight": 0,  # 0.001
         "rmse_weighting_startepoch": None,
-        "latent_recon_loss": None,
-        "recon_loss_power": [2, 0.5, 80]
+        "latent_recon_loss": 1,
+        "recon_loss_power": 2
     }
 
     # Define paths
     df_path = "/mnt/data/raw_features_zmatrix_row_labels_withNanMasks.pickle"
     save_model_path = "Spatiotemporal_VAE/model_chkpt/ckpt_%s.pth" % model_identifier
-    save_vid_dir = "Spatiotemporal_VAE/vis/{}".format(model_identifier)
+    project_dir = "Spatiotemporal_VAE"
     save_hyper_params_path = "Spatiotemporal_VAE/model_chkpt/hyperparms_%s.json" % model_identifier
-    if os.path.isdir(save_vid_dir) is not True:
-        os.makedirs(save_vid_dir)
 
     if os.path.isfile(save_model_path):
         print("Model checkpoint identified.")
@@ -82,13 +80,14 @@ def run_train_and_vis_on_stvae():
                                  save_chkpt_path=save_model_path, load_chkpt_path=load_model_path)
     # model_container._save_model()
 
-    model_container.train(300)
+    # model_container.train(300)
 
     # # Visualization
     if os.path.isfile(save_model_path):
 
         data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=4096, n=seq_dim, seed=60)
-        model_container.vis_reconstruction(data_gen2, 10, save_vid_dir, model_identifier)
-        model_container.save_model_losses_data(save_vid_dir, model_identifier)
+        # model_container.vis_reconstruction(data_gen2, 10, project_dir, model_identifier)
+        # model_container.save_model_losses_data(project_dir, model_identifier)
+        model_container.evaluate_all_models(data_gen2, project_dir, None, draw_vid=True)
     else:
         print("Chkpt cannot be found")
