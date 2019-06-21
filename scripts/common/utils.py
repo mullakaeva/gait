@@ -4,6 +4,55 @@ import numpy as np
 import re
 import pickle
 
+def pool_points(data, kernel_size):
+    """
+    Filter out the data space by pooling (select one data point in each kernel window)
+
+    Parameters
+    ----------
+    data : numpy.darray
+        With shape (num_samples, 2) for x-, y-coordinates
+    kernel_size : int
+        Size of squared kernel
+
+    Returns
+    -------
+    selected_data_all : numpy.darray
+        With shape (num_pooled_samples, 2)
+    selected_sampled_index_list : list
+        With len = num_samples. Indexes of the selected data with respect to input arg "data".
+
+    """
+    max_x, max_y = np.max(data, axis=0)
+    min_x, min_y = np.min(data, axis=0)
+
+    kernel_size_x, kernel_size_y = kernel_size/2, kernel_size
+
+    x_increment_times = int((max_x - min_x) / kernel_size_x) + 1
+    y_increment_times = int((max_y - min_y) / kernel_size_y) + 1
+
+    selected_data_list = []
+    selected_sampled_index_list = []
+
+    for x_idx in range(x_increment_times):
+        for y_idx in range(y_increment_times):
+            x_range = (min_x + kernel_size_x * x_idx, min_x + kernel_size_x * (x_idx + 1))
+            y_range = (min_y + kernel_size_y * y_idx, min_y + kernel_size_y * (y_idx + 1))
+
+            data_in_range = data[(data[:, 0] > x_range[0]) & (data[:, 0] < x_range[1]) & (data[:, 1] > y_range[0]) & (
+                    data[:, 1] < y_range[1])]
+
+            if data_in_range.shape[0] > 0:
+                selected_data = np.min(data_in_range, axis=0)
+                selected_data_list.append(selected_data)
+                selected_sampled_index = np.argmax(np.sum(data == selected_data, axis=1))
+                selected_sampled_index_list.append(selected_sampled_index)
+
+    selected_data_all = np.stack(selected_data_list)
+
+    return selected_data_all, selected_sampled_index_list
+
+
 
 class Detectron_data_loader():
     def __init__(self, data_path):

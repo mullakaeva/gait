@@ -19,7 +19,7 @@ def run_train_and_vis_on_stvae():
     lr_decay_gamma = 0.1
 
     # Naming of models: N=Normal
-    model_identifier = "NB_K_S2_NoDecay"
+    model_identifier = "NB-K-C-G-S2-NoDe500"
 
     # Hyper-parameters
     hyper_params = {
@@ -29,12 +29,12 @@ def run_train_and_vis_on_stvae():
         "posenet_latent_dim": 16,
         "posenet_dropout_p": 0,
         "posenet_kld": None,
-        "pose_latent_gradient": 0,  # 0.0001
+        "pose_latent_gradient": 0.0001,  # 0.0001
         "motionnet_latent_dim": 128,
         "motionnet_dropout_p": 0,
         "motionnet_kld": [200, 250, 0.0001],  # [200, 250, 0.0001],
-        "recon_gradient": 0,  # 0.0001
-        "class_weight": 0,  # 0.001
+        "recon_gradient": 0.0001,  # 0.0001
+        "class_weight": 0.001,  # 0.001
         "rmse_weighting_startepoch": None,
         "latent_recon_loss": 1,
         "recon_loss_power": 2
@@ -84,10 +84,10 @@ def run_train_and_vis_on_stvae():
 
     # # Visualization
     if os.path.isfile(save_model_path):
-
-        data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=4096, n=seq_dim, seed=60)
+        model_container.sample_and_recon(project_dir, model_identifier)
+        # data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=4096, n=seq_dim, seed=60)
         # model_container.vis_reconstruction(data_gen2, 10, project_dir, model_identifier)
         # model_container.save_model_losses_data(project_dir, model_identifier)
-        model_container.evaluate_all_models(data_gen2, project_dir, None, draw_vid=True)
+        # model_container.evaluate_all_models(data_gen2, project_dir, None, draw_vid=True)
     else:
         print("Chkpt cannot be found")

@@ -1,4 +1,4 @@
-from .utils import read_preprocessed_keypoints, fullfile, gaitclass, idx2class
+from .utils import read_preprocessed_keypoints, fullfile, gaitclass, idx2class, pool_points
 from .keypoints_format import openpose_body_draw_sequence, excluded_points
 from glob import glob
 import numpy as np
@@ -40,24 +40,24 @@ def build_frame_2by3(*args):
         Array combining the <=6 input frames.
     """
     h, w, _ = args[0].shape
-    output_arr = np.zeros((h*2, w*3, 3))
-    iter_idx, max_iter_idx = 0, len(args)-1
+    output_arr = np.zeros((h * 2, w * 3, 3))
+    iter_idx, max_iter_idx = 0, len(args) - 1
     for i in range(2):
         for j in range(3):
             if iter_idx <= max_iter_idx:
-                output_arr[h*i : h*(i+1), w*j : w*(j+1), :] = args[iter_idx]
+                output_arr[h * i: h * (i + 1), w * j: w * (j + 1), :] = args[iter_idx]
             iter_idx += 1
     return output_arr
 
 
-def draw_skeleton(ax, x, y):
+def draw_skeleton(ax, x, y, linewidth=1):
     side_dict = {
         "m": "k",
         "l": "r",
         "r": "b"
     }
     for start, end, side in openpose_body_draw_sequence:
-        ax.plot(x[[start, end]], y[[start, end]], c=side_dict[side])
+        ax.plot(x[[start, end]], y[[start, end]], c=side_dict[side], linewidth=linewidth)
     return ax
 
 
@@ -68,6 +68,39 @@ def plot2arr_skeleton(x, y, title, x_lim=(-0.6, 0.6), y_lim=(0.6, -0.6)):
     fig.suptitle(title)
     ax.set_xlim(x_lim[0], x_lim[1])
     ax.set_ylim(y_lim[0], y_lim[1])
+    fig.tight_layout()
+    fig.canvas.draw()
+    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    plt.close()
+    return data
+
+
+def plot2arr_skeleton_multiple_samples(x, y, title, x_lim=(-0.6, 0.6), y_lim=(-0.6, 0.6)):
+    """
+
+    Parameters
+    ----------
+    x : numpy.darray
+        With shape = (num_samples, 25)
+    y : numpy.darray
+        With shape = (num_samples, 25)
+    title
+    x_lim
+    y_lim
+
+    Returns
+    -------
+
+    """
+    fig, ax = plt.subplots()
+    num_samples = x.shape[0]
+    for i in range(num_samples):
+        ax = draw_skeleton(ax, x[i,], y[i,], linewidth=0.5)
+
+    fig.suptitle(title)
+    ax.set_xlim(x_lim[0], x_lim[1])
+    ax.set_ylim(y_lim[1], y_lim[0])
     fig.tight_layout()
     fig.canvas.draw()
     data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
@@ -160,6 +193,59 @@ def plot_pca_explained_var(fitters, title, save_path=None):
         plt.close()
 
 
+def gen_uniform_sampling_video(recon_motion, motion_z, increment_steps, motion_latent_dim, save_vid_dir):
+    save_vid_dir = os.path.join(save_vid_dir, "sampling")
+    os.makedirs(save_vid_dir, exist_ok=True)
+
+    for latent_dim_idx in range(motion_latent_dim):
+        print("Drawing dim{}".format(latent_dim_idx))
+        vwriter = skv.FFmpegWriter(os.path.join(save_vid_dir, "dim_{}.mp4".format(latent_dim_idx)))
+        motion_z_coor = motion_z[latent_dim_idx * increment_steps: (latent_dim_idx + 1) * increment_steps,]
+        x_line = motion_z_coor[:, latent_dim_idx] * 2.5
+        recon_motion_selected = recon_motion[latent_dim_idx * increment_steps: (latent_dim_idx + 1) * increment_steps,]
+        recon_motion_selected[:, 0:25, :] += x_line.reshape(-1, 1, 1)
+        min_x, max_x = np.min(recon_motion_selected[:, 0:25, :]), np.max(recon_motion_selected[:, 0:25, :])
+        min_y, max_y = np.min(recon_motion_selected[:, 25:, :]), np.max(recon_motion_selected[:, 25:, :])
+        y_increase_ratio = (max_x-min_x)/1.2
+        for t in range(128):
+            print("\rtime: {}".format(t), flush=True, end="")
+            arr = plot2arr_skeleton_multiple_samples(recon_motion_selected[:, 0:25, t],
+                                                     recon_motion_selected[:, 25:, t],
+                                                     "Dim: {}".format(latent_dim_idx),
+                                                     x_lim=(min_x, max_x), y_lim=(min_y*y_increase_ratio, max_y*y_increase_ratio)
+                                                     )
+            vwriter.writeFrame(arr)
+
+        vwriter.close()
+
+def gen_motion_space_scatter_animation(recon_motion, motion_z_umap, kernel_size,
+                                       translation_scaling,
+                                       skeleton_scaling=1):
+    """
+
+    Parameters
+    ----------
+    recon_motion : numpy.darray
+        With shape = (n_samples, 50, seq)
+    motion_z_umap : numpy.darray
+        With shape = (n_samples, 2)
+    translation_scaling : int or float
+    skeleton_scaling : int or float
+    kernel_size : int
+
+    Returns
+    -------
+
+    """
+    motion_z_umap_scaled = (motion_z_umap - np.mean(motion_z_umap, axis=0)) * translation_scaling
+    motion_z_umap_pooled, indexes = pool_points(motion_z_umap_scaled, kernel_size=kernel_size)
+    recon_motion_pooled = recon_motion[indexes,]
+    recon_motion_pooled = recon_motion_pooled * skeleton_scaling
+    recon_motion_pooled[:, 0:25, :] += motion_z_umap_pooled[:, 0].reshape(-1, 1, 1)
+    recon_motion_pooled[:, 25:, :] += motion_z_umap_pooled[:, 1].reshape(-1, 1, 1)
+    return recon_motion_pooled
+
+
 def gen_videos(x, recon_motion, motion_z, pose_z_seq, recon_pose_z_seq, labels, pred_labels, test_acc,
                sample_num, save_vid_dir, model_identifier,
                mode, num_samples_pose_z_seq=128):
@@ -201,6 +287,7 @@ def gen_videos(x, recon_motion, motion_z, pose_z_seq, recon_pose_z_seq, labels, 
 
     def flat2seq(x_flat, x_seq):
         return np.transpose(x_flat.reshape(x_seq.shape[0], x_seq.shape[2], -1), (0, 2, 1))
+
     # Convert torch.tensor to numpy
     x = x.cpu().detach().numpy()
     recon_motion = recon_motion.cpu().detach().numpy()
@@ -251,6 +338,29 @@ def gen_videos(x, recon_motion, motion_z, pose_z_seq, recon_pose_z_seq, labels, 
     ski.imsave(os.path.join(save_vid_dir, "{}_UmapMotion_{}.png".format(mode, model_identifier)),
                umap_plot_motion_arr)
 
+    # Draw video of latent space with sampled motions
+    vreader_latent_motion_space = skv.FFmpegWriter(
+        os.path.join(save_vid_dir, "{}_latent_motion_space.mp4".format(mode)))
+    recon_pooled = gen_motion_space_scatter_animation(recon_motion=recon_motion, motion_z_umap=motion_z_umap,
+                                                      kernel_size=0.5,
+                                                      translation_scaling=1,
+                                                      skeleton_scaling=0.5)
+    min_x, max_x = np.min(recon_pooled[:, 0:25, :]), np.max(recon_pooled[:, 0:25, :])
+    min_y, max_y = np.min(recon_pooled[:, 25:, :]), np.max(recon_pooled[:, 25:, :])
+
+    for t in range(seq_length):
+        print("\rDrawing latent motion space {}/{}".format(t, seq_length), flush=True, end="")
+
+        latent_motion_arr = plot2arr_skeleton_multiple_samples(x=recon_pooled[:, 0:25, t],
+                                                               y=recon_pooled[:, 25:, t],
+                                                               title="Latent Motion Space",
+                                                               x_lim=(min_x, max_x),
+                                                               y_lim=(min_y, max_y))
+        vreader_latent_motion_space.writeFrame(latent_motion_arr)
+
+    print()
+    vreader_latent_motion_space.close()
+    return
     # Draw videos
     for sample_idx in range(sample_num):
 

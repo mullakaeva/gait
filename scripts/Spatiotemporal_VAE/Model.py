@@ -236,6 +236,14 @@ class SpatioTemporalVAE(nn.Module):
         pred_labels = self.class_net(motion_z)  # Convert (m, motion_latent_dim) to (m, n_classes)
         return recon_motion, pred_labels, (pose_z_seq, recon_pose_z_seq, pose_mu, pose_logvar), (motion_z, motion_mu, motion_logvar)
 
+    def decode(self, motion_z):
+        recon_pose_z_seq = self.motion_decode(motion_z)  # Convert (m, motion_latent_dim) to  (m, pose_latent_dim, seq)
+        out = self.transpose_flatten(
+            recon_pose_z_seq)  # Convert (m, pose_latent_dim, seq) to (m * seq, pose_latent_dim)
+        out = self.pose_decode(out)  # Convert (m * seq, pose_latent_dim) to (m * seq, fea)
+        recon_motion = self.unflatten_transpose(out)  # Convert (m * seq, fea) to (m, fea, seq)
+        return recon_motion
+
     def pose_encode(self, x):
         out = self.pose_vae.encode(x)
         return out

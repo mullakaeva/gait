@@ -10,7 +10,7 @@ import pprint
 import re
 from glob import glob
 from common.utils import MeterAssembly, RunningAverageMeter, dict2json
-from common.visualisation import gen_videos
+from common.visualisation import gen_videos, gen_uniform_sampling_video
 from .Model import SpatioTemporalVAE
 from .GraphModel import GraphSpatioTemporalVAE
 
@@ -509,6 +509,36 @@ class STVAEmodel:
                    sample_num=vid_sample_num,
                    save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="test")
 
+    def sample_and_recon(self, project_dir, model_identifier):
+        # Define paths
+        save_vid_dir = os.path.join(project_dir, "vis", model_identifier)
+        if os.path.isdir(save_vid_dir) is not True:
+            os.makedirs(save_vid_dir)
+
+        # # Uniform sampling and visualisation
+        increment_steps = 10
+        z_vec_list = []
+        for dim_idx in range(self.motionnet_latent_dim):
+            z_vec = np.zeros((increment_steps, self.motionnet_latent_dim))
+            z_vec[:, dim_idx] = np.linspace(-1.5, 1.5, increment_steps, endpoint=True)
+            z_vec_list.append(z_vec)
+
+        motion_z_space = np.concatenate(z_vec_list, axis=0)
+        self.model.eval()
+        with torch.no_grad():
+            motion_z_space_tensor = torch.from_numpy(motion_z_space).float().to(self.device)
+            recon_motion_tensor = self.model.decode(motion_z_space_tensor)
+
+        recon_motion_np = recon_motion_tensor.cpu().detach().numpy()
+
+        gen_uniform_sampling_video(recon_motion_np, motion_z_space, increment_steps, self.motionnet_latent_dim,
+                                   save_vid_dir)
+
+
+
+
+
+
     def evaluate_all_models(self, data_gen, project_dir, model_list, draw_vid=False):
 
         def cale_additional_stasts(x, recon_motion, nan_masks):
@@ -570,7 +600,8 @@ class STVAEmodel:
 
             # Load batches of training/testing data
             for (x, labels, nan_masks), (x_test, labels_test, nan_masks_test) in self.data_gen.iterator():
-                print("\r Model {}/{} Current progress : {}/{}".format(idx, len(model_paths), batch_idx, self.data_gen.num_rows / self.data_gen.m),
+                print("\r Model {}/{} Current progress : {}/{}".format(idx, len(model_paths), batch_idx,
+                                                                       self.data_gen.num_rows / self.data_gen.m),
                       flush=True, end="")
 
                 # Convert numpy to torch.tensor
@@ -601,14 +632,12 @@ class STVAEmodel:
                                                                                                        motion_stats,
                                                                                                        nan_masks)
 
-
                 # draw videos if enabled
-                if draw_vid and (batch_idx==1):
+                if draw_vid and (batch_idx == 1):
                     (pose_z_seq, recon_pose_z_seq, pose_mu, pose_logvar) = pose_stats
                     (pose_z_seq_test, recon_pose_z_seq_test, pose_mu_test, pose_logvar_test) = pose_stats_t
                     (motion_z, motion_mu, motion_logvar) = motion_stats
                     (motion_z_test, motion_mu_test, motion_logvar_test) = motion_stats_t
-
 
                     # Videos and Umap plots for Train data
                     gen_videos(x=x, recon_motion=recon_motion, motion_z=motion_z, pose_z_seq=pose_z_seq,
