@@ -10,7 +10,7 @@ import pprint
 import re
 from glob import glob
 from common.utils import MeterAssembly, RunningAverageMeter, dict2json
-from common.visualisation import gen_videos, gen_uniform_sampling_video
+from common.visualisation import gen_videos
 from .Model import SpatioTemporalVAE
 from .GraphModel import GraphSpatioTemporalVAE
 
@@ -494,7 +494,21 @@ class STVAEmodel:
             (motion_z, motion_mu, motion_logvar) = motion_z_info
             (motion_z_test, motion_mu_test, motion_logvar_test) = motion_z_info_test
 
+        # Create random samples of latent
+        torch.manual_seed(0)
+        random_motion_z = torch.randn((recon_motion.shape[0], motion_z.shape[1])).float().to(self.device)
+        with torch.no_grad():
+            random_recon = self.model.decode(random_motion_z)
+
+
+
         # Videos and Umap plots for Train data
+        # gen_videos(x=x, recon_motion=random_recon, motion_z=random_motion_z, pose_z_seq=pose_z_seq,
+        #            recon_pose_z_seq=recon_pose_z_seq, labels=labels,
+        #            pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
+        #            sample_num=vid_sample_num,
+        #            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="random")
+        # return
         gen_videos(x=x, recon_motion=recon_motion, motion_z=motion_z, pose_z_seq=pose_z_seq,
                    recon_pose_z_seq=recon_pose_z_seq, labels=labels,
                    pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
@@ -508,35 +522,6 @@ class STVAEmodel:
                    pred_labels=pred_labels_test, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
                    sample_num=vid_sample_num,
                    save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="test")
-
-    def sample_and_recon(self, project_dir, model_identifier):
-        # Define paths
-        save_vid_dir = os.path.join(project_dir, "vis", model_identifier)
-        if os.path.isdir(save_vid_dir) is not True:
-            os.makedirs(save_vid_dir)
-
-        # # Uniform sampling and visualisation
-        increment_steps = 10
-        z_vec_list = []
-        for dim_idx in range(self.motionnet_latent_dim):
-            z_vec = np.zeros((increment_steps, self.motionnet_latent_dim))
-            z_vec[:, dim_idx] = np.linspace(-1.5, 1.5, increment_steps, endpoint=True)
-            z_vec_list.append(z_vec)
-
-        motion_z_space = np.concatenate(z_vec_list, axis=0)
-        self.model.eval()
-        with torch.no_grad():
-            motion_z_space_tensor = torch.from_numpy(motion_z_space).float().to(self.device)
-            recon_motion_tensor = self.model.decode(motion_z_space_tensor)
-
-        recon_motion_np = recon_motion_tensor.cpu().detach().numpy()
-
-        gen_uniform_sampling_video(recon_motion_np, motion_z_space, increment_steps, self.motionnet_latent_dim,
-                                   save_vid_dir)
-
-
-
-
 
 
     def evaluate_all_models(self, data_gen, project_dir, model_list, draw_vid=False):

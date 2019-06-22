@@ -5,6 +5,7 @@ import numpy as np
 import skvideo.io as skv
 import skimage.io as ski
 from skimage.color import rgba2rgb
+import torch
 import matplotlib.pyplot as plt
 import os
 import umap
@@ -193,30 +194,6 @@ def plot_pca_explained_var(fitters, title, save_path=None):
         plt.close()
 
 
-def gen_uniform_sampling_video(recon_motion, motion_z, increment_steps, motion_latent_dim, save_vid_dir):
-    save_vid_dir = os.path.join(save_vid_dir, "sampling")
-    os.makedirs(save_vid_dir, exist_ok=True)
-
-    for latent_dim_idx in range(motion_latent_dim):
-        print("Drawing dim{}".format(latent_dim_idx))
-        vwriter = skv.FFmpegWriter(os.path.join(save_vid_dir, "dim_{}.mp4".format(latent_dim_idx)))
-        motion_z_coor = motion_z[latent_dim_idx * increment_steps: (latent_dim_idx + 1) * increment_steps,]
-        x_line = motion_z_coor[:, latent_dim_idx] * 2.5
-        recon_motion_selected = recon_motion[latent_dim_idx * increment_steps: (latent_dim_idx + 1) * increment_steps,]
-        recon_motion_selected[:, 0:25, :] += x_line.reshape(-1, 1, 1)
-        min_x, max_x = np.min(recon_motion_selected[:, 0:25, :]), np.max(recon_motion_selected[:, 0:25, :])
-        min_y, max_y = np.min(recon_motion_selected[:, 25:, :]), np.max(recon_motion_selected[:, 25:, :])
-        y_increase_ratio = (max_x-min_x)/1.2
-        for t in range(128):
-            print("\rtime: {}".format(t), flush=True, end="")
-            arr = plot2arr_skeleton_multiple_samples(recon_motion_selected[:, 0:25, t],
-                                                     recon_motion_selected[:, 25:, t],
-                                                     "Dim: {}".format(latent_dim_idx),
-                                                     x_lim=(min_x, max_x), y_lim=(min_y*y_increase_ratio, max_y*y_increase_ratio)
-                                                     )
-            vwriter.writeFrame(arr)
-
-        vwriter.close()
 
 def gen_motion_space_scatter_animation(recon_motion, motion_z_umap, kernel_size,
                                        translation_scaling,
@@ -315,10 +292,12 @@ def gen_videos(x, recon_motion, motion_z, pose_z_seq, recon_pose_z_seq, labels, 
     pose_z_flat_umap = pose_umapper.transform(pose_z_flat)
     recon_pose_z_flat_umap = pose_umapper.transform(recon_pose_z_flat)
 
-    motion_z_umap = umap.UMAP(n_neighbors=15,
+    motion_z_umapper = umap.UMAP(n_neighbors=15,
                               n_components=2,
                               min_dist=0.1,
-                              metric="euclidean").fit_transform(motion_z)
+                              metric="euclidean")
+    motion_z_umap = motion_z_umapper.fit_transform(motion_z)
+
     pose_z_umap_flat2seq = flat2seq(pose_z_flat_umap, pose_z_seq)
     recon_pose_z_flat_umap_flat2seq = flat2seq(recon_pose_z_flat_umap, recon_pose_z_seq)
 
@@ -341,6 +320,25 @@ def gen_videos(x, recon_motion, motion_z, pose_z_seq, recon_pose_z_seq, labels, 
     # Draw video of latent space with sampled motions
     vreader_latent_motion_space = skv.FFmpegWriter(
         os.path.join(save_vid_dir, "{}_latent_motion_space.mp4".format(mode)))
+
+    # # Filter out reflecting artefact
+    pos_sum = np.sum(recon_motion[:, [2, 5], :] > 0, axis=2)
+    neg_sum = np.sum(recon_motion[:, [2, 5], :] < 0, axis=2)
+    net_sum = pos_sum + neg_sum
+    p_pos, p_neg = pos_sum/net_sum, neg_sum/net_sum
+    entropy = -np.sum(p_pos*np.log2(p_pos+1e-6) + p_neg*np.log2(p_neg+1e-6), axis=1)
+    entro_mask = entropy < 0.05
+
+    # Filter by entropy
+    recon_motion = recon_motion[entro_mask, ]
+    motion_z_umap = motion_z_umap[entro_mask,]
+
+    # Filter by highest variancee
+    recon_var = np.sum(np.std(recon_motion, axis=2), axis=1)
+    recon_var_mask = (recon_var > np.quantile(recon_var, 0.5))
+    recon_motion = recon_motion[recon_var_mask, ]
+    motion_z_umap = motion_z_umap[recon_var_mask,]
+
     recon_pooled = gen_motion_space_scatter_animation(recon_motion=recon_motion, motion_z_umap=motion_z_umap,
                                                       kernel_size=0.5,
                                                       translation_scaling=1,
