@@ -94,10 +94,10 @@ def plot2arr_skeleton_multiple_samples(x, y, title, x_lim=(-0.6, 0.6), y_lim=(-0
     -------
 
     """
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(12, 8))
     num_samples = x.shape[0]
     for i in range(num_samples):
-        ax = draw_skeleton(ax, x[i,], y[i,], linewidth=0.5)
+        ax = draw_skeleton(ax, x[i,], y[i,])
 
     fig.suptitle(title)
     ax.set_xlim(x_lim[0], x_lim[1])
@@ -322,12 +322,13 @@ def gen_videos(x, recon_motion, motion_z, pose_z_seq, recon_pose_z_seq, labels, 
         os.path.join(save_vid_dir, "{}_latent_motion_space.mp4".format(mode)))
 
     # # Filter out reflecting artefact
+    # recon_motion = x
     pos_sum = np.sum(recon_motion[:, [2, 5], :] > 0, axis=2)
     neg_sum = np.sum(recon_motion[:, [2, 5], :] < 0, axis=2)
     net_sum = pos_sum + neg_sum
     p_pos, p_neg = pos_sum/net_sum, neg_sum/net_sum
     entropy = -np.sum(p_pos*np.log2(p_pos+1e-6) + p_neg*np.log2(p_neg+1e-6), axis=1)
-    entro_mask = entropy < 0.05
+    entro_mask = entropy < 1e-4
 
     # Filter by entropy
     recon_motion = recon_motion[entro_mask, ]
@@ -335,7 +336,7 @@ def gen_videos(x, recon_motion, motion_z, pose_z_seq, recon_pose_z_seq, labels, 
 
     # Filter by highest variancee
     recon_var = np.sum(np.std(recon_motion, axis=2), axis=1)
-    recon_var_mask = (recon_var > np.quantile(recon_var, 0.5))
+    recon_var_mask = (recon_var < np.quantile(recon_var, 1)) & (recon_var > np.quantile(recon_var, 0.8))
     recon_motion = recon_motion[recon_var_mask, ]
     motion_z_umap = motion_z_umap[recon_var_mask,]
 

@@ -84,7 +84,7 @@ def run_train_and_vis_on_stvae():
 
     # # Visualization
     if os.path.isfile(save_model_path):
-        data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=4096, n=seq_dim, seed=60)
+        data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=8192, n=seq_dim, seed=60)
         model_container.vis_reconstruction(data_gen2, 10, project_dir, model_identifier)
         # model_container.save_model_losses_data(project_dir, model_identifier)
         # model_container.evaluate_all_models(data_gen2, project_dir, None, draw_vid=True)

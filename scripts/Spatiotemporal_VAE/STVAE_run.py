@@ -503,25 +503,25 @@ class STVAEmodel:
 
 
         # Videos and Umap plots for Train data
-        # gen_videos(x=x, recon_motion=random_recon, motion_z=random_motion_z, pose_z_seq=pose_z_seq,
-        #            recon_pose_z_seq=recon_pose_z_seq, labels=labels,
-        #            pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
-        #            sample_num=vid_sample_num,
-        #            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="random")
-        # return
-        gen_videos(x=x, recon_motion=recon_motion, motion_z=motion_z, pose_z_seq=pose_z_seq,
+        gen_videos(x=x, recon_motion=random_recon, motion_z=random_motion_z, pose_z_seq=pose_z_seq,
                    recon_pose_z_seq=recon_pose_z_seq, labels=labels,
                    pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
                    sample_num=vid_sample_num,
-                   save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="train")
+                   save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="random_1e-4_8e-1")
+        # return
+        # gen_videos(x=x, recon_motion=recon_motion, motion_z=motion_z, pose_z_seq=pose_z_seq,
+        #            recon_pose_z_seq=recon_pose_z_seq, labels=labels,
+        #            pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
+        #            sample_num=vid_sample_num,
+        #            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="train_x_1e-4_8e-1")
 
-        # Videos and Umap plots for Test data
-        gen_videos(x=x_test, recon_motion=recon_motion_test, motion_z=motion_z_test, pose_z_seq=pose_z_seq_test,
-                   recon_pose_z_seq=recon_pose_z_seq_test,
-                   labels=labels_test,
-                   pred_labels=pred_labels_test, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
-                   sample_num=vid_sample_num,
-                   save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="test")
+        # # Videos and Umap plots for Test data
+        # gen_videos(x=x_test, recon_motion=recon_motion_test, motion_z=motion_z_test, pose_z_seq=pose_z_seq_test,
+        #            recon_pose_z_seq=recon_pose_z_seq_test,
+        #            labels=labels_test,
+        #            pred_labels=pred_labels_test, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
+        #            sample_num=vid_sample_num,
+        #            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="test")
 
 
     def evaluate_all_models(self, data_gen, project_dir, model_list, draw_vid=False):
