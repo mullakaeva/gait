@@ -7,10 +7,10 @@
 
 # %%  ======================= Step 1: OpenPose inference ============================
 # This section find all videos from Mustafa's gait data, select those that has labels and infer them
-# 1. $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /:/mnt yyhhoi/openpose:u16cuda9dnn7-2 bash
+# 1. $ NV_GPU=0,1,2 nvidia-docker run --rm -it -v /:/mnt yyhhoi/openpose:u16cuda9dnn7-2 bash
 # 2. # cp -r /mnt/data/hoi/gait_analysis/scripts/openpose_shellscripts/generate_openpose_shellscript_for_FSF.py /mnt/data/hoi/gait_analysis/scripts/common ./
 # 3. # python generate_openpose_shellscript_for_FSF.py
-# 4. # sh openpose_inference_script.sh
+# 4. # sh openpose_inference_script.sh | tee /mnt/data/hoi/gait_analysis/scripts/openpose_shellscripts/clt_output.txt
 # Configuration of behaviours is stored in the generate_openpose_shellscript_for_FSF.py above
 
 
@@ -48,7 +48,6 @@
 
 # %% ======================== Step A.C.4: Train and visualize on combined_VAE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
-# nvidia-docker run -it -e NVIDIA_VISIBLE_DEVICES=0 -u root -v /data/hoi/gait_analysis:/mnt yyhhoi/pytorch_geometric:2 bash
 from spatiotemporal_vae_script import run_train_and_vis_on_stvae
 run_train_and_vis_on_stvae()
 

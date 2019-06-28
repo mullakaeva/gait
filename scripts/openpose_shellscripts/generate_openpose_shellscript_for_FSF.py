@@ -3,7 +3,8 @@ import sys
 
 sys.path.append("../")
 
-from gait_common_code.utils import sample_subset_of_videos
+from common.utils import sample_subset_of_videos
+
 
 def gen_template(all_videos_list, output_videos_dir, output_data_dir):
     """
@@ -19,25 +20,25 @@ def gen_template(all_videos_list, output_videos_dir, output_data_dir):
 
     all_videos = sorted(all_videos_list)
     move_directory = "cd /opt/openpose/\n"
-    # command_template = "./build/examples/openpose/openpose.bin --video {} --write_video {} --write_json {} --num_gpu 2 --num_gpu_start 0 --display 0\n"
-    command_template = "./build/examples/openpose/openpose.bin --video {} --write_video {} --write_json {} --display 0\n"
+    command_template = "./build/examples/openpose/openpose.bin --video {} --write_video {} --write_json {} --display 0 --logging_level 4\n"
     whole_command = move_directory
     skipped_num = 0
     for idx, input_vid_path in enumerate(all_videos):
-        
+
         vid_name_root = os.path.splitext(os.path.split(input_vid_path)[1])[0]
         output_vid_path = os.path.join(output_videos_dir, vid_name_root + ".mp4")
-        
+
         # If output exists, skipp
         if os.path.isfile(output_vid_path):
             print("{} exists. Skipped".format(output_vid_path))
             skipped_num += 1
             continue
-        
+
         # Make folder for storing keypoints 
-        output_data_path = os.path.join(output_data_dir, vid_name_root ) # output_data_path should point to a directory !
+        output_data_path = os.path.join(output_data_dir, vid_name_root)  # output_data_path should point to a directory!
         if os.path.isdir(output_data_path) is not True:
             os.mkdir(output_data_path)
+
         # Append to shell script
         whole_command += command_template.format(input_vid_path, output_vid_path, output_data_path)
         whole_command += "NUM=$(expr $NUM + 1)\n"
@@ -50,19 +51,13 @@ def gen_template(all_videos_list, output_videos_dir, output_data_dir):
     print("Progress: {}/{}".format(skipped_num, len(all_videos_list)))
 
 
-
 if __name__ == "__main__":
     src_videos_dir = "/mnt/data/gait/data/videos_mp4/"
-    labels_path = "/mnt/data/hoi/gait_analysis/data/df_gait_vid_linked_190718.pkl"
-    all_videos_list = sample_subset_of_videos(src_videos_dir, sample_num = 0, labels_path = labels_path, seed = 50, with_labels = True)
+    labels_path = "/mnt/data/hoi/gait_analysis/data/labels/z_matrix/df_gait_vid_linked_190718.pkl"
+    all_videos_list = sample_subset_of_videos(src_videos_dir, sample_num=0, labels_path=labels_path, seed=50,
+                                              with_labels=False)
 
-    output_videos_dir = "/mnt/data/hoi/gait_analysis/full_shallow_features_analysis/data/openpose_visualisation"
-    output_data_dir = "/mnt/data/hoi/gait_analysis/full_shallow_features_analysis/data/openpose_keypoints"
+    output_videos_dir = "/mnt/data/hoi/gait_analysis/data/openpose_visualisation"
+    output_data_dir = "/mnt/data/hoi/gait_analysis/data/openpose_keypoints"
     gen_template(all_videos_list, output_videos_dir, output_data_dir)
     print("Number of video = {}".format(all_videos_list.shape[0]))
-
-
-
-
-
-

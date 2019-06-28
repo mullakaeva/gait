@@ -394,15 +394,18 @@ def sample_subset_of_videos(src_dir, sample_num=1000, labels_path="", seed=50, w
             if vid_base_name in filenames_with_labels:
                 filtered_videos_list.append(vid_path_each)
     else:
+        print("No filtering. Use all videos.")
         filtered_videos_list = videos_list
 
-    print("Sample and copy videos")
+
     # Sample videos
     filtered_videos_list_np = np.array(filtered_videos_list)
     if sample_num > 0:
+        print("Sample and copy videos %d from %d" % (sample_num, len(filtered_videos_list_np)))
         np.random.seed(seed)
         selected_videos = np.random.choice(filtered_videos_list_np, sample_num, replace=False)
     else:
+        print("Sampling disabled. Use all the videos %d" % len(filtered_videos_list_np))
         selected_videos = filtered_videos_list_np
 
     return selected_videos

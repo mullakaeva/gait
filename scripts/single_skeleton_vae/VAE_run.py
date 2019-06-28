@@ -7,7 +7,7 @@ import os
 import matplotlib.pyplot as plt
 import skvideo.io as skv
 from sklearn.decomposition import PCA
-from common.visualisation import plot2arr_skeleton, plot_latent_space_with_labels, build_frame_4by4
+from common.visualisation import plot2arr_skeleton, plot_latent_space_with_labels, build_frame_2by2
 from .Model import VAE
 from common.utils import RunningAverageMeter
 
@@ -360,7 +360,7 @@ class GaitSingleSkeletonVAEvisualiser:
                                                  x_lim=(-0.6, 0.6),
                                                  y_lim=(0.6, -0.6))
                 # Build video frame
-                output_arr = build_frame_4by4([draw_arr_in, draw_arr_out, draw_arr_latent])
+                output_arr = build_frame_2by2(draw_arr_in, draw_arr_out, draw_arr_latent)
                 plt.close()
                 vwriter.writeFrame(output_arr)
             print()

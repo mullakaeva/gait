@@ -8,20 +8,18 @@ from skimage.color import rgba2rgb
 import torch
 import matplotlib.pyplot as plt
 import os
-import umap
+# import umap
 
 
-def build_frame_4by4(arrs):
-    h, w = arrs[0].shape[0], arrs[0].shape[1]
+def build_frame_2by2(*args):
+    h, w, _ = args[0].shape
     output_arr = np.zeros((h * 2, w * 2, 3))
-    if len(arrs) == 3:
-        arr1, arr2, arr3 = arrs
-    elif len(arrs) > 3:
-        arr1, arr2, arr3, arr4 = arrs
-        output_arr[h:h * 2, w:w * 2, :] = arr4
-    output_arr[0:h, 0:w, :] = arr1
-    output_arr[0:h, w:w * 2, :] = arr2
-    output_arr[h:h * 2, 0:w, :] = arr3
+    iter_idx, max_iter_idx = 0, len(args) - 1
+    for i in range(2):
+        for j in range(2):
+            if iter_idx <= max_iter_idx:
+                output_arr[h * i: h * (i + 1), w * j: w * (j + 1), :] = args[iter_idx]
+            iter_idx += 1
 
     return output_arr
 
@@ -62,13 +60,13 @@ def draw_skeleton(ax, x, y, linewidth=1):
     return ax
 
 
-def plot2arr_skeleton(x, y, title, x_lim=(-0.6, 0.6), y_lim=(0.6, -0.6)):
+def plot2arr_skeleton(x, y, title, x_lim=(-0.6, 0.6), y_lim=(-0.6, 0.6)):
     fig, ax = plt.subplots()
     ax.scatter(np.delete(x, excluded_points), np.delete(y, excluded_points))
     ax = draw_skeleton(ax, x, y)
     fig.suptitle(title)
     ax.set_xlim(x_lim[0], x_lim[1])
-    ax.set_ylim(y_lim[0], y_lim[1])
+    ax.set_ylim(y_lim[1], y_lim[0])
     fig.tight_layout()
     fig.canvas.draw()
     data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')

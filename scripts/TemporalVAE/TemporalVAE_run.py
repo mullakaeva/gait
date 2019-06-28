@@ -6,7 +6,7 @@ import os
 import matplotlib.pyplot as plt
 import skvideo.io as skv
 import skimage.io as ski
-from common.visualisation import plot2arr_skeleton, plot_latent_space_with_labels, plot_umap_with_labels, build_frame_4by4
+from common.visualisation import plot2arr_skeleton, plot_latent_space_with_labels, plot_umap_with_labels, build_frame_2by2
 from .Model_t128 import TemporalVAE
 from common.utils import RunningAverageMeter, gaitclass
 import umap
@@ -384,7 +384,7 @@ class GaitCVAEvisualiser:
                                                  y=recon_example[25:, t],
                                                  title=skeleton_title
                                                  )
-                output_frame = build_frame_4by4([draw_arr_in, draw_clusters_sin, draw_arr_out])
+                output_frame = build_frame_2by2(draw_arr_in, draw_clusters_sin, draw_arr_out)
                 vwriter.writeFrame(output_frame)
         vwriter.close()
 
