@@ -4,6 +4,53 @@ import numpy as np
 import re
 import pickle
 
+
+def extract_contagious(binary_train, max_neigh):
+    """
+
+    Parameters
+    ----------
+    binary_train : numpy.darray
+        (num_frames, ), with binary values {0, 1}
+    max_neigh : int
+        Maximum contagious 1's to be grouped
+
+    Returns
+    -------
+    filtered_binary_arr : numpy.darray
+        (num_frames, ). A binary train but with values nerfed to 0's if the 1's have number of neighbours > max_neigh
+    group_arr : numpy.darray
+        (num_frames, ), each value in the array represents the number of contagious 1's that value neighbours with (including itself.)
+    """
+    contagious_arr = np.zeros(binary_train.shape)
+    group_arr = np.zeros(binary_train.shape)
+    filtered_binary_arr = np.zeros(binary_train.shape)
+    for i in range(binary_train.shape[0]):
+
+        if binary_train[i] == 1:
+            if i == 0:
+                contagious_arr[i] = 1
+            else:
+                contagious_arr[i] = contagious_arr[i - 1] + 1
+        else:
+            contagious_arr[i] = 0
+
+    focus = contagious_arr[-1]
+    for i in reversed(range(binary_train.shape[0])):
+
+        if contagious_arr[i] == 0:
+            if i != 0:
+                focus = contagious_arr[i - 1]
+            else:
+                focus = contagious_arr[i]
+        else:
+            group_arr[i] = focus
+
+    filtered_binary_arr[(group_arr <= max_neigh) & (group_arr > 0)] = 1
+
+    return filtered_binary_arr, (contagious_arr, group_arr)
+
+
 def pool_points(data, kernel_size):
     """
     Filter out the data space by pooling (select one data point in each kernel window)
@@ -26,7 +73,7 @@ def pool_points(data, kernel_size):
     max_x, max_y = np.max(data, axis=0)
     min_x, min_y = np.min(data, axis=0)
 
-    kernel_size_x, kernel_size_y = kernel_size/2, kernel_size
+    kernel_size_x, kernel_size_y = kernel_size / 2, kernel_size
 
     x_increment_times = int((max_x - min_x) / kernel_size_x) + 1
     y_increment_times = int((max_y - min_y) / kernel_size_y) + 1
@@ -51,7 +98,6 @@ def pool_points(data, kernel_size):
     selected_data_all = np.stack(selected_data_list)
 
     return selected_data_all, selected_sampled_index_list
-
 
 
 class Detectron_data_loader():
@@ -396,7 +442,6 @@ def sample_subset_of_videos(src_dir, sample_num=1000, labels_path="", seed=50, w
     else:
         print("No filtering. Use all videos.")
         filtered_videos_list = videos_list
-
 
     # Sample videos
     filtered_videos_list_np = np.array(filtered_videos_list)

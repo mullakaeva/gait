@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import pdb
 import re
 from .utils import fullfile, read_openpose_keypoints, read_and_select_openpose_keypoints, moving_average, \
-    OnlineFilter_scalar, OnlineFilter_np
+    OnlineFilter_scalar, OnlineFilter_np, extract_contagious
 from glob import glob
 from skimage.transform import resize
 from .keypoints_format import openpose2detectron_indexes, openpose_L_indexes, openpose_R_indexes
@@ -29,19 +29,22 @@ def reverse_flips(keyps):
     if com_l_sign == -1:
         com_l_flipped = (com_l > 0)
         com_r_flipped = (com_r < 0)
-        com_flipped = (com_l_flipped == True) & (com_r_flipped == True)
-
     else:
         com_l_flipped = (com_l < 0)
         com_r_flipped = (com_r > 0)
-        com_flipped = (com_l_flipped == True) & (com_r_flipped == True)
+
+    com_flipped = (com_l_flipped == True) & (com_r_flipped == True)
+
+
+    com_flipped_filtered, _ = extract_contagious(com_flipped[:, 0], 10)
+    com_flipped_filtered = com_flipped_filtered==1
 
     keypts_corrected = keyps.copy()
-    keypts_flipped = keyps[com_flipped[:, 0], :].copy()
-    keypts_template = keyps[com_flipped[:, 0], :].copy()
+    keypts_flipped = keyps[com_flipped_filtered, :].copy()
+    keypts_template = keyps[com_flipped_filtered, :].copy()
     keypts_flipped[:, openpose_R_indexes] = keypts_template[:, openpose_L_indexes]
     keypts_flipped[:, openpose_L_indexes] = keypts_template[:, openpose_R_indexes]
-    keypts_corrected[com_flipped[:, 0], :] = keypts_flipped
+    keypts_corrected[com_flipped_filtered, :] = keypts_flipped
     return keypts_corrected, (com_l, com_r, com_l_flipped, com_r_flipped, com_flipped)
 
 
@@ -439,222 +442,8 @@ class OpenposePreprocessor(VideoManager):
         self.cut_padding = 0
         self.cut_video_size = (250, 250)
         self.box_length_filter = OnlineFilter_scalar(kernel_size=15)
-        self.keypoints_filter = OnlineFilter_np(input_size=(2, 25), kernel_size=3)
-        super(OpenposePreprocessor, self).__init__(input_video_path, output_video_path)
-
-    def initialize(self):
-        """
-        This function does the necessary steps before processing the data frame by frame:
-            1. Check if the number of frames in video match the number of .json files
-            2. Find the duration where the whole skeleton is visible, by keypoints' confidence
-        Keypoints' confidence is calculated by counting the number of keypoints with <0.01 confidence
-
-        """
-
-        self.all_kepys_data_paths = sorted(glob(os.path.join(self.op_data_each_video_dir, "*.json")))
-        assert self.num_frames == len(self.all_kepys_data_paths)
-
-        self.selected_keyps_list = []
-        self.keyps_confidence_list = []
-        self.selected_centres_list = []
-
-        for keyps_path in self.all_kepys_data_paths:
-            # Read data and store them into a list, which can be re-used in other sections
-            keyps_dict, num_people, _ = read_openpose_keypoints(keyps_path)
-            selected_centre, selected_keypoints, keyps_confidence = self._return_selected_keypoints(keyps_dict,
-                                                                                                    num_people)
-            self.selected_keyps_list.append(selected_keypoints)
-            self.keyps_confidence_list.append(keyps_confidence)
-            self.selected_centres_list.append(selected_centre)
-
-        # Low-pass filter out the centre vibration (frame-by-frame vibration noise)
-        kernel_size = 30
-        selected_centres_np = np.asarray(self.selected_centres_list)
-        selected_centres_x_smooth = moving_average(selected_centres_np[:, 0], kernel_size)
-        selected_centres_y_smooth = moving_average(selected_centres_np[:, 1], kernel_size)
-
-        self.selected_centres_smooth = np.array([selected_centres_x_smooth, selected_centres_y_smooth]).T
-
-        self._find_extracted_duration()
-
-    def preprocess(self, write_video=True, plot_keypoints=False):
-        all_keypoints = []
-        all_records = []
-
-        for frame_idx, vid_frame in enumerate(self.vreader.nextFrame()):
-            print("\r{}: {}/{}".format(self.vid_name, frame_idx, self.num_frames), flush=True, end="")
-
-            # Skip frames with low keypoints confidence
-            if frame_idx < self.start_idx or frame_idx > self.end_idx:
-                continue
-            # Dealing with frames that are confident
-            else:
-                output_frame, keypoints_xy_box_frame, records, box_half_length, central_points = self._find_video_clipping_area(
-                    vid_frame, frame_idx)
-
-                # Temporal filtering to the x,y coordinates, but not the confidence
-                only_xy = self.keypoints_filter.add(keypoints_xy_box_frame[[0, 1], :])
-                keypoints_xy_box_frame[[0, 1], :] = only_xy
-                all_keypoints.append(keypoints_xy_box_frame.T)  # from (3,25) transposed to (25,3)
-                all_records.append(records)
-
-                if plot_keypoints:
-                    new_torso_length, _, _ = find_torso_length_from_keyps(keypoints_xy_box_frame, 0)
-                    fig, ax = plt.subplots()
-                    ax.imshow(output_frame)
-                    ax.scatter(only_xy[0, openpose_L_indexes], only_xy[1, openpose_L_indexes], marker="x", c="r")
-                    ax.scatter(only_xy[0, openpose_R_indexes], only_xy[1, openpose_R_indexes], marker="x", c="b")
-                    central_line = np.vstack(central_points)
-                    ax.plot(central_line[:, 0], central_line[:, 1])
-                    fig.suptitle("Torso length:\n%0.2f" % (new_torso_length))
-                    fig.canvas.draw()
-                    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-                    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-                    self.vwriter.writeFrame(data)
-                    plt.close()
-                elif write_video:
-                    self.vwriter.writeFrame(output_frame)
-
-        cut_duration = (self.start_idx, self.end_idx)
-        save_data_openpose(self.output_data_path, self.cut_video_size, cut_duration, all_keypoints, all_records)
-
-    def _find_extracted_duration(self):
-        start_idx_found, end_idx_found = False, False
-        self.keyps_confidence_np_filtered = moving_average(np.asarray(self.keyps_confidence_list), 5)
-        for i in range(self.num_frames - 1):
-            reverse_i = self.num_frames - 1 - i
-            current_confidence_forward = self.keyps_confidence_np_filtered[i]
-            current_confidence_backward = self.keyps_confidence_np_filtered[reverse_i]
-            if (current_confidence_forward > self.keyps_confidence_threshold) and (start_idx_found == False):
-                self.start_idx = i
-                start_idx_found = True
-            if (current_confidence_backward > self.keyps_confidence_threshold) and (end_idx_found == False):
-                self.end_idx = reverse_i
-                end_idx_found = True
-
-        return None
-
-    def _return_selected_keypoints(self, keyps_dict, num_people):
-
-        def calc_confidence(keyps_selected):
-
-            base_confidence = 0
-            keyps_selected_for_confidence = keyps_selected.copy()
-            # Nose and eyes are not included for confidence calculation. The maximum of left/right ears are selected to include.
-            keyps_selected_for_confidence[2, [17, 18]] = np.max(keyps_selected[2, [17, 18]])
-            # Indexes of nose, right and left_eye are 0,15,16 respectively
-            keyps_confidence = base_confidence - np.sum(keyps_selected_for_confidence[2, 1:15] < 0.1) - np.sum(
-                keyps_selected_for_confidence[2, 17:] < 0.1)
-
-            return keyps_confidence
-
-        if num_people == 0:
-            keyps_selected = np.zeros((3, 25))
-            keyps_confidence = -25
-            keyps_centre = np.array([0, 0, 0])
-            return keyps_centre, keyps_selected, keyps_confidence
-
-        elif num_people == 1:
-            keyps_selected = np.asarray(keyps_dict['people'][0]['pose_keypoints_2d']).reshape(25, 3).T
-            keyps_centre = np.mean(keyps_selected[:, (keyps_selected[2, :] > 0.05)], axis=1)
-            keyps_confidence = calc_confidence(keyps_selected)
-        elif num_people > 1:
-            max_x = 0
-            max_index = 0
-            # Find the person in the most right across all candidates
-            for j in range(num_people):
-                keyps_np = np.asarray(keyps_dict['people'][j]['pose_keypoints_2d']).reshape(25, 3).T
-                keyps_np_mask = np.ma.array(keyps_np, mask=False)
-                filter_indexes = np.where(keyps_np[2, :] < 0.005)  # We don't want to include low-confidence keypoints
-                keyps_np_mask.mask[:, filter_indexes[0]] = True
-                mean_x = keyps_np_mask[0, :].mean()
-                if mean_x > max_x:
-                    max_x = mean_x
-                    max_index = j
-            keyps_selected = np.asarray(keyps_dict['people'][max_index]['pose_keypoints_2d']).reshape(25, 3).T
-            keyps_centre = np.mean(keyps_selected[:, (keyps_selected[2, :] > 0.05)], axis=1)
-            keyps_confidence = calc_confidence(keyps_selected)
-
-        return keyps_centre, keyps_selected, keyps_confidence
-
-    def _find_video_clipping_area(self, vid_frame, frame_idx):
-
-        output_frame = vid_frame.copy()
-        transformation_records = dict()
-
-        # Find the square box length
-        keypoints_xy = self.selected_keyps_list[frame_idx]  # keypoints_xy has shape (3, 25)
-        _, box_length_half, central_points = find_torso_length_from_keyps(keypoints_xy, self.cut_padding)
-        box_length_half = self.box_length_filter.add(box_length_half)  # Temporal filtering
-
-        # Retrieve smoothened bounding box centre and its boundary
-        centre_x, centre_y = self.selected_centres_smooth[frame_idx]
-        bbox_boundary = np.around(np.array([
-            centre_x - box_length_half, centre_y - box_length_half,
-            centre_x + box_length_half, centre_y + box_length_half
-        ])).astype(int)
-
-        # Bbox cannot cross the frame boundary
-        x_diff, y_diff = 0, 0
-        if bbox_boundary[0] < 0:
-            x_diff -= bbox_boundary[0]
-
-        if bbox_boundary[1] < 0:
-            y_diff -= bbox_boundary[1]
-
-        if bbox_boundary[2] > self.vid_w:
-            diff = bbox_boundary[2] - self.vid_w
-            x_diff -= diff
-
-        if bbox_boundary[3] > self.vid_h:
-            diff = bbox_boundary[3] - self.vid_h
-            y_diff -= diff
-
-        # Translation of keypoints
-        translation_vec = np.array([bbox_boundary[0], bbox_boundary[1]]).reshape(2, 1)
-        keypoints_xy[[0, 1], :] = keypoints_xy[[0, 1], :] - translation_vec
-        bbox_boundary[0] += x_diff
-        bbox_boundary[1] += y_diff
-        bbox_boundary[2] += x_diff
-        bbox_boundary[3] += y_diff
-
-        transformation_records["translation"] = translation_vec
-
-        # Resizing to a constant frame size
-        old_width = bbox_boundary[2] - bbox_boundary[0]
-        new_width = self.cut_video_size[0]
-        resizing_factor = new_width / old_width
-        output_frame = output_frame[bbox_boundary[1]:bbox_boundary[3], bbox_boundary[0]:bbox_boundary[2]]
-        output_frame = resize(output_frame, self.cut_video_size, anti_aliasing=True)
-        keypoints_xy[[0, 1], :] = keypoints_xy[[0, 1], :] * resizing_factor
-        transformation_records["resizing"] = resizing_factor
-        transformation_records["bbox"] = bbox_boundary
-
-        for i in range(4):
-            central_points[i] = (central_points[i] - bbox_boundary[0:2]) * resizing_factor
-
-        # set unconfident data to nan
-        keypoints_xy[:, keypoints_xy[2, :] < 0.05] = np.nan
-        # keypoints_xy = np.clip(keypoints_xy, 0, self.cut_video_size[0])
-
-        output_frame = np.around(output_frame * 255).astype(int)
-        return output_frame, keypoints_xy, transformation_records, box_length_half, central_points
-
-    def __del__(self):
-        super(OpenposePreprocessor, self).__del__()
-
-
-class OpenposePreprocessor_improved(VideoManager):
-    def __init__(self, input_video_path, openpose_data_each_video_dir, output_video_path, output_data_path):
-        self.op_data_each_video_dir = openpose_data_each_video_dir
-        self.output_data_path = output_data_path
-        self.all_keyps_dicts, self.all_num_people = [], []
-        self.keyps_confidence_threshold = -0.2
-        self.cut_padding = 0
-        self.cut_video_size = (250, 250)
-        self.box_length_filter = OnlineFilter_scalar(kernel_size=15)
         self.keypoints_filter = OnlineFilter_np(input_size=(25, 2), kernel_size=3)
-        super(OpenposePreprocessor_improved, self).__init__(input_video_path, output_video_path)
+        super(OpenposePreprocessor, self).__init__(input_video_path, output_video_path)
 
     def initialize(self):
         """
@@ -682,7 +471,7 @@ class OpenposePreprocessor_improved(VideoManager):
             selected_centres_list.append(selected_centre)
 
         self.selected_keyps = np.stack(selected_keyps_list)  # (num_frames, 25, 3)
-        # self.selected_keyps[:, :, 0:2], _ = reverse_flips(self.selected_keyps[:, :, 0:2])
+        self.selected_keyps[:, :, 0:2], _ = reverse_flips(self.selected_keyps[:, :, 0:2])
         self.keyps_confidences = np.stack(keyps_confidence_list)  # (num_frames,)
         self.selected_centres = np.stack(selected_centres_list)  # (num_frames, 3)
 
@@ -843,9 +632,11 @@ class OpenposePreprocessor_improved(VideoManager):
             central_points[i] = (central_points[i] - bbox_boundary[0:2]) * resizing_factor
 
         # set unconfident data to nan
-        keypoints_xy[keypoints_xy[:, 2] < 0.5, :] = np.nan
-
-        # keypoints_xy = np.clip(keypoints_xy, 0, self.cut_video_size[0])
+        keypoints_xy[keypoints_xy[:, 2] < 0.1, :] = np.nan
+        keypoints_xy[(keypoints_xy[:, 0] < 0) | (keypoints_xy[:, 0] > self.cut_video_size[0]),
+        :] = np.nan
+        keypoints_xy[(keypoints_xy[:, 1] < 0) | (keypoints_xy[:, 1] > self.cut_video_size[1]),
+        :] = np.nan
 
         output_frame = np.around(output_frame * 255).astype(int)
         return output_frame, keypoints_xy, transformation_records, box_length_half, central_points
@@ -864,7 +655,7 @@ class OpenposePreprocessor_improved(VideoManager):
         return keyps_confidence
 
     def __del__(self):
-        super(OpenposePreprocessor_improved, self).__del__()
+        super(OpenposePreprocessor, self).__del__()
 
 
 class OpenposePreprocesser_fromDetectronBox():
@@ -1006,22 +797,22 @@ def openpose_preprocess_wrapper(src_vid_dir, input_data_main_dir, output_vid_dir
             print("Skipped: ", vid_name_root)
             continue
 
-        try:
-            # Start preprocessing
-            preprop = OpenposePreprocessor_improved(input_video_path=input_video_path,
-                                                    openpose_data_each_video_dir=subfolder_path_each,
-                                                    output_video_path=output_vid_path,
-                                                    output_data_path=output_keypoints_path)
-            preprop.initialize()
-            preprop.preprocess(plot_keypoints=plot_keypoints, write_video=write_video)
+        # try:
+        # Start preprocessing
+        preprop = OpenposePreprocessor(input_video_path=input_video_path,
+                                       openpose_data_each_video_dir=subfolder_path_each,
+                                       output_video_path=output_vid_path,
+                                       output_data_path=output_keypoints_path)
+        preprop.initialize()
+        preprop.preprocess(plot_keypoints=plot_keypoints, write_video=write_video)
 
-        except Exception as e:
-
-            print("Error encountered. Logged in {}".format(error_log_path))
-            with open(error_log_path, "a") as fh:
-                fh.write("\n{}\n".format(vid_name_root))
-                fh.write(str(e))
-            continue
+        # except Exception as e:
+        #
+        #     print("Error encountered. Logged in {}".format(error_log_path))
+        #     with open(error_log_path, "a") as fh:
+        #         fh.write("\n{}\n".format(vid_name_root))
+        #         fh.write(str(e))
+        #     continue
 
 
 if __name__ == "__main__":

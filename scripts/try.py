@@ -24,26 +24,27 @@ def concat_vids(with_re, without_re, vid_out):
 
 
 if __name__ == "__main__":
-    basedir = "flipping_solution/preprocessed_vids/"
-    with1 = os.path.join(basedir, "with1.mp4")
-    without1 = os.path.join(basedir, "without1.mp4")
-    compare1 = os.path.join(basedir, "compare1.mp4")
-    with2 = os.path.join(basedir, "with2.mp4")
-    without2 = os.path.join(basedir, "without2.mp4")
-    compare2 = os.path.join(basedir, "compare2.mp4")
-    concat_vids(with1, without1, compare1)
-    concat_vids(with2, without2, compare2)
-    # raw_dir = "flipping_solution/raw_vids/"
-    # keypoints_dir = "flipping_solution/openpose_keypts"
-    # output_vid_dir = "flipping_solution/preprocessed_vids"
-    # output_keypts_dir = "flipping_solution/preprocessed_keypts"
-    #
-    # openpose_preprocess_wrapper(src_vid_dir=raw_dir,
-    #                             input_data_main_dir=keypoints_dir,
-    #                             output_vid_dir=output_vid_dir,
-    #                             output_data_dir=output_keypts_dir,
-    #                             error_log_path="flipping_solution/log.txt",
-    #                             plot_keypoints=True,
-    #                             write_video=True
-    #                             )
+    # basedir = "flipping_solution/preprocessed_vids/"
+    # with1 = os.path.join(basedir, "with1.mp4")
+    # without1 = os.path.join(basedir, "without1.mp4")
+    # compare1 = os.path.join(basedir, "compare1.mp4")
+    # with2 = os.path.join(basedir, "with2.mp4")
+    # without2 = os.path.join(basedir, "without2.mp4")
+    # compare2 = os.path.join(basedir, "compare2.mp4")
+    # concat_vids(with1, without1, compare1)
+    # concat_vids(with2, without2, compare2)
+
+    raw_dir = "flipping_solution/raw_vids/"
+    keypoints_dir = "flipping_solution/openpose_keypts"
+    output_vid_dir = "flipping_solution/preprocessed_vids"
+    output_keypts_dir = "flipping_solution/preprocessed_keypts"
+
+    openpose_preprocess_wrapper(src_vid_dir=raw_dir,
+                                input_data_main_dir=keypoints_dir,
+                                output_vid_dir=output_vid_dir,
+                                output_data_dir=output_keypts_dir,
+                                error_log_path="flipping_solution/log.txt",
+                                plot_keypoints=True,
+                                write_video=True
+                                )
 
