@@ -1,4 +1,3 @@
-# from common.preprocess import openpose_preprocess_wrapper
 # from common.generator import GaitGeneratorFromDF
 # from neuralODE.analysis_neuralODE import gait_neural_ode_train, gait_neural_ode_vis
 
@@ -16,13 +15,15 @@
 
 # %% ======================== Step 2: Keypoints Pre-processing =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /:/mnt yyhhoi/neuro:1 bash
-# src_vid_dir = "/mnt/data/gait/data/videos_mp4/"
-# input_data_main_dir = "/mnt/data/hoi/gait_analysis/data/openpose_keypoints"
-# output_vid_dir = "/mnt/data/hoi/gait_analysis/data/preprocessed_visualisation"
-# output_data_dir = "/mnt/data/hoi/gait_analysis/data/preprocessed_keypoints"
-# error_log_path = "/mnt/data/hoi/gait_analysis/logs/preprocess_error_log.txt"
-# openpose_preprocess_wrapper(src_vid_dir, input_data_main_dir, output_vid_dir, output_data_dir, error_log_path,
-#                             plot_keypoints=True)
+from common.preprocess import openpose_preprocess_wrapper
+src_vid_dir = "/mnt/data/gait/data/videos_mp4/"
+input_data_main_dir = "/mnt/data/hoi/gait_analysis/data/openpose_keypoints"
+output_vid_dir = "/mnt/data/hoi/gait_analysis/data/preprocessed_visualisation"
+output_data_dir = "/mnt/data/hoi/gait_analysis/data/preprocessed_keypoints"
+error_log_path = "/mnt/data/hoi/gait_analysis/logs/preprocess_error_log.txt"
+openpose_preprocess_wrapper(src_vid_dir, input_data_main_dir, output_vid_dir, output_data_dir, error_log_path,
+                            write_video=False,
+                            plot_keypoints=False)
 
 # %% ======================== Step 3: Extracting feature for ODE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
@@ -48,8 +49,8 @@
 
 # %% ======================== Step A.C.4: Train and visualize on combined_VAE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
-from spatiotemporal_vae_script import run_train_and_vis_on_stvae
-run_train_and_vis_on_stvae()
+# from spatiotemporal_vae_script import run_train_and_vis_on_stvae
+# run_train_and_vis_on_stvae()
 
 # %% ======================== (Defunkt) Step A.D.4: Train on neural ODE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash

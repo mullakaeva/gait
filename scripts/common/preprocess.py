@@ -181,6 +181,7 @@ class VideoManager():
         self.num_frames, self.vid_h, self.vid_w, self.vid_channels = self.vreader.getShape()
 
     def __del__(self):
+
         self.vreader.close()
         self.vwriter.close()
 
@@ -655,7 +656,10 @@ class OpenposePreprocessor(VideoManager):
         return keyps_confidence
 
     def __del__(self):
-        super(OpenposePreprocessor, self).__del__()
+        try:
+            super(OpenposePreprocessor, self).__del__()
+        except AttributeError:
+            pass
 
 
 class OpenposePreprocesser_fromDetectronBox():
@@ -792,27 +796,31 @@ def openpose_preprocess_wrapper(src_vid_dir, input_data_main_dir, output_vid_dir
         output_vid_path = os.path.join(output_vid_dir, vid_name_root + ".mp4")
         output_keypoints_path = os.path.join(output_data_dir, vid_name_root + ".npz")
 
+        # Create output_vid and output_data directory if not exist
+        os.makedirs(output_vid_dir, exist_ok=True)
+        os.makedirs(output_data_dir, exist_ok=True)
+
         # Skip if the outputp already exists
         if os.path.isfile(output_keypoints_path):
             print("Skipped: ", vid_name_root)
             continue
 
-        # try:
+        try:
         # Start preprocessing
-        preprop = OpenposePreprocessor(input_video_path=input_video_path,
-                                       openpose_data_each_video_dir=subfolder_path_each,
-                                       output_video_path=output_vid_path,
-                                       output_data_path=output_keypoints_path)
-        preprop.initialize()
-        preprop.preprocess(plot_keypoints=plot_keypoints, write_video=write_video)
+            preprop = OpenposePreprocessor(input_video_path=input_video_path,
+                                           openpose_data_each_video_dir=subfolder_path_each,
+                                           output_video_path=output_vid_path,
+                                           output_data_path=output_keypoints_path)
+            preprop.initialize()
+            preprop.preprocess(plot_keypoints=plot_keypoints, write_video=write_video)
 
-        # except Exception as e:
-        #
-        #     print("Error encountered. Logged in {}".format(error_log_path))
-        #     with open(error_log_path, "a") as fh:
-        #         fh.write("\n{}\n".format(vid_name_root))
-        #         fh.write(str(e))
-        #     continue
+        except Exception as e:
+
+            print("Error encountered. Logged in {}".format(error_log_path))
+            with open(error_log_path, "a") as fh:
+                fh.write("\n{}\n".format(vid_name_root))
+                fh.write(str(e))
+            continue
 
 
 if __name__ == "__main__":
