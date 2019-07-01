@@ -88,7 +88,7 @@ class FeatureExtractor():
             # Imputation
             data_imputed = self._mean_single_imputation(data, data_grand_mean)
 
-            # Clipping (0, 250) and Rescaling (data/255)
+            # Clipping (0, 250) and Rescaling (data/250)
             data_imputed = self._clipping_rescaling(data_imputed)
 
             # Feature extraction work
@@ -106,6 +106,8 @@ class FeatureExtractor():
         data_accumulator = np.zeros([num] + [x for x in self.keyps_shape])
 
         for idx, data_info in enumerate(data_gen.iterator()):
+            print("\r%d/%d Estimating means incrementally from each data file." % (idx, data_gen.num_files), end="",
+                  flush=True)
             data, _ = data_info
             data_mean = np.nanmean(data, axis=0)
             data_accumulator[idx] = data_mean
@@ -229,7 +231,7 @@ class FeatureExtractorForODE(FeatureExtractor):
         self.lreader = LabelsReader(labels_path)
         self.df_save_path = df_save_path
         self.vid_name_roots_list, self.features_list, self.labels_list = [], [], []
-        self.nan_masks_list = []
+        self.label_masks_list, self.nan_masks_list = [], []
         super(FeatureExtractorForODE, self).__init__(scr_keyps_dir, None)
         self.data_grand_mean = self._incremental_mean_estimation()  # Shape = (25, 3)
 
@@ -259,18 +261,20 @@ class FeatureExtractorForODE(FeatureExtractor):
             feature, nan_mask = self._transform_to_features(keyps_arr)
 
             # Third column: labels
-            label = self.lreader.get_label(vid_name_root + ".mp4")
+            label, label_mask = self.lreader.get_label(vid_name_root + ".mp4")
 
             # Append to lists
             self.vid_name_roots_list.append(vid_name_root)
             self.features_list.append(feature)
             self.labels_list.append(label)
-            self.nan_masks_list.append(np.invert(nan_mask))
+            self.label_masks_list.append(label_mask)
+            self.nan_masks_list.append(np.invert(nan_mask))  # False = np.nan
 
         # Create dataframe
         self.df["vid_name_roots"] = self.vid_name_roots_list
         self.df["features"] = self.features_list
         self.df["labels"] = self.labels_list
+        self.df["label_masks"] = self.label_masks_list
         self.df["nan_masks"] = self.nan_masks_list
 
         # Filter rows with numbe of frames smaller than "filter_window"
@@ -291,7 +295,8 @@ class FeatureExtractorForODE(FeatureExtractor):
         keyps_arr_clipped = np.clip(keyps_arr, boundary[0], boundary[1])
 
         # Imputation (nan -> mean)
-        keyps_imputed, nan_mask = self._mean_single_imputation(keyps_arr_clipped, self.data_grand_mean)  # (num_frames, 25, 2)
+        keyps_imputed, nan_mask = self._mean_single_imputation(keyps_arr_clipped,
+                                                               self.data_grand_mean)  # (num_frames, 25, 2)
 
         # Rescaling (./250)
         keyps_rescaled = keyps_imputed / boundary[1]

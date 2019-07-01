@@ -235,7 +235,11 @@ class LabelsReader():
         self.vid2label, self.label2vid = self._construct_conversion_dict()
 
     def get_label(self, vid_name):
-        return self.vid2label[vid_name]
+        try:
+            return self.vid2label[vid_name], True
+        except KeyError:
+            return 0, False  # 0 corresponds to class 0, but it will be masked out
+
 
     def get_vid(self, label):
         return self.label2vid[label]

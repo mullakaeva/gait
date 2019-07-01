@@ -189,10 +189,9 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
 
     def _convert_df_to_data(self, df_shuffled, start, stop):
         selected_df = df_shuffled.iloc[start:stop, :].copy()
-        output_arr_train, labels_train, nan_mask_train = self._loop_for_array_construction(selected_df, self.m)
-        output_arr_test, labels_test, nan_mask_test = self._loop_for_array_construction(self.df_test, self.df_test.shape[0])
-        # labels_train_onehot, labels_test_onehot = convert_1d_to_onehot(labels_train), convert_1d_to_onehot(labels_test)
-        return (output_arr_train, labels_train, nan_mask_train), (output_arr_test, labels_test, nan_mask_test)
+        x_train, x_mask_train, label_train, label_mask_train = self._loop_for_array_construction(selected_df, self.m)
+        x_test, x_mask_test, label_test, label_mask_test = self._loop_for_array_construction(self.df_test, self.df_test.shape[0])
+        return (x_train, x_mask_train, label_train, label_mask_train), (x_test, x_mask_test, label_test, label_mask_test)
 
     def _loop_for_array_construction(self, df, num_samples):
         """
@@ -215,11 +214,13 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         features_arr = np.zeros((num_samples, self.total_fea_dims, self.n))
         nan_arr = np.zeros(features_arr.shape)
         label_arr = np.zeros(num_samples)
+        label_mask_arr = np.zeros(num_samples)
         for i in range(num_samples):
             # Get features and labels
             fea_vec = df["features"].iloc[i]  # numpy.darray (num_frames, 25, 2)
             label = df["labels"].iloc[i]  # numpy.int64
             nan_mask = df["nan_masks"].iloc[i]  # numpy.bool (num_frames, 25, 2)
+            label_mask = df["label_masks"].iloc[i]  # numpy.bool, True for non-nan, False for nan
 
             # Slice to the receptive window
             slice_start = np.random.choice(fea_vec.shape[0] - self.n)
@@ -228,6 +229,7 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
 
             # Put integer label into numpy.darray
             label_arr[i] = label
+            label_mask_arr[i] = label_mask
 
             # Construct output
             features_arr[i, 0:self.keyps_x_dims, :] = fea_vec_sliced[:, :, 0].T  # Store x-coordinates
@@ -235,7 +237,7 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
             nan_arr[i, 0:self.keyps_x_dims, :] = nan_arr_sliced[:, :, 0].T  # Store x-coordinates
             nan_arr[i, self.keyps_x_dims:self.total_fea_dims, :] = nan_arr_sliced[:, :, 1].T  # Store y-coordinates
 
-        return features_arr, label_arr, nan_arr
+        return features_arr, nan_arr, label_arr, label_mask_arr
 
 
 class GaitGeneratorFromDFforSingleSkeletonVAE:

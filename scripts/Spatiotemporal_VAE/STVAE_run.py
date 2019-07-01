@@ -90,7 +90,7 @@ class STVAEmodel:
             "test_latent_grad",
             "test_acc"
         )
-        self.class_criterion = CrossEntropyLoss()
+        self.class_criterion = CrossEntropyLoss(reduction="none")
         # Initialize model, params, optimizer, loss
         if load_chkpt_path is None:
             self.model, self.optimizer, self.lr_scheduler = self._model_initialization()
@@ -102,14 +102,16 @@ class STVAEmodel:
         try:
             for epoch in range(n_epochs):
                 iter_idx = 0
-                for (x, labels, nan_masks), (x_test, labels_test, nan_masks_test) in self.data_gen.iterator():
+                for (x, nan_masks, labels, labels_mask), (x_test, nan_masks_test, labels_test, labels_mask_test) in self.data_gen.iterator():
                     # Convert numpy to torch.tensor
                     x = torch.from_numpy(x).float().to(self.device)
                     x_test = torch.from_numpy(x_test).float().to(self.device)
                     labels = torch.from_numpy(labels).long().to(self.device)
                     labels_test = torch.from_numpy(labels_test).long().to(self.device)
-                    nan_masks = torch.from_numpy(nan_masks * 1).float().to(self.device)
-                    nan_masks_test = torch.from_numpy(nan_masks_test * 1).float().to(self.device)
+                    labels_mask = torch.from_numpy(labels_mask * 1 + 1e-5).float().to(self.device)
+                    labels_mask_test = torch.from_numpy(labels_mask_test * 1 + 1e-5).float().to(self.device)
+                    nan_masks = torch.from_numpy(nan_masks * 1 + 1e-5).float().to(self.device)
+                    nan_masks_test = torch.from_numpy(nan_masks_test * 1 + 1e-5).float().to(self.device)
 
                     # Clear optimizer's previous gradients
                     self.optimizer.zero_grad()
@@ -125,7 +127,8 @@ class STVAEmodel:
                             class_info_t,
                             pose_stats_t,
                             motion_stats_t,
-                            nan_masks_test
+                            nan_masks_test,
+                            labels_mask_test
                         )
                         self.loss_meter.update_meters(
                             test_total_loss=loss_t.item(),
@@ -145,7 +148,8 @@ class STVAEmodel:
                                                                                                        class_info,
                                                                                                        pose_stats,
                                                                                                        motion_stats,
-                                                                                                       nan_masks)
+                                                                                                       nan_masks,
+                                                                                                       labels_mask)
 
                     # Running average of RMSE weighting
                     if (self.rmse_weighting_startepoch is not None) and (self.epoch == self.rmse_weighting_startepoch):
@@ -269,7 +273,7 @@ class STVAEmodel:
 
             print('Stored ckpt at {}'.format(self.save_chkpt_path))
 
-    def loss_function(self, recon_info, class_info, pose_stats, motion_stats, nan_masks):
+    def loss_function(self, recon_info, class_info, pose_stats, motion_stats, nan_masks, label_masks):
         x, recon_motion = recon_info
         labels, pred_labels = class_info
         pose_z_seq, recon_pose_z_seq, pose_mu, pose_logvar = pose_stats
@@ -306,7 +310,7 @@ class STVAEmodel:
         pose_latent_grad_loss = self.pose_latent_gradient * pose_latent_grad_loss_indicator
 
         # Classification loss
-        class_loss_indicator, acc = self._get_classification_acc(pred_labels, labels)
+        class_loss_indicator, acc = self._get_classification_acc(pred_labels, labels, label_masks)
         class_loss = self.classification_weight * class_loss_indicator
 
         # Combine different losses
@@ -455,10 +459,16 @@ class STVAEmodel:
         grad = x[:, :, 0:127] + x[:, :, 1:]
         return grad
 
-    def _get_classification_acc(self, pred_labels, labels):
-        class_loss_indicator = self.class_criterion(pred_labels, labels)
+    def _get_classification_acc(self, pred_labels, labels, label_masks):
+        class_loss_indicator_vec = self.class_criterion(pred_labels, labels)
+        # class_loss_indicator = torch.mean(class_loss_indicator_vec)
+        class_loss_indicator = torch.mean(label_masks * class_loss_indicator_vec)
+        if class_loss_indicator is None:
+            import pdb
+            pdb.set_trace()
         pred_labels_np, labels_np = pred_labels.cpu().detach().numpy(), labels.cpu().detach().numpy()
-        acc = np.mean(np.argmax(pred_labels_np, axis=1) == labels_np) * 100
+        label_masks_np = label_masks.cpu().detach().numpy()
+        acc = np.mean(np.argmax(pred_labels_np[label_masks_np>0.5, ], axis=1) == labels_np[label_masks_np>0.5]) * 100
         return class_loss_indicator, acc
 
     def save_model_losses_data(self, project_dir, model_identifier):
@@ -477,7 +487,7 @@ class STVAEmodel:
         self.data_gen = data_gen
 
         # Get data from data generator's first loop
-        for (x, labels, _), (x_test, labels_test, _) in self.data_gen.iterator():
+        for (x, _, labels, _), (x_test, _, labels_test, _) in self.data_gen.iterator():
             x = torch.from_numpy(x).float().to(self.device)
             x_test = torch.from_numpy(x_test).float().to(self.device)
             break
@@ -509,11 +519,11 @@ class STVAEmodel:
         #            sample_num=vid_sample_num,
         #            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="random_1e-4_8e-1")
         # return
-        gen_videos(x=x, recon_motion=recon_motion, motion_z=motion_z, pose_z_seq=pose_z_seq,
-                   recon_pose_z_seq=recon_pose_z_seq, labels=labels,
-                   pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
-                   sample_num=vid_sample_num,
-                   save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="train")
+        # gen_videos(x=x, recon_motion=recon_motion, motion_z=motion_z, pose_z_seq=pose_z_seq,
+        #            recon_pose_z_seq=recon_pose_z_seq, labels=labels,
+        #            pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
+        #            sample_num=vid_sample_num,
+        #            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="train")
 
         # # Videos and Umap plots for Test data
         # gen_videos(x=x_test, recon_motion=recon_motion_test, motion_z=motion_z_test, pose_z_seq=pose_z_seq_test,
@@ -584,7 +594,7 @@ class STVAEmodel:
             )
 
             # Load batches of training/testing data
-            for (x, labels, nan_masks), (x_test, labels_test, nan_masks_test) in self.data_gen.iterator():
+            for (x, nan_masks, labels, labels_mask), (x_test, nan_masks_test, labels_test, labels_mask_test) in self.data_gen.iterator():
                 print("\r Model {}/{} Current progress : {}/{}".format(idx, len(model_paths), batch_idx,
                                                                        self.data_gen.num_rows / self.data_gen.m),
                       flush=True, end="")
