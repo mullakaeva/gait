@@ -60,7 +60,7 @@ def pool_points(data, kernel_size):
     data : numpy.darray
         With shape (num_samples, 2) for x-, y-coordinates
     kernel_size : int
-        Size of squared kernel
+        Size of squared kernel. Since skeleton has an aspect ratio of w/h = 1/2, the x-length of the kernel will be halved internally below.
 
     Returns
     -------
@@ -239,7 +239,6 @@ class LabelsReader():
             return self.vid2label[vid_name], True
         except KeyError:
             return 0, False  # 0 corresponds to class 0, but it will be masked out
-
 
     def get_vid(self, label):
         return self.label2vid[label]

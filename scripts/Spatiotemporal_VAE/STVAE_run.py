@@ -487,7 +487,14 @@ class STVAEmodel:
         self.data_gen = data_gen
 
         # Get data from data generator's first loop
-        for (x, _, labels, _), (x_test, _, labels_test, _) in self.data_gen.iterator():
+        for (x, x_masks, labels, label_masks), (x_test, x_masks_test, labels_test,
+                                                label_masks_test) in self.data_gen.iterator():
+
+            # Mask out nan's
+            x, labels = x[label_masks==1, ], labels[label_masks==1, ]
+            x_test, labels_test = x_test[label_masks_test == 1,], labels_test[label_masks_test == 1,]
+
+            # Convert to tensor
             x = torch.from_numpy(x).float().to(self.device)
             x_test = torch.from_numpy(x_test).float().to(self.device)
             break
@@ -513,25 +520,27 @@ class STVAEmodel:
 
 
         # Videos and Umap plots for Train data
+        # # Random sampling
         # gen_videos(x=x, recon_motion=random_recon, motion_z=random_motion_z, pose_z_seq=pose_z_seq,
         #            recon_pose_z_seq=recon_pose_z_seq, labels=labels,
         #            pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
         #            sample_num=vid_sample_num,
         #            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="random_1e-4_8e-1")
         # return
-        # gen_videos(x=x, recon_motion=recon_motion, motion_z=motion_z, pose_z_seq=pose_z_seq,
-        #            recon_pose_z_seq=recon_pose_z_seq, labels=labels,
-        #            pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
-        #            sample_num=vid_sample_num,
-        #            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="train")
+        # Reconstruction Train
+        gen_videos(x=x, recon_motion=recon_motion, motion_z=motion_z, pose_z_seq=pose_z_seq,
+                   recon_pose_z_seq=recon_pose_z_seq, labels=labels,
+                   pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
+                   sample_num=vid_sample_num,
+                   save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="train")
 
-        # # Videos and Umap plots for Test data
-        # gen_videos(x=x_test, recon_motion=recon_motion_test, motion_z=motion_z_test, pose_z_seq=pose_z_seq_test,
-        #            recon_pose_z_seq=recon_pose_z_seq_test,
-        #            labels=labels_test,
-        #            pred_labels=pred_labels_test, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
-        #            sample_num=vid_sample_num,
-        #            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="test")
+        # Reconstruction Test
+        gen_videos(x=x_test, recon_motion=recon_motion_test, motion_z=motion_z_test, pose_z_seq=pose_z_seq_test,
+                   recon_pose_z_seq=recon_pose_z_seq_test,
+                   labels=labels_test,
+                   pred_labels=pred_labels_test, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
+                   sample_num=vid_sample_num,
+                   save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="test")
 
 
     def evaluate_all_models(self, data_gen, project_dir, model_list, draw_vid=False):
