@@ -12,6 +12,19 @@
 # 4. # sh openpose_inference_script.sh | tee /mnt/data/hoi/gait_analysis/scripts/openpose_shellscripts/clt_output.txt
 # Configuration of behaviours is stored in the generate_openpose_shellscript_for_FSF.py above
 
+# Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /:/mnt yyhhoi/neuro:1 bash
+# $ NV_GPU=0,1,2 nvidia-docker run --rm -it -v /:/mnt yyhhoi/openpose:u16cuda9dnn7-2 bash
+from openpose_shellscripts.concatenate_generate_split import concat_vids_from_dir
+vids_dir = "/mnt/data/gait/data/videos_mp4/"
+output_vid_path = "/mnt/data/hoi/gait_analysis/data/grand_video.mp4"
+output_df_path = "/mnt/data/hoi/gait_analysis/data/grand_video_info.csv"
+skip_vids_dir = "/mnt/data/hoi/gait_analysis/data/openpose_visualisation"
+concat_vids_from_dir(vids_dir=vids_dir,
+                     output_vid_path=output_vid_path,
+                     output_df_path=output_df_path,
+                     skip_vids_dir=skip_vids_dir)
+
+
 
 # %% ======================== Step 2: Keypoints Pre-processing =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /:/mnt yyhhoi/neuro:1 bash
@@ -49,8 +62,8 @@
 
 # %% ======================== Step A.C.4: Train and visualize on combined_VAE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
-from spatiotemporal_vae_script import run_train_and_vis_on_stvae
-run_train_and_vis_on_stvae()
+# from spatiotemporal_vae_script import run_train_and_vis_on_stvae
+# run_train_and_vis_on_stvae()
 
 # %% ======================== (Defunkt) Step A.D.4: Train on neural ODE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash

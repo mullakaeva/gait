@@ -239,6 +239,202 @@ def gen_motion_space_scatter_animation(recon_motion, motion_z_umap, labels, kern
     return recon_motion_pooled, motion_z_umap_pooled, labels_pooled
 
 
+class LatentSpaceVideoVisualizer:
+    def __init__(self, model_identifier, save_vid_dir):
+        self.pose_umapper, self.motion_z_umapper = None, None
+        self.save_vid_dir = save_vid_dir
+        self.model_identifier = model_identifier
+
+    def fit_umap(self, pose_z_seq, motion_z):
+        pose_z_flat = self.seq2flat(pose_z_seq)
+
+        self.pose_umapper = umap.UMAP(n_neighbors=15,
+                                      n_components=2,
+                                      min_dist=0.1,
+                                      metric="euclidean")
+        self.motion_z_umapper = umap.UMAP(n_neighbors=15,
+                                          n_components=2,
+                                          min_dist=0.1,
+                                          metric="euclidean")
+
+        self.pose_umapper.fit(pose_z_flat)
+        self.motion_z_umapper.fit(motion_z)
+
+    def gen_umap_plot(self, motion_z_umap, pose_z_flat_umap, labels, labels_flat, mode, test_acc, pose_dim=16,
+                      motion_dim=128):
+
+        umap_plot_pose_arr = plot_umap_with_labels(pose_z_flat_umap, labels_flat,
+                                                   title="Pose: {} | test acc: {} \nModel: {}".format(
+                                                       pose_dim, test_acc,
+                                                       self.model_identifier))
+        umap_plot_motion_arr = plot_umap_with_labels(motion_z_umap, labels,
+                                                     title="Motion: {} | test acc: {}\nModel: {}".format(
+                                                         motion_dim, test_acc,
+                                                         self.model_identifier),
+                                                     alphas=[0.35, 0.1])
+
+        ski.imsave(os.path.join(self.save_vid_dir, "{}_UmapPose_{}.png".format(mode, self.model_identifier)),
+                   umap_plot_pose_arr)
+        ski.imsave(os.path.join(self.save_vid_dir, "{}_UmapMotion_{}.png".format(mode, self.model_identifier)),
+                   umap_plot_motion_arr)
+
+    def gen_reconstruction_vid(self, x, recon_motion, motion_z_umap, pose_z_flat_umap, recon_pose_z_flat_umap,
+                               pose_z_seq_shape, labels,
+                               labels_flat, pred_labels, mode, sample_num=10):
+        # Draw videos
+        for sample_idx in range(sample_num):
+
+            save_vid_path = os.path.join(self.save_vid_dir,
+                                         "{}_ReconVid-{}_{}.mp4".format(mode, sample_idx, self.model_identifier))
+            vwriter = skv.FFmpegWriter(save_vid_path)
+
+            draw_motion_latents = plot_latent_space_with_labels(motion_z_umap[:, 0:2], labels,
+                                                                title="Motion latents",
+                                                                target_scatter=motion_z_umap[sample_idx, 0:2],
+                                                                alpha=0.5)
+            pose_z_umap_flat2seq = self.flat2seq(pose_z_flat_umap, pose_z_seq_shape)
+            recon_pose_z_flat_umap_flat2seq = self.flat2seq(recon_pose_z_flat_umap, pose_z_seq_shape)
+
+            # Draw input & output skeleton for every time step
+            for t in range(self.seq_length):
+                time = t / 25
+                print("\rNow writing %s Recon_sample-%d | time-%0.4fs" % (mode, sample_idx, time), flush=True, end="")
+                draw_arr_in = plot2arr_skeleton(x=x[sample_idx, 0:25, t],
+                                                y=x[sample_idx, 25:, t],
+                                                title="%s %d | %s | GT = %s" % (
+                                                    mode, sample_idx, self.model_identifier,
+                                                    gaitclass(labels[sample_idx]))
+                                                )
+
+                draw_arr_out = plot2arr_skeleton(x=recon_motion[sample_idx, 0:25, t],
+                                                 y=recon_motion[sample_idx, 25:, t],
+                                                 title=" Recon %s %d | Pred = %s" % (
+                                                     mode, sample_idx,
+                                                     gaitclass(pred_labels[sample_idx]))
+                                                 )
+
+                draw_pose_latents = plot_latent_space_with_labels(pose_z_flat_umap, labels_flat,
+                                                                  title="pose latent",
+                                                                  alpha=0.2,
+                                                                  target_scatter=pose_z_umap_flat2seq[sample_idx, 0:2,
+                                                                                 t])
+                draw_recon_pose_latents = plot_latent_space_with_labels(recon_pose_z_flat_umap, labels_flat,
+                                                                        title="pose latent (Recon)",
+                                                                        alpha=0.2,
+                                                                        target_scatter=recon_pose_z_flat_umap_flat2seq[
+                                                                                       sample_idx, 0:2,
+                                                                                       t])
+                output_frame = build_frame_2by3(draw_arr_in, draw_arr_out, draw_motion_latents, draw_pose_latents
+                                                , draw_recon_pose_latents)
+                vwriter.writeFrame(output_frame)
+                plt.close()
+            print()
+            vwriter.close()
+        pass
+
+    def gen_latent_space_animation(self, recon_motion, motion_z_umap, labels, mode):
+        vreader_latent_motion_space = skv.FFmpegWriter(
+            os.path.join(self.save_vid_dir, "{}_latent_motion_space.mp4".format(mode)))
+
+        recon_pooled, motion_z_umap_pooled, labels_pooled = gen_motion_space_scatter_animation(
+            recon_motion=recon_motion,
+            motion_z_umap=motion_z_umap,
+            labels=labels,
+            kernel_size=0.5,
+            translation_scaling=1,
+            skeleton_scaling=0.5)
+        min_x, max_x = np.min(recon_pooled[:, 0:25, :]), np.max(recon_pooled[:, 0:25, :])
+        min_y, max_y = np.min(recon_pooled[:, 25:, :]), np.max(recon_pooled[:, 25:, :])
+
+        for t in range(self.seq_length):
+            print("\rDrawing latent motion space {}/{}".format(t, self.seq_length), flush=True, end="")
+
+            latent_motion_arr = plot2arr_skeleton_multiple_samples(x=recon_pooled[:, 0:25, t],
+                                                                   y=recon_pooled[:, 25:, t],
+                                                                   motion_z_umap=motion_z_umap_pooled,
+                                                                   labels=labels_pooled,
+                                                                   title="Latent Motion Space",
+                                                                   x_lim=(min_x, max_x),
+                                                                   y_lim=(min_y, max_y))
+            vreader_latent_motion_space.writeFrame(latent_motion_arr)
+
+        print()
+        vreader_latent_motion_space.close()
+
+    def visualization_wrapper(self, x, recon_motion, labels, pred_labels, motion_z, pose_z_seq, recon_pose_z_seq,
+                              test_acc, mode):
+
+        print("Visulizing in mode {}".format(mode))
+
+        # Convert to numpy
+        x = x.cpu().detach().numpy()
+        recon_motion = recon_motion.cpu().detach().numpy()
+        motion_z = motion_z.cpu().detach().numpy()  # (n_samples, motion_latents_dim)
+        pose_z_seq = pose_z_seq.cpu().detach().numpy()
+        recon_pose_z_seq = recon_pose_z_seq.cpu().detach().numpy()
+        pred_labels = pred_labels.cpu().detach().numpy()
+        pred_labels = np.argmax(pred_labels, axis=1)
+
+        # Changing shapes
+        pose_z_flat, recon_pose_z_flat = self.seq2flat(pose_z_seq), self.seq2flat(recon_pose_z_seq)
+        labels_flat = np.repeat(labels[0:pose_z_seq.shape[0], np.newaxis], self.seq_length, axis=1)
+        labels_flat = labels_flat.reshape(-1)
+
+        # Convert to umap space
+        motion_z_umap = self.motion_z_umapper.transform(motion_z)
+        pose_z_flat_umap = self.pose_umapper.transform(pose_z_flat)
+        recon_pose_z_flat_umap = self.pose_umapper.transform(recon_pose_z_flat)
+
+        # Visualization modules
+        self.gen_umap_plot(motion_z_umap=motion_z_umap,
+                           pose_z_flat_umap=pose_z_flat_umap,
+                           labels=labels, labels_flat=labels_flat,
+                           mode=mode, test_acc=test_acc)
+        self.gen_reconstruction_vid(x=x, recon_motion=recon_motion, motion_z_umap=motion_z_umap,
+                                    pose_z_flat_umap=pose_z_flat_umap, recon_pose_z_flat_umap=recon_pose_z_flat_umap,
+                                    pose_z_seq_shape=pose_z_seq.shape, labels=labels, labels_flat=labels_flat,
+                                    pred_labels=pred_labels,
+                                    mode=mode, sample_num=10)
+        self.gen_latent_space_animation(recon_motion=recon_motion, motion_z_umap=motion_z_umap,
+                                        labels=labels, mode=mode)
+
+
+    @staticmethod
+    def seq2flat(x_seq):
+        """
+        Convert (a, b, c) to (a, c, b), then (a * c, b)
+        Parameters
+        ----------
+        x_seq : numpy.darray
+            With shape (a, b, c), i.e. (num_frames, latent_dimension, seq_length)
+        Returns
+        -------
+        x_flat : numpy.darray
+            With shape (a * c, b)
+        """
+        return np.transpose(x_seq, (0, 2, 1)).reshape(x_seq.shape[0] * x_seq.shape[2], -1)
+
+    @staticmethod
+    def flat2seq(x_flat, x_seq_shape):
+        """
+        Convert (a * c, b) to (a, c, b), then (a, b, c)
+
+        Parameters
+        ----------
+        x_flat : numpy.darray
+            With shape (a * c, b )
+        x_seq_shape : tuple
+            x_seq_shape = (a, b, c)
+
+        Returns
+        -------
+        x_seq : numpy.darray
+            With shape (a * c, b)
+
+        """
+        return np.transpose(x_flat.reshape(x_seq_shape.shape[0], x_seq_shape.shape[2], -1), (0, 2, 1))
+
+
 def gen_videos(x, recon_motion, motion_z, pose_z_seq, recon_pose_z_seq, labels, pred_labels, test_acc,
                sample_num, save_vid_dir, model_identifier,
                mode, num_samples_pose_z_seq=128):
@@ -275,8 +471,8 @@ def gen_videos(x, recon_motion, motion_z, pose_z_seq, recon_pose_z_seq, labels, 
 
     """
 
-    def seq2flat(x_flat):
-        return np.transpose(x_flat, (0, 2, 1)).reshape(x_flat.shape[0] * x_flat.shape[2], -1)
+    def seq2flat(x_seq):
+        return np.transpose(x_seq, (0, 2, 1)).reshape(x_seq.shape[0] * x_seq.shape[2], -1)
 
     def flat2seq(x_flat, x_seq):
         return np.transpose(x_flat.reshape(x_seq.shape[0], x_seq.shape[2], -1), (0, 2, 1))
@@ -289,6 +485,7 @@ def gen_videos(x, recon_motion, motion_z, pose_z_seq, recon_pose_z_seq, labels, 
     recon_pose_z_seq = recon_pose_z_seq.cpu().detach().numpy()
     pred_labels = pred_labels.cpu().detach().numpy()
     pred_labels = np.argmax(pred_labels, axis=1)
+
     if num_samples_pose_z_seq is not None:
         pose_z_seq = pose_z_seq[0: num_samples_pose_z_seq, ]
         recon_pose_z_seq = recon_pose_z_seq[0: num_samples_pose_z_seq, ]
@@ -332,13 +529,12 @@ def gen_videos(x, recon_motion, motion_z, pose_z_seq, recon_pose_z_seq, labels, 
                umap_plot_pose_arr)
     ski.imsave(os.path.join(save_vid_dir, "{}_UmapMotion_{}.png".format(mode, model_identifier)),
                umap_plot_motion_arr)
-    # # ================================== Grand Latent Animation ================================
-    # # Draw video of latent space with sampled motions
-    # vreader_latent_motion_space = skv.FFmpegWriter(
-    #     os.path.join(save_vid_dir, "{}_latent_motion_space.mp4".format(mode)))
-    #
+    # ================================== Grand Latent Animation ================================
+    # Draw video of latent space with sampled motions
+    vreader_latent_motion_space = skv.FFmpegWriter(
+        os.path.join(save_vid_dir, "{}_latent_motion_space.mp4".format(mode)))
+
     # # # Filter out reflecting artefact
-    # # recon_motion = x
     # pos_sum = np.sum(recon_motion[:, [2, 5], :] > 0, axis=2)
     # neg_sum = np.sum(recon_motion[:, [2, 5], :] < 0, axis=2)
     # net_sum = pos_sum + neg_sum
@@ -355,31 +551,32 @@ def gen_videos(x, recon_motion, motion_z, pose_z_seq, recon_pose_z_seq, labels, 
     # recon_var_mask = (recon_var < np.quantile(recon_var, 1)) & (recon_var > np.quantile(recon_var, 0.8))
     # recon_motion = recon_motion[recon_var_mask,]
     # motion_z_umap = motion_z_umap[recon_var_mask,]
-    #
-    # recon_pooled, motion_z_umap_pooled, labels_pooled = gen_motion_space_scatter_animation(recon_motion=recon_motion,
-    #                                                                                        motion_z_umap=motion_z_umap,
-    #                                                                                        labels=labels,
-    #                                                                                        kernel_size=0.5,
-    #                                                                                        translation_scaling=1,
-    #                                                                                        skeleton_scaling=0.5)
-    # min_x, max_x = np.min(recon_pooled[:, 0:25, :]), np.max(recon_pooled[:, 0:25, :])
-    # min_y, max_y = np.min(recon_pooled[:, 25:, :]), np.max(recon_pooled[:, 25:, :])
-    #
-    # for t in range(seq_length):
-    #     print("\rDrawing latent motion space {}/{}".format(t, seq_length), flush=True, end="")
-    #
-    #     latent_motion_arr = plot2arr_skeleton_multiple_samples(x=recon_pooled[:, 0:25, t],
-    #                                                            y=recon_pooled[:, 25:, t],
-    #                                                            motion_z_umap= motion_z_umap_pooled,
-    #                                                            labels=labels_pooled,
-    #                                                            title="Latent Motion Space",
-    #                                                            x_lim=(min_x, max_x),
-    #                                                            y_lim=(min_y, max_y))
-    #     vreader_latent_motion_space.writeFrame(latent_motion_arr)
-    #
-    # print()
-    # vreader_latent_motion_space.close()
+
+    recon_pooled, motion_z_umap_pooled, labels_pooled = gen_motion_space_scatter_animation(recon_motion=recon_motion,
+                                                                                           motion_z_umap=motion_z_umap,
+                                                                                           labels=labels,
+                                                                                           kernel_size=0.5,
+                                                                                           translation_scaling=1,
+                                                                                           skeleton_scaling=0.5)
+    min_x, max_x = np.min(recon_pooled[:, 0:25, :]), np.max(recon_pooled[:, 0:25, :])
+    min_y, max_y = np.min(recon_pooled[:, 25:, :]), np.max(recon_pooled[:, 25:, :])
+
+    for t in range(seq_length):
+        print("\rDrawing latent motion space {}/{}".format(t, seq_length), flush=True, end="")
+
+        latent_motion_arr = plot2arr_skeleton_multiple_samples(x=recon_pooled[:, 0:25, t],
+                                                               y=recon_pooled[:, 25:, t],
+                                                               motion_z_umap=motion_z_umap_pooled,
+                                                               labels=labels_pooled,
+                                                               title="Latent Motion Space",
+                                                               x_lim=(min_x, max_x),
+                                                               y_lim=(min_y, max_y))
+        vreader_latent_motion_space.writeFrame(latent_motion_arr)
+
+    print()
+    vreader_latent_motion_space.close()
     # return
+
     # Draw videos
     for sample_idx in range(sample_num):
 

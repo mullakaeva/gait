@@ -456,6 +456,7 @@ class OpenposePreprocessor(VideoManager):
         """
 
         self.all_kepys_data_paths = sorted(glob(os.path.join(self.op_data_each_video_dir, "*.json")))
+
         assert self.num_frames == len(self.all_kepys_data_paths)
 
         selected_keyps_list = []
@@ -805,23 +806,18 @@ def openpose_preprocess_wrapper(src_vid_dir, input_data_main_dir, output_vid_dir
             print("Skipped: ", vid_name_root)
             continue
 
-        try:
         # Start preprocessing
-            preprop = OpenposePreprocessor(input_video_path=input_video_path,
-                                           openpose_data_each_video_dir=subfolder_path_each,
-                                           output_video_path=output_vid_path,
-                                           output_data_path=output_keypoints_path)
-            preprop.initialize()
-            preprop.preprocess(plot_keypoints=plot_keypoints, write_video=write_video)
+        preprop = OpenposePreprocessor(input_video_path=input_video_path,
+                                       openpose_data_each_video_dir=subfolder_path_each,
+                                       output_video_path=output_vid_path,
+                                       output_data_path=output_keypoints_path)
+        preprop.initialize()
+        preprop.preprocess(plot_keypoints=plot_keypoints, write_video=write_video)
 
-        except Exception as e:
-
-            print("Error encountered. Logged in {}".format(error_log_path))
-            with open(error_log_path, "a") as fh:
-                fh.write("\n{}\n".format(vid_name_root))
-                fh.write(str(e))
-            continue
-
+        # print("Error encountered. Logged in {}".format(error_log_path))
+        # with open(error_log_path, "a") as fh:
+        #     fh.write("\n{}_{}\n".format(idx, vid_name_root))
+        #     fh.write(str(e))
 
 if __name__ == "__main__":
     pass

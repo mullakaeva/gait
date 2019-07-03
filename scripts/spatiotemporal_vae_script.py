@@ -82,7 +82,7 @@ def run_train_and_vis_on_stvae():
                                  save_chkpt_path=save_model_path, load_chkpt_path=load_model_path)
     # model_container._save_model()
 
-    model_container.train(800)
+    # model_container.train(800)
 
     # Visualization
     if os.path.isfile(save_model_path):

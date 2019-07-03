@@ -519,13 +519,14 @@ class STVAEmodel:
 
 
 
+
         # Videos and Umap plots for Train data
         # # Random sampling
-        # gen_videos(x=x, recon_motion=random_recon, motion_z=random_motion_z, pose_z_seq=pose_z_seq,
-        #            recon_pose_z_seq=recon_pose_z_seq, labels=labels,
-        #            pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
-        #            sample_num=vid_sample_num,
-        #            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="random_1e-4_8e-1")
+        gen_videos(x=x, recon_motion=random_recon, motion_z=random_motion_z, pose_z_seq=pose_z_seq,
+                   recon_pose_z_seq=recon_pose_z_seq, labels=labels,
+                   pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
+                   sample_num=vid_sample_num,
+                   save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="random_1e-4_8e-1")
         # return
         # Reconstruction Train
         gen_videos(x=x, recon_motion=recon_motion, motion_z=motion_z, pose_z_seq=pose_z_seq,
