@@ -10,7 +10,7 @@ import pprint
 import re
 from glob import glob
 from common.utils import MeterAssembly, RunningAverageMeter, dict2json
-from common.visualisation import gen_videos, LatentSpaceVideoVisualizer
+from common.visualisation import LatentSpaceVideoVisualizer
 from .Model import SpatioTemporalVAE
 from .GraphModel import GraphSpatioTemporalVAE
 
@@ -102,6 +102,11 @@ class STVAEmodel:
         try:
             for epoch in range(n_epochs):
                 iter_idx = 0
+
+                for train_data, test_data in self.data_gen.iterator():
+                    x, nan_masks, labels, labels_mask, _, _ = train_data
+                    x_test, nan_masks_test, labels_test, labels_mask_test, _, _ = test_data
+
                 for (x, nan_masks, labels, labels_mask), (
                         x_test, nan_masks_test, labels_test, labels_mask_test) in self.data_gen.iterator():
                     # Convert numpy to torch.tensor
@@ -479,6 +484,7 @@ class STVAEmodel:
         df_losses.to_csv(os.path.join(project_dir, "vis", model_identifier, "loss_{}.csv".format(model_identifier)))
 
     def vis_reconstruction(self, data_gen, vid_sample_num, project_dir, model_identifier):
+        plotting_mode = [True, True, True]
         # Define paths
         save_vid_dir = os.path.join(project_dir, "vis", model_identifier)
         if os.path.isdir(save_vid_dir) is not True:
@@ -487,71 +493,75 @@ class STVAEmodel:
         # Refresh data generator
         self.data_gen = data_gen
 
-        # Get data from data generator's first loop
-        for (x, x_masks, labels, label_masks), (x_test, x_masks_test, labels_test,
-                                                label_masks_test) in self.data_gen.iterator():
-            # Mask out nan's
-            x, labels = x[label_masks == 1,], labels[label_masks == 1,]
-            x_test, labels_test = x_test[label_masks_test == 1,], labels_test[label_masks_test == 1,]
+        x_train_phenos_list, tasks_train_list, phenos_train_list = [], [], []
 
-            # Convert to tensor
-            x = torch.from_numpy(x).float().to(self.device)
-            x_test = torch.from_numpy(x_test).float().to(self.device)
+        # Get data from data generator's first loop
+        for train_data, test_data in self.data_gen.iterator():
+            x_train_fit, x_masks_train, tasks_train, task_masks_train, phenos_train, pheno_masks_train = train_data
+
+            masks_train = (task_masks_train == 1) & (pheno_masks_train == 1)
+
+            x_train, tasks_train, phenos_train = x_train_fit[masks_train,].copy(), tasks_train[masks_train,], \
+                                                 phenos_train[
+                                                     masks_train]
+
+            # Produce phenos of equal/similar amounts
+            uniphenos, phenos_counts = np.unique(phenos_train, return_counts=True)
+            max_counts = np.sort(phenos_counts)[3]
+            # max_counts = 100
+            for pheno_idx in range(13):
+                x_train_each_pheno = x_train[phenos_train == pheno_idx, ]
+                tasks_train_each_pheno = tasks_train[phenos_train == pheno_idx, ]
+                phenos_train_each_pheno = phenos_train[phenos_train == pheno_idx, ]
+
+                x_train_phenos_list.append(x_train_each_pheno[0:max_counts, ])
+                tasks_train_list.append(tasks_train_each_pheno[0:max_counts, ])
+                phenos_train_list.append(phenos_train_each_pheno[0:max_counts, ])
+
+            x_equal_pheno = np.vstack(x_train_phenos_list)
+            tasks_equal_pheno = np.concatenate(tasks_train_list)
+            phenos_equal_pheno = np.concatenate(phenos_train_list)
+
+            # Produce base points
+
+            x_base, tasks_base, phenos_base = x_train[0:4096, ], tasks_train[0:4096, ], phenos_train[0:4096, ]
+
             break
+
+        # Convert to tensor
+        x_equal_pheno = torch.from_numpy(x_equal_pheno).float().to(self.device)
+        x_base = torch.from_numpy(x_base).float().to(self.device)
+
 
         # Forward pass
         self.model.eval()
         with torch.no_grad():
-            recon_motion, pred_labels, pose_z_info, motion_z_info = self.model(x)
-            recon_motion_test, pred_labels_test, pose_z_info_test, motion_z_info_test = self.model(x_test)
+            # For projection
+            recon_motion, pred_tasks, pose_z_info, motion_z_info = self.model(x_equal_pheno)
+            pose_z_seq, recon_pose_z_seq, _, _ = pose_z_info
+            motion_z, _, _ = motion_z_info
 
-            (pose_z_seq, recon_pose_z_seq, pose_mu, pose_logvar) = pose_z_info
-            (pose_z_seq_test, recon_pose_z_seq_test, pose_mu_test, pose_logvar_test) = pose_z_info_test
+            # Base
+            recon_motion_base, pred_tasks_base, pose_z_info_base, motion_z_info_base = self.model(x_base)
+            pose_z_seq_base, recon_pose_z_seq_base, _, _ = pose_z_info_base
+            motion_z_base, _, _ = motion_z_info_base
 
-            (motion_z, motion_mu, motion_logvar) = motion_z_info
-            (motion_z_test, motion_mu_test, motion_logvar_test) = motion_z_info_test
-
-        # Create random samples of latent
-        torch.manual_seed(0)
-        random_motion_z = torch.randn((recon_motion.shape[0], motion_z.shape[1])).float().to(self.device)
-        with torch.no_grad():
-            random_recon = self.model.decode(random_motion_z)
-
+        # Fit umap embedding with
         vis = LatentSpaceVideoVisualizer(model_identifier=model_identifier, save_vid_dir=save_vid_dir)
-        vis.fit_umap(pose_z_seq=pose_z_seq, motion_z=motion_z)
-        vis.visualization_wrapper(x=x, recon_motion=recon_motion, labels=labels, pred_labels=pred_labels,
-                                  motion_z=motion_z, pose_z_seq=pose_z_seq, recon_pose_z_seq=recon_pose_z_seq,
-                                  test_acc=self.loss_meter.get_meter_avg()["test_acc"], mode="train", sample_num=10)
-        vis.visualization_wrapper(x=x_test, recon_motion=recon_motion_test, labels=labels_test, pred_labels=pred_labels_test,
-                                  motion_z=motion_z_test, pose_z_seq=pose_z_seq_test, recon_pose_z_seq=recon_pose_z_seq_test,
-                                  test_acc=self.loss_meter.get_meter_avg()["test_acc"], mode="test", sample_num=10)
-        vis.visualization_wrapper(x=x, recon_motion=random_recon, labels=labels,
-                                  pred_labels=pred_labels,
-                                  motion_z=random_motion_z, pose_z_seq=pose_z_seq,
+        vis.fit_umap(pose_z_seq=pose_z_seq_base, motion_z=motion_z_base)
+
+        # "pheno" labels
+        vis.visualization_wrapper(x=x_equal_pheno, recon_motion=recon_motion, labels=phenos_equal_pheno, pred_labels=phenos_equal_pheno,
+                                  motion_z=motion_z, pose_z_seq=pose_z_seq,
                                   recon_pose_z_seq=recon_pose_z_seq,
-                                  test_acc=self.loss_meter.get_meter_avg()["test_acc"], mode="Random", sample_num=10, plotting_mode=[True, False, True])
-        # # Videos and Umap plots for Train data
-        # # # Random sampling
-        # gen_videos(x=x, recon_motion=random_recon, motion_z=random_motion_z, pose_z_seq=pose_z_seq,
-        #            recon_pose_z_seq=recon_pose_z_seq, labels=labels,
-        #            pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
-        #            sample_num=vid_sample_num,
-        #            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="random_1e-4_8e-1")
-        # # return
-        # # Reconstruction Train
-        # gen_videos(x=x, recon_motion=recon_motion, motion_z=motion_z, pose_z_seq=pose_z_seq,
-        #            recon_pose_z_seq=recon_pose_z_seq, labels=labels,
-        #            pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
-        #            sample_num=vid_sample_num,
-        #            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="train")
-        #
-        # # Reconstruction Test
-        # gen_videos(x=x_test, recon_motion=recon_motion_test, motion_z=motion_z_test, pose_z_seq=pose_z_seq_test,
-        #            recon_pose_z_seq=recon_pose_z_seq_test,
-        #            labels=labels_test,
-        #            pred_labels=pred_labels_test, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
-        #            sample_num=vid_sample_num,
-        #            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="test")
+                                  test_acc=self.loss_meter.get_meter_avg()["test_acc"], mode="train", sample_num=25,
+                                  label_type="pheno", plotting_mode=plotting_mode, motion_z_base=motion_z_base)
+        vis.visualization_wrapper(x=x_equal_pheno, recon_motion=recon_motion, labels=tasks_equal_pheno,
+                                  pred_labels=pred_tasks,
+                                  motion_z=motion_z, pose_z_seq=pose_z_seq,
+                                  recon_pose_z_seq=recon_pose_z_seq,
+                                  test_acc=self.loss_meter.get_meter_avg()["test_acc"], mode="train", sample_num=25,
+                                  label_type="task", plotting_mode=plotting_mode, motion_z_base=motion_z_base)
 
     def evaluate_all_models(self, data_gen, project_dir, model_list, draw_vid=False):
 

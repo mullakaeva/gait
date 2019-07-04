@@ -68,7 +68,7 @@ class SSF_tSNE_DataGenerator(DataGenerator):
             batch_data[idx,] = data_each
 
             # Create batch labels
-            label = self.label_reader.get_label(vid_base_name)
+            label = self.label_reader.get_label(vid_base_name)  # Deprecated
             batch_labels[idx] = label
 
         return batch_data, batch_labels, batch_data_paths
@@ -107,7 +107,7 @@ class GaitGeneratorFromDF:
         self.num_rows = self.df_train.shape[0]
         self.m, self.n = m, n
 
-        self.label_range = np.max(self.df["labels"]) - np.min(self.df["labels"])
+        self.label_range = np.max(self.df["tasks"]) - np.min(self.df["tasks"])
 
     def iterator(self):
         """
@@ -147,7 +147,7 @@ class GaitGeneratorFromDF:
         for i in range(num_samples):
             # Get features and labels
             fea_vec = df["features"].iloc[i]  # numpy.darray (num_frames, 25, 2)
-            label = df["labels"].iloc[i] / self.label_range  # numpy.int64
+            label = df["tasks"].iloc[i] / self.label_range  # numpy.int64
 
             # Slice to the receptive window
             slice_start = np.random.choice(fea_vec.shape[0] - self.n)
@@ -189,9 +189,13 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
 
     def _convert_df_to_data(self, df_shuffled, start, stop):
         selected_df = df_shuffled.iloc[start:stop, :].copy()
-        x_train, x_mask_train, label_train, label_mask_train = self._loop_for_array_construction(selected_df, self.m)
-        x_test, x_mask_test, label_test, label_mask_test = self._loop_for_array_construction(self.df_test, self.df_test.shape[0])
-        return (x_train, x_mask_train, label_train, label_mask_train), (x_test, x_mask_test, label_test, label_mask_test)
+        (x_train, x_train_masks), (task_train, task_train_masks), (pheno_train, pheno_train_masks) = self._loop_for_array_construction(selected_df, self.m)
+
+        (x_test, x_test_masks), (task_test, task_test_masks), (pheno_test, pheno_test_masks) = self._loop_for_array_construction(self.df_test, self.df_test.shape[0])
+
+        train_info = (x_train, x_train_masks, task_train, task_train_masks, pheno_train, pheno_train_masks)
+        test_info = (x_test, x_test_masks, task_test, task_test_masks, pheno_test, pheno_test_masks)
+        return train_info, test_info
 
     def _loop_for_array_construction(self, df, num_samples):
         """
@@ -212,32 +216,40 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
 
         """
         features_arr = np.zeros((num_samples, self.total_fea_dims, self.n))
-        nan_arr = np.zeros(features_arr.shape)
-        label_arr = np.zeros(num_samples)
-        label_mask_arr = np.zeros(num_samples)
+        fea_masks_arr = np.zeros(features_arr.shape)
+        tasks_arr = np.zeros(num_samples)
+        task_masks_arr = np.zeros(num_samples)
+        phenos_arr = np.zeros(num_samples)
+        pheno_masks_arr = np.zeros(num_samples)
+
         for i in range(num_samples):
             # Get features and labels
             fea_vec = df["features"].iloc[i]  # numpy.darray (num_frames, 25, 2)
-            label = df["labels"].iloc[i]  # numpy.int64
-            nan_mask = df["nan_masks"].iloc[i]  # numpy.bool (num_frames, 25, 2)
-            label_mask = df["label_masks"].iloc[i]  # numpy.bool, True for non-nan, False for nan
+            fea_mask_vec = df["feature_masks"].iloc[i]  # numpy.bool (num_frames, 25, 2)
+            task = df["tasks"].iloc[i]  # numpy.int64
+            task_mask = df["task_masks"].iloc[i]  # numpy.bool, True for non-nan, False for nan
+            pheno = df["phenos"].iloc[i]  # numpy.int64
+            pheno_mask = df["pheno_masks"].iloc[i]  # numpy.bool, True for non-nan, False for nan
 
             # Slice to the receptive window
             slice_start = np.random.choice(fea_vec.shape[0] - self.n)
             fea_vec_sliced = fea_vec[slice_start:slice_start + self.n, :, :]
-            nan_arr_sliced = nan_mask[slice_start:slice_start + self.n, :, :]
+            fea_mask_vec_sliced = fea_mask_vec[slice_start:slice_start + self.n, :, :]
 
             # Put integer label into numpy.darray
-            label_arr[i] = label
-            label_mask_arr[i] = label_mask
+            tasks_arr[i] = task
+            task_masks_arr[i] = task_mask
+            phenos_arr[i] = pheno
+            pheno_masks_arr[i] = pheno_mask
 
             # Construct output
             features_arr[i, 0:self.keyps_x_dims, :] = fea_vec_sliced[:, :, 0].T  # Store x-coordinates
             features_arr[i, self.keyps_x_dims:self.total_fea_dims, :] = fea_vec_sliced[:, :, 1].T  # Store y-coordinates
-            nan_arr[i, 0:self.keyps_x_dims, :] = nan_arr_sliced[:, :, 0].T  # Store x-coordinates
-            nan_arr[i, self.keyps_x_dims:self.total_fea_dims, :] = nan_arr_sliced[:, :, 1].T  # Store y-coordinates
+            fea_masks_arr[i, 0:self.keyps_x_dims, :] = fea_mask_vec_sliced[:, :, 0].T  # Store x-coordinates
+            fea_masks_arr[i, self.keyps_x_dims:self.total_fea_dims, :] = fea_mask_vec_sliced[:, :,
+                                                                         1].T  # Store y-coordinates
 
-        return features_arr, nan_arr, label_arr, label_mask_arr
+        return (features_arr, fea_masks_arr), (tasks_arr, task_masks_arr), (phenos_arr, pheno_masks_arr)
 
 
 class GaitGeneratorFromDFforSingleSkeletonVAE:

@@ -106,6 +106,8 @@ class FeatureExtractor():
         data_accumulator = np.zeros([num] + [x for x in self.keyps_shape])
 
         for idx, data_info in enumerate(data_gen.iterator()):
+            if idx > 500:
+                break
             print("\r%d/%d Estimating means incrementally from each data file." % (idx, data_gen.num_files), end="",
                   flush=True)
             data, _ = data_info
@@ -230,8 +232,12 @@ class FeatureExtractorForODE(FeatureExtractor):
         self.df = pd.DataFrame()
         self.lreader = LabelsReader(labels_path)
         self.df_save_path = df_save_path
-        self.vid_name_roots_list, self.features_list, self.labels_list = [], [], []
-        self.label_masks_list, self.nan_masks_list = [], []
+
+        # Initialize list
+        self.vid_name_roots_list, self.features_list, self.feature_masks_list = [], [], []
+        self.tasks_list, self.task_masks_list = [], []
+        self.phenos_list, self.pheno_masks_list = [], []
+
         super(FeatureExtractorForODE, self).__init__(scr_keyps_dir, None)
         self.data_grand_mean = self._incremental_mean_estimation()  # Shape = (25, 3)
 
@@ -258,26 +264,30 @@ class FeatureExtractorForODE(FeatureExtractor):
             vid_name_root = os.path.splitext(os.path.split(arr_path)[1])[0]
 
             # Second column: features + Forth column: nan_mask
-            feature, nan_mask = self._transform_to_features(keyps_arr)
+            feature, feature_mask = self._transform_to_features(keyps_arr)
 
             # Third column: labels
-            label, label_mask = self.lreader.get_label(vid_name_root + ".mp4")
+            (task, pheno), (task_mask, pheno_mask) = self.lreader.get_label(vid_name_root)
 
             # Append to lists
             self.vid_name_roots_list.append(vid_name_root)
             self.features_list.append(feature)
-            self.labels_list.append(label)
-            self.label_masks_list.append(label_mask)
-            self.nan_masks_list.append(np.invert(nan_mask))  # False = np.nan
+            self.feature_masks_list.append(np.invert(feature_mask))  # False = masked
+            self.tasks_list.append(task)
+            self.task_masks_list.append(task_mask)  # False = masked
+            self.phenos_list.append(pheno)
+            self.pheno_masks_list.append(pheno_mask)  # False = masked
 
         # Create dataframe
         self.df["vid_name_roots"] = self.vid_name_roots_list
         self.df["features"] = self.features_list
-        self.df["labels"] = self.labels_list
-        self.df["label_masks"] = self.label_masks_list
-        self.df["nan_masks"] = self.nan_masks_list
+        self.df["feature_masks"] = self.feature_masks_list
+        self.df["tasks"] = self.tasks_list
+        self.df["task_masks"] = self.task_masks_list
+        self.df["phenos"] = self.phenos_list
+        self.df["pheno_masks"] = self.pheno_masks_list
 
-        # Filter rows with numbe of frames smaller than "filter_window"
+        # Filter rows with number of frames smaller than "filter_window"
         if (filter_window is not None) and (isinstance(filter_window, int)):
             self._filter(filter_window)
 

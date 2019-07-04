@@ -43,7 +43,7 @@ def run_train_and_vis_on_stvae():
     # Define paths
     # df_path = "/mnt/data/raw_features_zmatrix_row_labels_withNanMasks.pickle"
 
-    df_path = "/mnt/data/feas_incompleteLabels_nanMasks.pickle"
+    df_path = "/mnt/data/feas_tasks_phenos_nanMasks.pickle"
     save_model_path = "Spatiotemporal_VAE/model_chkpt/ckpt_%s.pth" % model_identifier
     project_dir = "Spatiotemporal_VAE"
     save_hyper_params_path = "Spatiotemporal_VAE/model_chkpt/hyperparms_%s.json" % model_identifier
@@ -86,7 +86,7 @@ def run_train_and_vis_on_stvae():
 
     # Visualization
     if os.path.isfile(save_model_path):
-        data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=4096, n=seq_dim, seed=60)
+        data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=data_gen.num_rows-1, n=seq_dim, seed=60)
         model_container.vis_reconstruction(data_gen2, 10, project_dir, model_identifier)
         # model_container.save_model_losses_data(project_dir, model_identifier)
         # model_container.evaluate_all_models(data_gen2, project_dir, None, draw_vid=True)

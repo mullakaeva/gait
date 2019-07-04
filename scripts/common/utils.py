@@ -3,6 +3,7 @@ import json
 import numpy as np
 import re
 import pickle
+import pandas as pd
 
 
 def extract_contagious(binary_train, max_neigh):
@@ -232,44 +233,44 @@ class LabelsReader():
         self.labels_path = labels_path
         self.loaded_df = self._read_data_meta_info()
         self.all_filenames = []
-        self.vid2label, self.label2vid = self._construct_conversion_dict()
+        self.vid2task, self.vid2pheno = self._construct_conversion_dict()
 
-    def get_label(self, vid_name):
+    def get_label(self, vid_name_root):
         try:
-            return self.vid2label[vid_name], True
+            task = task2idx(self.vid2task[vid_name_root])
+            task_found = True
         except KeyError:
-            return 0, False  # 0 corresponds to class 0, but it will be masked out
+            task = 0  # shall be masked later
+            task_found = False
 
-    def get_vid(self, label):
-        return self.label2vid[label]
+        try:
+            pheno = pheno2idx(self.vid2pheno[vid_name_root])
+            pheno_found = True
+        except KeyError:
+            pheno = 0  # shall be masked later
+            pheno_found = False
 
-    def get_vid2label(self):
-        return self.vid2label
-
-    def get_label2vid(self):
-        return self.label2vid
+        return (task, pheno), (task_found, pheno_found)
 
     def get_all_filenames(self):
         return self.all_filenames
 
     def _construct_conversion_dict(self):
-        # indexes: 6=zmatrix_rowidx, 7=vid_filename (with trailing '\n')
-        vid2label = dict()
-        label2vid = dict()
-        for i in range(self.loaded_df.shape[0]):
-            vid_name = self.loaded_df.iloc[i, 7].replace('\n', '')
-            label = int(self.loaded_df.iloc[i, 6]) - 1
-            vid2label[vid_name] = label
-            label2vid[label] = vid_name
-            self.all_filenames.append(vid_name)
-        return vid2label, label2vid
+        related_cols = ["fn_mp4", 'task', "phenotyp_label"]
+        df_pheno_filtered = self.loaded_df[related_cols]
+        self.all_filenames = set(list(df_pheno_filtered["fn_mp4"]))
+        df_pheno_filtered["fn_mp4"] = df_pheno_filtered["fn_mp4"].apply(lambda x: os.path.splitext(x)[0])
+        vid2task = dict()
+        vid2pheno = dict()
+        for i in range(df_pheno_filtered.shape[0]):
+            vid_name, task, pheno = df_pheno_filtered.iloc[i].copy()
+            vid2task[vid_name] = task
+            vid2pheno[vid_name] = pheno
+
+        return vid2task, vid2pheno
 
     def _read_data_meta_info(self):
-        with open(self.labels_path, "rb") as fh:
-            try:
-                loaded_df = pickle.load(fh, encoding='latin1')
-            except TypeError:
-                loaded_df = pickle.load(fh)
+        loaded_df = pd.read_pickle(self.labels_path)
         return loaded_df
 
 
@@ -475,17 +476,53 @@ def sample_and_copy_videos(src_dir, dest_dir, sample_num=1000, labels_path="", s
     print("number of videos copied: %d/%d" % (i, num_videos))
 
 
-def gaitclass(idx):
-    return idx2class[idx]
-
-
-idx2class = {
-    0: 'Preferred speed',
-    1: 'Slow speed',
-    2: 'Max speed',
-    3: 'Head extended gait',
-    4: 'Dual (verbal)',
-    5: 'Dual (subtraction)',
-    6: 'Dual (tray)',
-    7: 'Eye closed'
+# ['dtcarry' 'dtmath' 'dtspeech' 'ec' 'headneck' 'vmax' 'vmin' 'vself']
+task2idx_dict = {
+    "vself": 0,
+    "vmin": 1,
+    "vmax": 2,
+    "headneck": 3,
+    "dtspeech": 4,
+    "dtmath": 5,
+    "dtcarry": 6,
+    "ec": 7
 }
+
+idx2task_dict = {v: k for k, v in task2idx_dict.items()}
+
+
+def idx2task(idx):
+    return idx2task_dict[idx]
+
+
+def task2idx(task):
+    return task2idx_dict[task]
+
+
+# ['ataxia' 'episodic' 'hs' 'hypokinetic' 'normal' 'nph' 'paretic' 'phobic'
+#  'ppv' 'psychogenic' 'sensory ataxia' 'spastic' 'suspectnph']
+
+pheno2idx_dict = {
+    "ataxia": 0,
+    "episodic": 1,
+    "hs": 2,
+    "hypokinetic": 3,
+    "normal": 4,
+    "nph": 5,
+    "paretic": 6,
+    "phobic": 7,
+    "ppv": 8,
+    "psychogenic": 9,
+    "sensory ataxis": 10,
+    "spastic": 11,
+    "suspectnph": 12
+}
+
+idx2pheno_dict = {v: k for k, v in pheno2idx_dict.items()}
+
+def idx2pheno(idx):
+    return idx2pheno_dict[idx]
+
+
+def pheno2idx(pheno):
+    return pheno2idx_dict[pheno]

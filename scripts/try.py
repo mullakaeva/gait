@@ -1,28 +1,26 @@
+import pandas as pd
 import numpy as np
-import torch
-
+import os
+from glob import glob
+from common.utils import task2idx, pheno2idx, load_df_pickle
 
 if __name__ == "__main__":
-    num_samples = 10
-    gradient_mulitplier = np.random.randint(5, 10, (num_samples,))
-    mask = np.random.randint(0, 2, (num_samples,))
+    df_save_path = "/mnt/data/labels/fn_tasks_phenos.pkl"
+    df = load_df_pickle(df_save_path)
 
-    loss = torch.randn(num_samples, requires_grad=True)
-    gradient_mulitplier = torch.from_numpy(gradient_mulitplier).float()
-    mask = torch.from_numpy(mask).float()
+    print('Number of unique videos synched to subject (primary diagnosis only): %d.' %
+          np.unique(df.fn_mp4).shape[0])
 
-    # multiplication
-    final_loss = torch.mean(loss * gradient_mulitplier * mask)
-    final_loss.backward()
+    unqdiag, unqcounts = np.unique([str(x) for x in df.diagnosis_label[
+        df.diagnosis_status == 'validated']], return_counts=True);
+    unqdiags = pd.DataFrame();
+    unqdiags['diag'] = unqdiag.tolist()
+    unqdiags['counts'] = unqcounts.tolist()
 
-    # Look at gradient
-    print("mask:\n", mask)
-    print("Gradient multiplier:\n", gradient_mulitplier)
-    print("loss's grad\n", loss.grad)
+    unqphen, unqcounts = np.unique([str(x) for x in df.phenotyp_label], return_counts=True);
+    unqphens = pd.DataFrame();
+    unqphens['phen'] = unqphen.tolist()
+    unqphens['counts'] = unqcounts.tolist()
 
-
-
-
-
-
+    print(unqphens)
 

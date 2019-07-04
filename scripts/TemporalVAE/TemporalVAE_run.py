@@ -8,7 +8,7 @@ import skvideo.io as skv
 import skimage.io as ski
 from common.visualisation import plot2arr_skeleton, plot_latent_space_with_labels, plot_umap_with_labels, build_frame_2by2
 from .Model_t128 import TemporalVAE
-from common.utils import RunningAverageMeter, gaitclass
+from common.utils import RunningAverageMeter, idx2task
 import umap
 from sklearn.decomposition import PCA
 
@@ -368,7 +368,7 @@ class GaitCVAEvisualiser:
                                      self.model_identifier + "_umapVID_" + umap_identifier + ".mp4")
         vwriter = skv.FFmpegWriter(save_vid_path)
         for vis_idx in range(num_vids):
-            skeleton_title = "Sampled-{}_label-{}-{}".format(vis_idx, labels[vis_idx,], gaitclass(labels[vis_idx,]))
+            skeleton_title = "Sampled-{}_label-{}-{}".format(vis_idx, labels[vis_idx,], idx2task(labels[vis_idx,]))
             video_example = x_train_vis[vis_idx, :, :] # (50, 128)
             recon_example = out_vis[vis_idx, :, :]
             embedding_example = embedding[vis_idx] # Since x_train is the first batch, the indices are same
