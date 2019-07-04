@@ -10,7 +10,7 @@ import pprint
 import re
 from glob import glob
 from common.utils import MeterAssembly, RunningAverageMeter, dict2json
-from common.visualisation import gen_videos
+from common.visualisation import gen_videos, LatentSpaceVideoVisualizer
 from .Model import SpatioTemporalVAE
 from .GraphModel import GraphSpatioTemporalVAE
 
@@ -102,7 +102,8 @@ class STVAEmodel:
         try:
             for epoch in range(n_epochs):
                 iter_idx = 0
-                for (x, nan_masks, labels, labels_mask), (x_test, nan_masks_test, labels_test, labels_mask_test) in self.data_gen.iterator():
+                for (x, nan_masks, labels, labels_mask), (
+                        x_test, nan_masks_test, labels_test, labels_mask_test) in self.data_gen.iterator():
                     # Convert numpy to torch.tensor
                     x = torch.from_numpy(x).float().to(self.device)
                     x_test = torch.from_numpy(x_test).float().to(self.device)
@@ -468,7 +469,7 @@ class STVAEmodel:
             pdb.set_trace()
         pred_labels_np, labels_np = pred_labels.cpu().detach().numpy(), labels.cpu().detach().numpy()
         label_masks_np = label_masks.cpu().detach().numpy()
-        acc = np.mean(np.argmax(pred_labels_np[label_masks_np>0.5, ], axis=1) == labels_np[label_masks_np>0.5]) * 100
+        acc = np.mean(np.argmax(pred_labels_np[label_masks_np > 0.5,], axis=1) == labels_np[label_masks_np > 0.5]) * 100
         return class_loss_indicator, acc
 
     def save_model_losses_data(self, project_dir, model_identifier):
@@ -489,9 +490,8 @@ class STVAEmodel:
         # Get data from data generator's first loop
         for (x, x_masks, labels, label_masks), (x_test, x_masks_test, labels_test,
                                                 label_masks_test) in self.data_gen.iterator():
-
             # Mask out nan's
-            x, labels = x[label_masks==1, ], labels[label_masks==1, ]
+            x, labels = x[label_masks == 1,], labels[label_masks == 1,]
             x_test, labels_test = x_test[label_masks_test == 1,], labels_test[label_masks_test == 1,]
 
             # Convert to tensor
@@ -517,32 +517,41 @@ class STVAEmodel:
         with torch.no_grad():
             random_recon = self.model.decode(random_motion_z)
 
-
-
-
-        # Videos and Umap plots for Train data
-        # # Random sampling
-        gen_videos(x=x, recon_motion=random_recon, motion_z=random_motion_z, pose_z_seq=pose_z_seq,
-                   recon_pose_z_seq=recon_pose_z_seq, labels=labels,
-                   pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
-                   sample_num=vid_sample_num,
-                   save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="random_1e-4_8e-1")
-        # return
-        # Reconstruction Train
-        gen_videos(x=x, recon_motion=recon_motion, motion_z=motion_z, pose_z_seq=pose_z_seq,
-                   recon_pose_z_seq=recon_pose_z_seq, labels=labels,
-                   pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
-                   sample_num=vid_sample_num,
-                   save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="train")
-
-        # Reconstruction Test
-        gen_videos(x=x_test, recon_motion=recon_motion_test, motion_z=motion_z_test, pose_z_seq=pose_z_seq_test,
-                   recon_pose_z_seq=recon_pose_z_seq_test,
-                   labels=labels_test,
-                   pred_labels=pred_labels_test, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
-                   sample_num=vid_sample_num,
-                   save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="test")
-
+        vis = LatentSpaceVideoVisualizer(model_identifier=model_identifier, save_vid_dir=save_vid_dir)
+        vis.fit_umap(pose_z_seq=pose_z_seq, motion_z=motion_z)
+        vis.visualization_wrapper(x=x, recon_motion=recon_motion, labels=labels, pred_labels=pred_labels,
+                                  motion_z=motion_z, pose_z_seq=pose_z_seq, recon_pose_z_seq=recon_pose_z_seq,
+                                  test_acc=self.loss_meter.get_meter_avg()["test_acc"], mode="train", sample_num=10)
+        vis.visualization_wrapper(x=x_test, recon_motion=recon_motion_test, labels=labels_test, pred_labels=pred_labels_test,
+                                  motion_z=motion_z_test, pose_z_seq=pose_z_seq_test, recon_pose_z_seq=recon_pose_z_seq_test,
+                                  test_acc=self.loss_meter.get_meter_avg()["test_acc"], mode="test", sample_num=10)
+        vis.visualization_wrapper(x=x, recon_motion=random_recon, labels=labels,
+                                  pred_labels=pred_labels,
+                                  motion_z=random_motion_z, pose_z_seq=pose_z_seq,
+                                  recon_pose_z_seq=recon_pose_z_seq,
+                                  test_acc=self.loss_meter.get_meter_avg()["test_acc"], mode="Random", sample_num=10, plotting_mode=[True, False, True])
+        # # Videos and Umap plots for Train data
+        # # # Random sampling
+        # gen_videos(x=x, recon_motion=random_recon, motion_z=random_motion_z, pose_z_seq=pose_z_seq,
+        #            recon_pose_z_seq=recon_pose_z_seq, labels=labels,
+        #            pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
+        #            sample_num=vid_sample_num,
+        #            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="random_1e-4_8e-1")
+        # # return
+        # # Reconstruction Train
+        # gen_videos(x=x, recon_motion=recon_motion, motion_z=motion_z, pose_z_seq=pose_z_seq,
+        #            recon_pose_z_seq=recon_pose_z_seq, labels=labels,
+        #            pred_labels=pred_labels, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
+        #            sample_num=vid_sample_num,
+        #            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="train")
+        #
+        # # Reconstruction Test
+        # gen_videos(x=x_test, recon_motion=recon_motion_test, motion_z=motion_z_test, pose_z_seq=pose_z_seq_test,
+        #            recon_pose_z_seq=recon_pose_z_seq_test,
+        #            labels=labels_test,
+        #            pred_labels=pred_labels_test, test_acc=self.loss_meter.get_meter_avg()["test_acc"],
+        #            sample_num=vid_sample_num,
+        #            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="test")
 
     def evaluate_all_models(self, data_gen, project_dir, model_list, draw_vid=False):
 
@@ -604,7 +613,8 @@ class STVAEmodel:
             )
 
             # Load batches of training/testing data
-            for (x, nan_masks, labels, labels_mask), (x_test, nan_masks_test, labels_test, labels_mask_test) in self.data_gen.iterator():
+            for (x, nan_masks, labels, labels_mask), (
+                    x_test, nan_masks_test, labels_test, labels_mask_test) in self.data_gen.iterator():
                 print("\r Model {}/{} Current progress : {}/{}".format(idx, len(model_paths), batch_idx,
                                                                        self.data_gen.num_rows / self.data_gen.m),
                       flush=True, end="")

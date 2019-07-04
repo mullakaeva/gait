@@ -22,7 +22,8 @@ skip_vids_dir = "/mnt/data/hoi/gait_analysis/data/openpose_visualisation"
 concat_vids_from_dir(vids_dir=vids_dir,
                      output_vid_path=output_vid_path,
                      output_df_path=output_df_path,
-                     skip_vids_dir=skip_vids_dir)
+                     skip_vids_dir=skip_vids_dir,
+                     num_to_concat=10000)
 
 
 

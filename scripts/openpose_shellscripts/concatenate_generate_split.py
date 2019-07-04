@@ -38,11 +38,12 @@ def concat_vids_from_dir(vids_dir, output_vid_path, output_df_path, skip_vids_di
     vid_infos = []
     grand_vid_idx = 0
     stopping_idx = 0 if num_to_concat is None else num_to_concat
+    finished_idx = 0
 
     for vid_idx, vid_path in enumerate(all_vid_paths):
 
         # Terminate if the vid_idx reaches the stopping number
-        if vid_idx >= stopping_idx:
+        if finished_idx >= stopping_idx:
             print("Stop concatenation")
             break
 
@@ -81,6 +82,7 @@ def concat_vids_from_dir(vids_dir, output_vid_path, output_df_path, skip_vids_di
         # Record information
         vid_infos.append([vid_name_root, vid_start_idx, vid_end_idx])
         vreader_each.close()
+        finished_idx += 1
 
     # Build dataframes
     vid_infos_np = np.array(vid_infos)

@@ -240,13 +240,21 @@ def gen_motion_space_scatter_animation(recon_motion, motion_z_umap, labels, kern
 
 
 class LatentSpaceVideoVisualizer:
-    def __init__(self, model_identifier, save_vid_dir):
+    def __init__(self, model_identifier, save_vid_dir, seq_length=128):
         self.pose_umapper, self.motion_z_umapper = None, None
         self.save_vid_dir = save_vid_dir
         self.model_identifier = model_identifier
+        self.seq_length = seq_length
 
-    def fit_umap(self, pose_z_seq, motion_z):
-        pose_z_flat = self.seq2flat(pose_z_seq)
+    def fit_umap(self, pose_z_seq, motion_z, num_samples_pose_z_seq=128):
+        motion_z_fit = motion_z.cpu().detach().numpy()  # (n_samples, motion_latents_dim)
+        pose_z_seq_fit = pose_z_seq.cpu().detach().numpy()
+
+        if num_samples_pose_z_seq is not None:
+            pose_z_seq_fit = pose_z_seq_fit[0: num_samples_pose_z_seq, ]
+
+        pose_z_flat_fit = self.seq2flat(pose_z_seq_fit)
+
 
         self.pose_umapper = umap.UMAP(n_neighbors=15,
                                       n_components=2,
@@ -257,8 +265,8 @@ class LatentSpaceVideoVisualizer:
                                           min_dist=0.1,
                                           metric="euclidean")
 
-        self.pose_umapper.fit(pose_z_flat)
-        self.motion_z_umapper.fit(motion_z)
+        self.pose_umapper.fit(pose_z_flat_fit)
+        self.motion_z_umapper.fit(motion_z_fit)
 
     def gen_umap_plot(self, motion_z_umap, pose_z_flat_umap, labels, labels_flat, mode, test_acc, pose_dim=16,
                       motion_dim=128):
@@ -362,7 +370,7 @@ class LatentSpaceVideoVisualizer:
         vreader_latent_motion_space.close()
 
     def visualization_wrapper(self, x, recon_motion, labels, pred_labels, motion_z, pose_z_seq, recon_pose_z_seq,
-                              test_acc, mode):
+                              test_acc, mode, plotting_mode=[True, True, True], num_samples_pose_z_seq=128, sample_num=10):
 
         print("Visulizing in mode {}".format(mode))
 
@@ -375,6 +383,10 @@ class LatentSpaceVideoVisualizer:
         pred_labels = pred_labels.cpu().detach().numpy()
         pred_labels = np.argmax(pred_labels, axis=1)
 
+        if num_samples_pose_z_seq is not None:
+            pose_z_seq = pose_z_seq[0: num_samples_pose_z_seq, ]
+            recon_pose_z_seq = recon_pose_z_seq[0: num_samples_pose_z_seq, ]
+
         # Changing shapes
         pose_z_flat, recon_pose_z_flat = self.seq2flat(pose_z_seq), self.seq2flat(recon_pose_z_seq)
         labels_flat = np.repeat(labels[0:pose_z_seq.shape[0], np.newaxis], self.seq_length, axis=1)
@@ -386,17 +398,20 @@ class LatentSpaceVideoVisualizer:
         recon_pose_z_flat_umap = self.pose_umapper.transform(recon_pose_z_flat)
 
         # Visualization modules
-        self.gen_umap_plot(motion_z_umap=motion_z_umap,
-                           pose_z_flat_umap=pose_z_flat_umap,
-                           labels=labels, labels_flat=labels_flat,
-                           mode=mode, test_acc=test_acc)
-        self.gen_reconstruction_vid(x=x, recon_motion=recon_motion, motion_z_umap=motion_z_umap,
-                                    pose_z_flat_umap=pose_z_flat_umap, recon_pose_z_flat_umap=recon_pose_z_flat_umap,
-                                    pose_z_seq_shape=pose_z_seq.shape, labels=labels, labels_flat=labels_flat,
-                                    pred_labels=pred_labels,
-                                    mode=mode, sample_num=10)
-        self.gen_latent_space_animation(recon_motion=recon_motion, motion_z_umap=motion_z_umap,
-                                        labels=labels, mode=mode)
+        if plotting_mode[0]:
+            self.gen_umap_plot(motion_z_umap=motion_z_umap,
+                               pose_z_flat_umap=pose_z_flat_umap,
+                               labels=labels, labels_flat=labels_flat,
+                               mode=mode, test_acc=test_acc)
+        if plotting_mode[1]:
+            self.gen_reconstruction_vid(x=x, recon_motion=recon_motion, motion_z_umap=motion_z_umap,
+                                        pose_z_flat_umap=pose_z_flat_umap, recon_pose_z_flat_umap=recon_pose_z_flat_umap,
+                                        pose_z_seq_shape=pose_z_seq.shape, labels=labels, labels_flat=labels_flat,
+                                        pred_labels=pred_labels,
+                                        mode=mode, sample_num=sample_num)
+        if plotting_mode[2]:
+            self.gen_latent_space_animation(recon_motion=recon_motion, motion_z_umap=motion_z_umap,
+                                            labels=labels, mode=mode)
 
 
     @staticmethod
@@ -432,7 +447,7 @@ class LatentSpaceVideoVisualizer:
             With shape (a * c, b)
 
         """
-        return np.transpose(x_flat.reshape(x_seq_shape.shape[0], x_seq_shape.shape[2], -1), (0, 2, 1))
+        return np.transpose(x_flat.reshape(x_seq_shape[0], x_seq_shape[2], -1), (0, 2, 1))
 
 
 def gen_videos(x, recon_motion, motion_z, pose_z_seq, recon_pose_z_seq, labels, pred_labels, test_acc,
