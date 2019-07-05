@@ -521,9 +521,12 @@ class STVAEmodel:
             x_equal_pheno = np.vstack(x_train_phenos_list)
             tasks_equal_pheno = np.concatenate(tasks_train_list)
             phenos_equal_pheno = np.concatenate(phenos_train_list)
+            np.random.seed(50)
+            ran_vec = np.random.permutation(x_equal_pheno.shape[0])
+            x_equal_pheno, tasks_equal_pheno, phenos_equal_pheno = x_equal_pheno[ran_vec, ], tasks_equal_pheno[ran_vec, ], phenos_equal_pheno[ran_vec, ]
+
 
             # Produce base points
-
             x_base, tasks_base, phenos_base = x_train[0:4096, ], tasks_train[0:4096, ], phenos_train[0:4096, ]
 
             break

@@ -51,9 +51,9 @@ def build_frame_2by3(*args):
 
 def draw_skeleton(ax, x, y, linewidth=1):
     side_dict = {
-        "m": "0.9",
-        "l": "0.9",
-        "r": "0.7"
+        "m": "0",
+        "l": "0",
+        "r": "0.3"
     }
     for start, end, side in openpose_body_draw_sequence:
         ax.plot(x[[start, end]], y[[start, end]], c=side_dict[side], linewidth=linewidth)
