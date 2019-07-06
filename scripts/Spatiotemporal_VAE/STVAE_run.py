@@ -10,7 +10,7 @@ import pprint
 import re
 from glob import glob
 from common.utils import MeterAssembly, RunningAverageMeter, dict2json
-from common.visualisation import LatentSpaceVideoVisualizer
+from common.visualisation import LatentSpaceVideoVisualizer, save_vis_data_for_interactiveplot
 from .Model import SpatioTemporalVAE
 from .GraphModel import GraphSpatioTemporalVAE
 
@@ -510,9 +510,9 @@ class STVAEmodel:
             max_counts = np.sort(phenos_counts)[3]
             # max_counts = 100
             for pheno_idx in range(13):
-                x_train_each_pheno = x_train[phenos_train == pheno_idx, ]
-                tasks_train_each_pheno = tasks_train[phenos_train == pheno_idx, ]
-                phenos_train_each_pheno = phenos_train[phenos_train == pheno_idx, ]
+                x_train_each_pheno = x_train[phenos_train == pheno_idx,]
+                tasks_train_each_pheno = tasks_train[phenos_train == pheno_idx,]
+                phenos_train_each_pheno = phenos_train[phenos_train == pheno_idx,]
 
                 x_train_phenos_list.append(x_train_each_pheno[0:max_counts, ])
                 tasks_train_list.append(tasks_train_each_pheno[0:max_counts, ])
@@ -523,8 +523,8 @@ class STVAEmodel:
             phenos_equal_pheno = np.concatenate(phenos_train_list)
             np.random.seed(50)
             ran_vec = np.random.permutation(x_equal_pheno.shape[0])
-            x_equal_pheno, tasks_equal_pheno, phenos_equal_pheno = x_equal_pheno[ran_vec, ], tasks_equal_pheno[ran_vec, ], phenos_equal_pheno[ran_vec, ]
-
+            x_equal_pheno, tasks_equal_pheno, phenos_equal_pheno = x_equal_pheno[ran_vec,], tasks_equal_pheno[ran_vec,], \
+                                                                   phenos_equal_pheno[ran_vec,]
 
             # Produce base points
             x_base, tasks_base, phenos_base = x_train[0:4096, ], tasks_train[0:4096, ], phenos_train[0:4096, ]
@@ -534,7 +534,6 @@ class STVAEmodel:
         # Convert to tensor
         x_equal_pheno = torch.from_numpy(x_equal_pheno).float().to(self.device)
         x_base = torch.from_numpy(x_base).float().to(self.device)
-
 
         # Forward pass
         self.model.eval()
@@ -553,15 +552,31 @@ class STVAEmodel:
         vis = LatentSpaceVideoVisualizer(model_identifier=model_identifier, save_vid_dir=save_vid_dir)
         vis.fit_umap(pose_z_seq=pose_z_seq_base, motion_z=motion_z_base)
 
+        # Transform motion_z to motion_z_umap
+        motion_z = motion_z.cpu().detach().numpy()
+        motion_z_base = motion_z_base.cpu().detach().numpy()
+        motion_z_umap = vis.motion_z_umapper.transform(motion_z)
+        motion_z_base_umap = vis.motion_z_umapper.transform(motion_z_base)
+        save_vis_data_for_interactiveplot(x=x_base.cpu().detach().numpy(),
+                                          recon=recon_motion_base.cpu().detach().numpy(),
+                                          motion_z_umap=motion_z_base_umap,
+                                          pheno_labels=phenos_base,
+                                          tasks_labels=tasks_base,
+                                          save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data")
+
+
+        return
+
         # "pheno" labels
-        vis.visualization_wrapper(x=x_equal_pheno, recon_motion=recon_motion, labels=phenos_equal_pheno, pred_labels=phenos_equal_pheno,
-                                  motion_z=motion_z, pose_z_seq=pose_z_seq,
+        vis.visualization_wrapper(x=x_equal_pheno, recon_motion=recon_motion, labels=phenos_equal_pheno,
+                                  pred_labels=phenos_equal_pheno,
+                                  motion_z_umap=motion_z_umap, pose_z_seq=pose_z_seq,
                                   recon_pose_z_seq=recon_pose_z_seq,
                                   test_acc=self.loss_meter.get_meter_avg()["test_acc"], mode="train", sample_num=25,
                                   label_type="pheno", plotting_mode=plotting_mode, motion_z_base=motion_z_base)
         vis.visualization_wrapper(x=x_equal_pheno, recon_motion=recon_motion, labels=tasks_equal_pheno,
                                   pred_labels=pred_tasks,
-                                  motion_z=motion_z, pose_z_seq=pose_z_seq,
+                                  motion_z_umap=motion_z_umap, pose_z_seq=pose_z_seq,
                                   recon_pose_z_seq=recon_pose_z_seq,
                                   test_acc=self.loss_meter.get_meter_avg()["test_acc"], mode="train", sample_num=25,
                                   label_type="task", plotting_mode=plotting_mode, motion_z_base=motion_z_base)

@@ -60,19 +60,47 @@ def draw_skeleton(ax, x, y, linewidth=1):
     return ax
 
 
-def plot2arr_skeleton(x, y, title, x_lim=(-0.6, 0.6), y_lim=(-0.6, 0.6)):
+def plot2arr_skeleton(x, y, title, x_lim=(-0.6, 0.6), y_lim=(-0.6, 0.6), show_axis=True):
     fig, ax = plt.subplots()
     ax.scatter(np.delete(x, excluded_points), np.delete(y, excluded_points))
     ax = draw_skeleton(ax, x, y)
     fig.suptitle(title)
     ax.set_xlim(x_lim[0], x_lim[1])
     ax.set_ylim(y_lim[1], y_lim[0])
+    if show_axis != True:
+        ax.axis("off")
     fig.tight_layout()
     fig.canvas.draw()
     data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
     data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
     plt.close()
     return data
+
+
+def gen_single_vid_two_skeleton_motion(x, recon, save_vid_path, x_lim=(-0.5, 0.5), y_lim=(-0.5, 0.5)):
+    """
+
+    Parameters
+    ----------
+    x : numpy.darray
+        With shape (50, seq_length=128)
+    recon : numpy.darray
+        With shape (50, seq_length=128)
+    save_vid_path : str
+        Path of video which is to be produced
+
+    Returns
+    -------
+    None
+
+    """
+    vwrtier = skv.FFmpegWriter(save_vid_path)
+    for t in range(x.shape[1]):
+        draw_x = plot2arr_skeleton(x=x[0:25, t], y=x[25:, t], title="", x_lim=x_lim, y_lim=y_lim, show_axis=False)
+        draw_recon = plot2arr_skeleton(x=recon[0:25, t], y=recon[25:, t], title="", x_lim=x_lim, y_lim=y_lim, show_axis=False)
+        final_frame = np.concatenate([draw_x[:, 150:530, :], draw_recon[:, 150:530, :]], axis=1)
+        vwrtier.writeFrame(final_frame)
+    vwrtier.close()
 
 
 def plot2arr_skeleton_multiple_samples(x, y, motion_z_umap, labels, title, x_lim=(-0.6, 0.6), y_lim=(-0.6, 0.6),
@@ -272,6 +300,28 @@ def gen_motion_space_scatter_animation(recon_motion, motion_z_umap, labels, kern
     return recon_motion_pooled, motion_z_umap_pooled, labels_pooled
 
 
+def save_vis_data_for_interactiveplot(x, recon, motion_z_umap, pheno_labels, tasks_labels, save_data_dir):
+
+    # Save arrays
+    np.save(os.path.join(save_data_dir, "x.npy"), x)
+    np.save(os.path.join(save_data_dir, "recon.npy"), recon)
+    np.save(os.path.join(save_data_dir, "motion_z_umap.npy"), motion_z_umap)
+    np.save(os.path.join(save_data_dir, "pheno_labels.npy"), pheno_labels)
+    np.save(os.path.join(save_data_dir, "tasks_labels.npy"), tasks_labels)
+
+    # Define and make directories
+    compare_vids_dir = os.path.join(save_data_dir, "videos", "compare")
+    os.makedirs(compare_vids_dir, exist_ok=True)
+
+    # Draw videos
+    total_vids_num = x.shape[0]
+    for i in range(total_vids_num):
+        print("\rWriting {}/{} input and recon videos".format(i, total_vids_num), end="", flush=True)
+        compare_vid_save_path = os.path.join(compare_vids_dir, "compare_%d.mp4" % i)
+        gen_single_vid_two_skeleton_motion(x[i, ], recon[i, ], compare_vid_save_path)
+
+
+
 class LatentSpaceVideoVisualizer:
     def __init__(self, model_identifier, save_vid_dir, seq_length=128):
         self.pose_umapper, self.motion_z_umapper = None, None
@@ -402,7 +452,6 @@ class LatentSpaceVideoVisualizer:
         min_y, max_y = np.min(recon_pooled[:, 25:, :]), np.max(recon_pooled[:, 25:, :])
 
         for t in range(self.seq_length):
-
             print("\rDrawing latent motion space {}/{}".format(t, self.seq_length), flush=True, end="")
 
             latent_motion_arr = plot2arr_skeleton_multiple_samples(x=recon_pooled[:, 0:25, t],
@@ -418,16 +467,16 @@ class LatentSpaceVideoVisualizer:
         print()
         vreader_latent_motion_space.close()
 
-    def visualization_wrapper(self, x, recon_motion, labels, pred_labels, motion_z, pose_z_seq, recon_pose_z_seq,
+
+    def visualization_wrapper(self, x, recon_motion, labels, pred_labels, motion_z_umap, pose_z_seq, recon_pose_z_seq,
                               test_acc, mode, plotting_mode=[True, True, True], num_samples_pose_z_seq=128,
-                              sample_num=10, label_type="task", motion_z_base=None):
+                              sample_num=10, label_type="task", motion_z_base=None, save_vis_data=None):
 
         print("Visulizing in mode {} and label {}".format(mode, label_type))
 
         # Convert to numpy
         x = x.cpu().detach().numpy()
         recon_motion = recon_motion.cpu().detach().numpy()
-        motion_z = motion_z.cpu().detach().numpy()  # (n_samples, motion_latents_dim)
         if motion_z_base is not None:
             motion_z_base = motion_z_base.cpu().detach().numpy()
         pose_z_seq = pose_z_seq.cpu().detach().numpy()
@@ -446,11 +495,11 @@ class LatentSpaceVideoVisualizer:
         labels_flat = labels_flat.reshape(-1)
 
         # Convert to umap space
-        motion_z_umap = self.motion_z_umapper.transform(motion_z)
         if motion_z_base is not None:
             motion_z_umap_base = self.motion_z_umapper.transform(motion_z_base)
-        # else:
-        #     motion_z_umap_base = None
+        else:
+            motion_z_umap_base = None
+
         pose_z_flat_umap = self.pose_umapper.transform(pose_z_flat)
         recon_pose_z_flat_umap = self.pose_umapper.transform(recon_pose_z_flat)
 
@@ -459,7 +508,8 @@ class LatentSpaceVideoVisualizer:
             self.gen_umap_plot(motion_z_umap=motion_z_umap,
                                pose_z_flat_umap=pose_z_flat_umap,
                                labels=labels, labels_flat=labels_flat,
-                               mode=mode, test_acc=test_acc, label_type=label_type, motion_z_umap_base=motion_z_umap_base)
+                               mode=mode, test_acc=test_acc, label_type=label_type,
+                               motion_z_umap_base=motion_z_umap_base)
         if plotting_mode[1]:
             self.gen_reconstruction_vid(x=x, recon_motion=recon_motion, motion_z_umap=motion_z_umap,
                                         pose_z_flat_umap=pose_z_flat_umap,
