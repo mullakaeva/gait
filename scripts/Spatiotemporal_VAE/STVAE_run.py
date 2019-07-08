@@ -492,7 +492,8 @@ class STVAEmodel:
             motion_z, _, _ = motion_z_info
         return recon_motion, pose_z_seq, recon_pose_z_seq, motion_z
 
-    def save_data_for_vis(self, data_gen, fit_samples_num, vis_data_dir, model_identifier):
+
+    def save_for_latent_vis(self, data_gen, fit_samples_num, vis_data_dir, model_identifier):
 
         # Refresh data generator
         self.data_gen = data_gen
@@ -554,102 +555,6 @@ class STVAEmodel:
                                           dirname="equal_phenos")
         return
 
-    def vis_reconstruction(self, data_gen, vid_sample_num, project_dir, model_identifier):
-        plotting_mode = [True, True, True]
-        # Define paths
-        save_vid_dir = os.path.join(project_dir, "vis", model_identifier)
-        if os.path.isdir(save_vid_dir) is not True:
-            os.makedirs(save_vid_dir)
-
-        # Refresh data generator
-        self.data_gen = data_gen
-
-        x_train_phenos_list, tasks_train_list, phenos_train_list = [], [], []
-
-        # Get data from data generator's first loop
-        for train_data, test_data in self.data_gen.iterator():
-            x_train_fit, x_masks_train, tasks_train, task_masks_train, phenos_train, pheno_masks_train = train_data
-
-            masks_train = (task_masks_train == 1) & (pheno_masks_train == 1)
-
-            x_train, tasks_train, phenos_train = x_train_fit[masks_train,].copy(), tasks_train[masks_train,], \
-                                                 phenos_train[
-                                                     masks_train]
-
-            # Produce phenos of equal/similar amounts
-            uniphenos, phenos_counts = np.unique(phenos_train, return_counts=True)
-            max_counts = np.sort(phenos_counts)[3]
-            # max_counts = 100
-            for pheno_idx in range(13):
-                x_train_each_pheno = x_train[phenos_train == pheno_idx,]
-                tasks_train_each_pheno = tasks_train[phenos_train == pheno_idx,]
-                phenos_train_each_pheno = phenos_train[phenos_train == pheno_idx,]
-
-                x_train_phenos_list.append(x_train_each_pheno[0:max_counts, ])
-                tasks_train_list.append(tasks_train_each_pheno[0:max_counts, ])
-                phenos_train_list.append(phenos_train_each_pheno[0:max_counts, ])
-
-            x_equal_pheno = np.vstack(x_train_phenos_list)
-            tasks_equal_pheno = np.concatenate(tasks_train_list)
-            phenos_equal_pheno = np.concatenate(phenos_train_list)
-            np.random.seed(50)
-            ran_vec = np.random.permutation(x_equal_pheno.shape[0])
-            x_equal_pheno, tasks_equal_pheno, phenos_equal_pheno = x_equal_pheno[ran_vec,], tasks_equal_pheno[ran_vec,], \
-                                                                   phenos_equal_pheno[ran_vec,]
-
-            # Produce base points
-            x_base, tasks_base, phenos_base = x_train[0:4096, ], tasks_train[0:4096, ], phenos_train[0:4096, ]
-
-            break
-
-        # Convert to tensor
-        x_equal_pheno = torch.from_numpy(x_equal_pheno).float().to(self.device)
-        x_base = torch.from_numpy(x_base).float().to(self.device)
-
-        # Forward pass
-        self.model.eval()
-        with torch.no_grad():
-            # For projection
-            recon_motion, pred_tasks, pose_z_info, motion_z_info = self.model(x_equal_pheno)
-            pose_z_seq, recon_pose_z_seq, _, _ = pose_z_info
-            motion_z, _, _ = motion_z_info
-
-            # Base
-            recon_motion_base, pred_tasks_base, pose_z_info_base, motion_z_info_base = self.model(x_base)
-            pose_z_seq_base, recon_pose_z_seq_base, _, _ = pose_z_info_base
-            motion_z_base, _, _ = motion_z_info_base
-
-        # Fit umap embedding with
-        vis = LatentSpaceVideoVisualizer(model_identifier=model_identifier, save_vid_dir=save_vid_dir)
-        vis.fit_umap(pose_z_seq=pose_z_seq_base, motion_z=motion_z_base)
-
-        # Transform motion_z to motion_z_umap
-        motion_z = motion_z.cpu().detach().numpy()
-        motion_z_base = motion_z_base.cpu().detach().numpy()
-        motion_z_umap = vis.motion_z_umapper.transform(motion_z)
-        motion_z_base_umap = vis.motion_z_umapper.transform(motion_z_base)
-        save_vis_data_for_interactiveplot(x=x_equal_pheno.cpu().detach().numpy(),
-                                          recon=recon_motion.cpu().detach().numpy(),
-                                          motion_z_umap=motion_z_umap,
-                                          pheno_labels=phenos_equal_pheno,
-                                          tasks_labels=tasks_equal_pheno,
-                                          save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data",
-                                          dirname="equal_phenos")
-
-        # # "pheno" labels
-        # vis.visualization_wrapper(x=x_equal_pheno, recon_motion=recon_motion, labels=phenos_equal_pheno,
-        #                           pred_labels=phenos_equal_pheno,
-        #                           motion_z_umap=motion_z_umap, pose_z_seq=pose_z_seq,
-        #                           recon_pose_z_seq=recon_pose_z_seq,
-        #                           test_acc=self.loss_meter.get_meter_avg()["test_acc"], mode="train", sample_num=25,
-        #                           label_type="pheno", plotting_mode=plotting_mode, motion_z_base=motion_z_base)
-        # vis.visualization_wrapper(x=x_equal_pheno, recon_motion=recon_motion, labels=tasks_equal_pheno,
-        #                           pred_labels=pred_tasks,
-        #                           motion_z_umap=motion_z_umap, pose_z_seq=pose_z_seq,
-        #                           recon_pose_z_seq=recon_pose_z_seq,
-        #                           test_acc=self.loss_meter.get_meter_avg()["test_acc"], mode="train", sample_num=25,
-        #                           label_type="task", plotting_mode=plotting_mode, motion_z_base=motion_z_base)
-        return
 
     def evaluate_all_models(self, data_gen, project_dir, model_list, draw_vid=False):
 

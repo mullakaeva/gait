@@ -230,9 +230,11 @@ class LabelsReader():
         self.labels_path = labels_path
         self.loaded_df = self._read_data_meta_info()
         self.all_filenames = []
-        self.vid2task, self.vid2pheno = self._construct_conversion_dict()
+        self.vid2task, self.vid2pheno, self.vid2idpatients = self._construct_conversion_dict()
 
     def get_label(self, vid_name_root):
+
+        # Tasks
         try:
             task = task2idx(self.vid2task[vid_name_root])
             task_found = True
@@ -240,6 +242,7 @@ class LabelsReader():
             task = 0  # shall be masked later
             task_found = False
 
+        # Phenos
         try:
             pheno = pheno2idx(self.vid2pheno[vid_name_root])
             pheno_found = True
@@ -247,24 +250,36 @@ class LabelsReader():
             pheno = 0  # shall be masked later
             pheno_found = False
 
-        return (task, pheno), (task_found, pheno_found)
+        # idpatients
+        try:
+            idpatient = self.vid2idpatients[vid_name_root]
+        except KeyError:
+            idpatient = None
+
+        return (task, pheno, idpatient), (task_found, pheno_found)
+
+    def get_idpatient(self, vid_name_root):
+
+        pass
 
     def get_all_filenames(self):
         return self.all_filenames
 
     def _construct_conversion_dict(self):
-        related_cols = ["fn_mp4", 'task', "phenotyp_label"]
+        related_cols = ["fn_mp4", 'task', "phenotyp_label", "idpatient"]
         df_pheno_filtered = self.loaded_df[related_cols]
         self.all_filenames = set(list(df_pheno_filtered["fn_mp4"]))
         df_pheno_filtered["fn_mp4"] = df_pheno_filtered["fn_mp4"].apply(lambda x: os.path.splitext(x)[0])
         vid2task = dict()
         vid2pheno = dict()
+        vid2idpatients = dict()
         for i in range(df_pheno_filtered.shape[0]):
-            vid_name, task, pheno = df_pheno_filtered.iloc[i].copy()
+            vid_name, task, pheno, idpatient = df_pheno_filtered.iloc[i].copy()
             vid2task[vid_name] = task
             vid2pheno[vid_name] = pheno
+            vid2idpatients[vid_name] = idpatient
 
-        return vid2task, vid2pheno
+        return vid2task, vid2pheno, vid2idpatients
 
     def _read_data_meta_info(self):
         loaded_df = pd.read_pickle(self.labels_path)
