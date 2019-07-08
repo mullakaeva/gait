@@ -3,10 +3,8 @@
 
 def run_train_and_vis_on_ssvae():
 
-    from single_skeleton_vae.VAE_run import GaitVAEmodel
-    from common.generator import GaitGeneratorFromDFforTemporalVAE, GaitGeneratorFromDFforSingleSkeletonVAE
-    from single_skeleton_vae.VAE_run import GaitSingleSkeletonVAEvisualiser
-    import os
+    from common.generator import GaitGeneratorFromDFforTemporalVAE
+    from VAE_run import GaitSingleSkeletonVAEvisualiser
 
     df_path = "/mnt/data/raw_features_zmatrix_row_labels.pickle"
     save_vid_dir = "single_skeleton_vae/vis/"

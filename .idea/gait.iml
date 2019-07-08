@@ -5,13 +5,13 @@
       <sourceFolder url="file://$MODULE_DIR$/scripts/common" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/scripts/common/tsne" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/scripts" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/scripts/neuralODE" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/scripts/neuralODE/pytorch_tutorial" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/scripts/neuralODE/torchdiffeq" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/scripts/neuralODE/gait_neuralODE" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/scripts/archived_scripts/neuralODE" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/scripts/archived_scripts/neuralODE/pytorch_tutorial" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/scripts/archived_scripts/neuralODE/torchdiffeq" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/scripts/archived_scripts/neuralODE/gait_neuralODE" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/scripts/vVnet" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/scripts/TemporalVAE" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/scripts/single_skeleton_vae" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/scripts/archived_scripts/TemporalVAE" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/scripts/archived_scripts/single_skeleton_vae" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/scripts/GMVAE" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/scripts/GMVAE/gaussian_mixture_practise" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/scripts/Spatiotemporal_VAE" isTestSource="false" />

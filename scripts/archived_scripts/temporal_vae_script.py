@@ -1,9 +1,8 @@
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
 
 def run_train_and_vis_on_tvae():
-    from TemporalVAE.TemporalVAE_run import GaitTVAEmodel, GaitCVAEvisualiser
+    from TemporalVAE_run import GaitCVAEvisualiser
     from common.generator import GaitGeneratorFromDFforTemporalVAE
-    import os
 
     df_path = "/mnt/data/raw_features_zmatrix_row_labels.pickle"
     kld_list = ([100, 150, 0.0001], )

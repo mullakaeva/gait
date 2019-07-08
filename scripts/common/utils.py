@@ -4,6 +4,23 @@ import numpy as np
 import re
 import pickle
 import pandas as pd
+import torch
+
+def tensor2numpy(*tensor_arrs):
+    output_list = []
+    for arr in tensor_arrs:
+        output_list.append(arr.cpu().detach().numpy())
+    return output_list
+
+
+def numpy2tensor(*numpy_arrs, device, parse_float=True):
+    output_list = []
+    for arr in numpy_arrs:
+        if parse_float:
+            output_list.append(torch.from_numpy(arr).float().to(device))
+        else:
+            output_list.append(torch.from_numpy(arr).to(device))
+    return output_list
 
 
 def extract_contagious(binary_train, max_neigh):
@@ -99,26 +116,6 @@ def pool_points(data, kernel_size):
     selected_data_all = np.stack(selected_data_list)
 
     return selected_data_all, selected_sampled_index_list
-
-
-class Detectron_data_loader():
-    def __init__(self, data_path):
-        self.boxes, self.keyps = self.read_detectron_output(data_path)
-
-    def getbox(self, frame_idx):
-        return self.boxes[frame_idx][1][0]
-
-    def getkeyps(self, frame_idx):
-        return self.keyps[frame_idx][1][0]
-
-    def __len__(self):
-        return len(self.keyps)
-
-    @staticmethod
-    def read_detectron_output(data_path):
-        # output: bbox (dict), keypoints (dict), with key = frame index
-        data = np.load(data_path, encoding="latin1")
-        return data[()]['boxes'], data[()]['keyps']
 
 
 class RunningAverageMeter:
@@ -519,6 +516,7 @@ pheno2idx_dict = {
 }
 
 idx2pheno_dict = {v: k for k, v in pheno2idx_dict.items()}
+
 
 def idx2pheno(idx):
     return idx2pheno_dict[idx]
