@@ -13,7 +13,7 @@ def tensor2numpy(*tensor_arrs):
     return output_list
 
 
-def numpy2tensor(*numpy_arrs, device, parse_float=True):
+def numpy2tensor(device, parse_float=True, *numpy_arrs):
     output_list = []
     for arr in numpy_arrs:
         if parse_float:

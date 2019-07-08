@@ -534,8 +534,8 @@ class STVAEmodel:
                                                                                                   0:fit_samples_num, ]
 
         # Forward pass
-        x_equal_pheno, x_base = numpy2tensor(x_equal_pheno, x_base)
-        recon_motion_equal, pose_z_seq_equal, recon_pose_z_seq_equal, motion_z_equal = self._forward_pass(x_each_pheno)
+        x_equal_pheno, x_base = numpy2tensor(self.device, True, x_equal_pheno, x_base)
+        recon_motion_equal, pose_z_seq_equal, recon_pose_z_seq_equal, motion_z_equal = self._forward_pass(x_equal_pheno)
         recon_motion_base, pose_z_seq_base, recon_pose_z_seq_base, motion_z_base = self._forward_pass(x_base)
 
         # Fit Umap embedding

@@ -294,6 +294,7 @@ def save_vis_data_for_interactiveplot(x, recon, motion_z_umap, pheno_labels, tas
     np.save(os.path.join(save_data_dir, "pheno_labels.npy"), pheno_labels)
     np.save(os.path.join(save_data_dir, "tasks_labels.npy"), tasks_labels)
 
+    return
     # Define and make directories
     compare_vids_dir = os.path.join(save_data_dir, "videos", dirname)
     os.makedirs(compare_vids_dir, exist_ok=True)
