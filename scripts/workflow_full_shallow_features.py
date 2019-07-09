@@ -41,19 +41,21 @@
 
 # %% ======================== Step 3: Feature Extraction =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:2 bash
-from common.feature_extraction import FeatureExtractorForODE
-scr_keyps_dir = "/mnt/data/preprocessed_keypoints"
-labels_path = "/mnt/data/labels/fn_tasks_phenos.pkl"
-df_save_path = "/mnt/data/feas_tasks_phenos_nanMasks_idpatient.pickle"
-minimum_sequence_window = 128
-extractor = FeatureExtractorForODE(scr_keyps_dir=scr_keyps_dir,
-                                   labels_path=labels_path,
-                                   df_save_path=df_save_path)
-extractor.extract(minimum_sequence_window)
+# from common.feature_extraction import FeatureExtractorForODE
+# scr_keyps_dir = "/mnt/data/preprocessed_keypoints"
+# labels_path = "/mnt/data/labels/fn_tasks_phenos.pkl"
+# df_save_path = "/mnt/data/feas_tasks_phenos_nanMasks_idpatient.pickle"
+# minimum_sequence_window = 128
+# extractor = FeatureExtractorForODE(scr_keyps_dir=scr_keyps_dir,
+#                                    labels_path=labels_path,
+#                                    df_save_path=df_save_path)
+# extractor.extract(minimum_sequence_window)
 
 # %% ======================== Step 4: Train and visualize on combined_VAE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:2 bash
-# from spatiotemporal_vae_script import run_train_and_vis_on_stvae
+from spatiotemporal_vae_script import run_train_and_vis_on_stvae, prepare_data
+prepare_data()
 # run_train_and_vis_on_stvae()
+
 
 

@@ -2,14 +2,20 @@
 from Spatiotemporal_VAE.STVAE_run import STVAEmodel
 from common.generator import GaitGeneratorFromDFforTemporalVAE
 from common.utils import dict2json, json2dict
+from common.data_preparation import prepare_data_for_concatenated_latent
 import os
 import pprint
+
+df_path = "/mnt/data/feas_tasks_phenos_nanMasks_idpatient.pickle"
+concatenated_df_path = "/mnt/data/concatenated_latents.pickle"
 
 def print_model_info(model_identifier, hyper_params):
     print("%s's hyper-paramters:" % model_identifier)
     pp = pprint.PrettyPrinter(indent=4)
     pp.pprint(hyper_params)
 
+def prepare_data():
+    prepare_data_for_concatenated_latent(df_path, concatenated_df_path)
 
 def run_train_and_vis_on_stvae():
     # Hard-coded stuffs
@@ -43,7 +49,6 @@ def run_train_and_vis_on_stvae():
     # Define paths
     # df_path = "/mnt/data/raw_features_zmatrix_row_labels_withNanMasks.pickle"
 
-    df_path = "/mnt/data/feas_tasks_phenos_nanMasks.pickle"
     save_model_path = "Spatiotemporal_VAE/model_chkpt/ckpt_%s.pth" % model_identifier
     project_dir = "Spatiotemporal_VAE"
     save_hyper_params_path = "Spatiotemporal_VAE/model_chkpt/hyperparms_%s.json" % model_identifier
@@ -87,12 +92,13 @@ def run_train_and_vis_on_stvae():
     # Visualization
     if os.path.isfile(save_model_path):
         data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=data_gen.num_rows-1, n=seq_dim, seed=60)
-        model_container.save_for_latent_vis(data_gen2,
-                                            4096,
-                                          "/mnt/JupyterNotebook/interactive_latent_exploration/data",
-                                            model_identifier)
-        # model_container.vis_reconstruction(data_gen2, 10, project_dir, model_identifier)
-        # model_container.save_model_losses_data(project_dir, model_identifier)
-        # model_container.evaluate_all_models(data_gen2, project_dir, None, draw_vid=True)
+        # model_container.save_for_latent_vis(data_gen2,
+        #                                     4096,
+        #                                   "/mnt/JupyterNotebook/interactive_latent_exploration/data",
+        #                                     model_identifier)
+        model_container.save_for_concatenated_latent_vis()
+
     else:
         print("Chkpt cannot be found")
+
+

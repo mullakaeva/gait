@@ -3,10 +3,10 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 from glob import glob
-from .utils import task2idx, pheno2idx, load_df_pickle, split_arr
+from .utils import task2idx, pheno2idx, load_df_pickle, split_arr, write_df_pickle
 
 
-def prepare_data_for_concatenated_latent(df_path):
+def prepare_data_for_concatenated_latent(df_path, output_save_path):
     """
 
     Parameters
@@ -69,3 +69,7 @@ def prepare_data_for_concatenated_latent(df_path):
     idpatients = np.concatenate(grand_idpatients_list)
     df_output = pd.DataFrame(
         {"features": list(features), "tasks": tasks, "idpatients": idpatients, "phenos": grand_uniphenos_list})
+
+    write_df_pickle(df_output, output_save_path)
+    print("dataframe with shape {} written to {}".format(df_output.shape,
+                                                         output_save_path))
