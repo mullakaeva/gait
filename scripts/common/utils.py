@@ -6,6 +6,41 @@ import pickle
 import pandas as pd
 import torch
 
+def split_arr(arr, stride=10, kernel=128):
+    """
+    This function split the array "arr" to multiple arrays by sliding over a time window and stride.
+    
+    Parameters
+    ----------
+    arr : numpy.darray
+        With shape (num_frames, 25, 2)
+    stride : int
+    kernel : int
+    
+    Returns
+    -------
+    split_arr : numpy.darray
+        With shape (n_copies, 50, 128)
+    """
+    
+    num_frames = arr.shape[0]
+    
+    if num_frames < (kernel + stride):
+        split_arr = np.zeros((1, 50, kernel))
+        split_arr[0, 0:25, :] = arr[0:kernel, :, 0].T
+        split_arr[0, 25:, :] = arr[0:kernel, :, 1].T
+    else:
+        n_copies = int((num_frames - kernel)/stride)
+        split_arr = np.zeros((n_copies, 50, kernel))
+        for i in range(n_copies):
+            start = i * stride
+            end = kernel + i * stride
+            split_arr[i, 0:25, :] = arr[start:end, :, 0].T
+            split_arr[i, 25:, :] = arr[start:end, :, 1].T
+        
+    return split_arr
+
+
 def tensor2numpy(*tensor_arrs):
     output_list = []
     for arr in tensor_arrs:
