@@ -7,10 +7,13 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 import pprint
+import pandas as pd
+import umap
 import re
 from glob import glob
-from common.utils import MeterAssembly, RunningAverageMeter, dict2json, tensor2numpy, numpy2tensor, load_df_pickle
+from common.utils import MeterAssembly, RunningAverageMeter, dict2json, tensor2numpy, numpy2tensor, load_df_pickle, write_df_pickle
 from common.visualisation import LatentSpaceVideoVisualizer, save_vis_data_for_interactiveplot
+from common.data_preparation import prepare_data_for_concatenated_latent
 from .Model import SpatioTemporalVAE
 from .GraphModel import GraphSpatioTemporalVAE
 
@@ -492,7 +495,6 @@ class STVAEmodel:
             motion_z, _, _ = motion_z_info
         return recon_motion, pose_z_seq, recon_pose_z_seq, motion_z
 
-
     def save_for_latent_vis(self, data_gen, fit_samples_num, vis_data_dir, model_identifier):
 
         # Refresh data generator
@@ -555,26 +557,76 @@ class STVAEmodel:
                                           dirname="equal_phenos")
         return
 
-
-    def save_for_concatenated_latent_vis(self, concatenated_df_path, save_data_dir):
+    def save_for_concatenated_latent_vis(self, df_path, save_data_dir):
 
         # Load data
-        df = load_df_pickle(concatenated_df_path)
-        df_shuffled = df.sample(frac=1).reset_index(drop=True)
+        df_shuffled = prepare_data_for_concatenated_latent(df_path)
+        df_shuffled = df_shuffled.sample(frac=1, random_state=60).reset_index(drop=True)
 
-        # Forward pass
-        x = np.asarray(df_shuffled["features"])
-        x = numpy2tensor(x)[0]
-        _, _, _, motion_z = self._forward_pass(x)
+        # Forward pass and add column
+        x = np.asarray(list(df_shuffled["features"]))
 
-        # Imputation
-        motion_z = tensor2numpy(motion_z)[0]
+        motion_z_list = []
+        batch = 512
+        batch_times = int(x.shape[0]/batch)
+        for i in range(batch_times+1):
+            if i < batch_times:
+                x_each = numpy2tensor(self.device, x[i*batch: (i+1)*batch, ])[0]
+            else:
+                x_each = numpy2tensor(self.device, x[i * batch: , ])[0]
+            _, _, _, motion_z_batch = self._forward_pass(x_each)
+            motion_z_batch = tensor2numpy(motion_z_batch)[0]
+            motion_z_list.append(motion_z_batch)
+
+        motion_z = np.vstack(motion_z_list)
         df_shuffled["motion_z"] = list(motion_z)
 
+        # Calc grand means for each tasks
+        print("Calculating grand means")
+        task_means = dict()
+        for task_idx in range(8):
+            mask = df_shuffled["tasks"] == task_idx
+            task_means[task_idx] = np.mean(np.asarray(list(df_shuffled[mask].motion_z)), axis=0)
 
+        # Calc means for each tasks in each patients
+        print("Calculating patient's task's mean")
+        all_patient_ids = np.unique(df_shuffled["idpatients"])
+        num_patient_ids = all_patient_ids.shape[0]
+        patient_id_list, features_list, phenos_list = [], [], []
 
+        for p_idx in range(num_patient_ids):
+            print("\rpatient {}/{}".format(p_idx, num_patient_ids), flush=True, end="")
+            patient_id = all_patient_ids[p_idx]
+            patient_mask = df_shuffled["idpatients"] == patient_id
+            unique_tasks = np.unique(df_shuffled[patient_mask]["tasks"])
+            unique_phenos = np.unique(np.concatenate(list(df_shuffled[patient_mask]["phenos"])))
+            task_vec_list = []
 
+            for task_idx in range(8):
 
+                if task_idx not in unique_tasks:
+                    task_vec_list.append(task_means[task_idx])
+                else:
+                    mask = (df_shuffled["idpatients"] == patient_id) & (df_shuffled["tasks"] == task_idx)
+                    patient_task_mean = np.mean(np.asarray(list(df_shuffled[mask]["motion_z"])), axis=0)
+                    task_vec_list.append(patient_task_mean)
+            task_vec = np.concatenate(task_vec_list)
+
+            patient_id_list.append(patient_id)
+            features_list.append(task_vec)
+            phenos_list.append(unique_phenos)
+
+        df_concat = pd.DataFrame({"patient_id": patient_id_list, "fingerprint": features_list,
+                                  "phenos": phenos_list})
+        print("Umapping")
+        self.fingerprint_umapper = umap.UMAP(n_neighbors=15,
+                                             n_components=2,
+                                             min_dist=0.1,
+                                             metric="euclidean")
+        fingerprint_z = self.fingerprint_umapper.fit_transform(np.asarray(list(df_concat["fingerprint"])))
+        df_concat["fingerprint_z"] = list(fingerprint_z)
+        print("Saving")
+        write_df_pickle(df_concat, os.path.join(save_data_dir, "concat_fingerprint.pickle"))
 
     # def evaluate_all_models(self, data_gen, project_dir, model_list, draw_vid=False):
     #

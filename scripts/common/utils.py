@@ -48,13 +48,10 @@ def tensor2numpy(*tensor_arrs):
     return output_list
 
 
-def numpy2tensor(device, parse_float=True, *numpy_arrs):
+def numpy2tensor(device, *numpy_arrs):
     output_list = []
     for arr in numpy_arrs:
-        if parse_float:
-            output_list.append(torch.from_numpy(arr).float().to(device))
-        else:
-            output_list.append(torch.from_numpy(arr).to(device))
+        output_list.append(torch.from_numpy(arr).float().to(device))
     return output_list
 
 

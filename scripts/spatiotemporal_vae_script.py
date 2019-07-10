@@ -1,4 +1,5 @@
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
+
 from Spatiotemporal_VAE.STVAE_run import STVAEmodel
 from common.generator import GaitGeneratorFromDFforTemporalVAE
 from common.utils import dict2json, json2dict
@@ -13,9 +14,6 @@ def print_model_info(model_identifier, hyper_params):
     print("%s's hyper-paramters:" % model_identifier)
     pp = pprint.PrettyPrinter(indent=4)
     pp.pprint(hyper_params)
-
-def prepare_data():
-    prepare_data_for_concatenated_latent(df_path, concatenated_df_path)
 
 def run_train_and_vis_on_stvae():
     # Hard-coded stuffs
@@ -96,7 +94,7 @@ def run_train_and_vis_on_stvae():
         #                                     4096,
         #                                   "/mnt/JupyterNotebook/interactive_latent_exploration/data",
         #                                     model_identifier)
-        model_container.save_for_concatenated_latent_vis()
+        model_container.save_for_concatenated_latent_vis(df_path, save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data")
 
     else:
         print("Chkpt cannot be found")
