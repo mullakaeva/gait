@@ -52,9 +52,10 @@ def gen_template(all_videos_list, output_videos_dir, output_data_dir):
 
 
 if __name__ == "__main__":
-    src_videos_dir = "/mnt/data/gait/data/videos_mp4/"
-    labels_path = "/mnt/data/hoi/gait_analysis/data/labels/z_matrix/df_gait_vid_linked_190718.pkl"
-    all_videos_list = sample_subset_of_videos(src_videos_dir, sample_num=0, labels_path=labels_path, seed=50,
+    # src_videos_dir = "/mnt/data/gait/data/videos_mp4/"
+    src_videos_dir = "/mnt/media/dsgz2tb_2/videos_converted/"
+    # labels_path = "/mnt/data/hoi/gait_analysis/data/labels/z_matrix/df_gait_vid_linked_190718.pkl"
+    all_videos_list = sample_subset_of_videos(src_videos_dir, sample_num=0, labels_path="", seed=50,
                                               with_labels=False)
 
     output_videos_dir = "/mnt/data/hoi/gait_analysis/data/openpose_visualisation"

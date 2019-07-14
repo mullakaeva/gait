@@ -537,7 +537,7 @@ class STVAEmodel:
                                                                                                   0:fit_samples_num, ]
 
         # Forward pass
-        x_equal_pheno, x_base = numpy2tensor(self.device, True, x_equal_pheno, x_base)
+        x_equal_pheno, x_base = numpy2tensor(self.device, x_equal_pheno, x_base)
         recon_motion_equal, pose_z_seq_equal, recon_pose_z_seq_equal, motion_z_equal = self._forward_pass(x_equal_pheno)
         recon_motion_base, pose_z_seq_base, recon_pose_z_seq_base, motion_z_base = self._forward_pass(x_base)
 
@@ -560,7 +560,7 @@ class STVAEmodel:
     def save_for_concatenated_latent_vis(self, df_path, save_data_dir):
 
         # Load data
-        df_shuffled = prepare_data_for_concatenated_latent(df_path)
+        df_shuffled = prepare_data_for_concatenated_latent(df_path, equal_phenos=False)
         df_shuffled = df_shuffled.sample(frac=1, random_state=60).reset_index(drop=True)
 
         # Forward pass and add column

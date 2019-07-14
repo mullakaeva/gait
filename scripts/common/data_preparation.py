@@ -34,7 +34,7 @@ def gen_equal_phenos_df(df_input):
     return df_concat
 
 
-def prepare_data_for_concatenated_latent(df_input_path, output_save_path=None):
+def prepare_data_for_concatenated_latent(df_input_path, equal_phenos=False, output_save_path=None):
     """
 
     Parameters
@@ -54,7 +54,8 @@ def prepare_data_for_concatenated_latent(df_input_path, output_save_path=None):
     df_mask = (df["task_masks"] == True) & (df["pheno_masks"] == True) & (np.isnan(df["idpatients"]) == False)
     df_filtered = df[df_mask]
 
-    df_filtered = gen_equal_phenos_df(df_filtered)
+    if equal_phenos:
+        df_filtered = gen_equal_phenos_df(df_filtered)
 
     # Construct dataframe
     data_dict = dict()
