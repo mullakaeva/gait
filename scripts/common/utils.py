@@ -4,7 +4,7 @@ import numpy as np
 import re
 import pickle
 import pandas as pd
-# import torch
+import torch
 
 def split_arr(arr, stride=10, kernel=128):
     """
@@ -298,20 +298,42 @@ class LabelsReader():
         return self.all_filenames
 
     def _construct_conversion_dict(self):
-        related_cols = ["fn_mp4", 'task', "phenotyp_label", "idpatient"]
-        df_pheno_filtered = self.loaded_df[related_cols]
+        df_pheno_filtered = self._dataframe_preprocessing()
         self.all_filenames = set(list(df_pheno_filtered["fn_mp4"]))
         df_pheno_filtered["fn_mp4"] = df_pheno_filtered["fn_mp4"].apply(lambda x: os.path.splitext(x)[0])
         vid2task = dict()
         vid2pheno = dict()
         vid2idpatients = dict()
         for i in range(df_pheno_filtered.shape[0]):
-            vid_name, task, pheno, idpatient = df_pheno_filtered.iloc[i].copy()
+            vid_name, task, pheno, idpatient, pheno_order = df_pheno_filtered.iloc[i].copy()
             vid2task[vid_name] = task
             vid2pheno[vid_name] = pheno
             vid2idpatients[vid_name] = idpatient
 
         return vid2task, vid2pheno, vid2idpatients
+
+    def _dataframe_preprocessing(self):
+        print("Preprocessing dataframe in LabelReader while constructing vid2* convertor dict.")
+
+        # Strip away unnecessary columns
+        related_cols = ["fn_mp4", 'task', "phenotyp_label", "idpatient", "phenotyp_order"]
+        df_output = self.loaded_df[related_cols].copy()
+
+        # Strip away phenotype label that is nan
+        phenolabel_nan_mask = df_output["phenotyp_label"].astype(str) != 'nan'
+        df_output = df_output[phenolabel_nan_mask]
+
+        # Choose phenotype with order of 1 (primary) or nan (seems to have same meaning as 1)
+        phenoorder_mask = (df_output["phenotyp_order"] == 1) | (np.isnan(df_output["phenotyp_order"]) == True)
+        df_output = df_output[phenoorder_mask]
+
+        # Print and check the shape of dataframe
+        print("Before preprocessing, dataframe's shape = \n{}\nAfter preprocessing = \n{}".format(self.loaded_df.shape,
+                                                                                                  df_output.shape))
+
+        return df_output
+
+
 
     def _read_data_meta_info(self):
         loaded_df = pd.read_pickle(self.labels_path)
