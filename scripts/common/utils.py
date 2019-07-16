@@ -8,6 +8,7 @@ import pickle
 import pandas as pd
 import torch
 
+
 def split_arr(arr, stride=10, kernel=128):
     """
     This function split the array "arr" to multiple arrays by sliding over a time window and stride.
@@ -24,22 +25,22 @@ def split_arr(arr, stride=10, kernel=128):
     split_arr : numpy.darray
         With shape (n_copies, 50, 128)
     """
-    
+
     num_frames = arr.shape[0]
-    
+
     if num_frames < (kernel + stride):
         split_arr = np.zeros((1, 50, kernel))
         split_arr[0, 0:25, :] = arr[0:kernel, :, 0].T
         split_arr[0, 25:, :] = arr[0:kernel, :, 1].T
     else:
-        n_copies = int((num_frames - kernel)/stride)
+        n_copies = int((num_frames - kernel) / stride)
         split_arr = np.zeros((n_copies, 50, kernel))
         for i in range(n_copies):
             start = i * stride
             end = kernel + i * stride
             split_arr[i, 0:25, :] = arr[start:end, :, 0].T
             split_arr[i, 25:, :] = arr[start:end, :, 1].T
-        
+
     return split_arr
 
 
@@ -343,31 +344,27 @@ class LabelsReader():
 
         return df_output
 
-
-
     def _read_data_meta_info(self):
         loaded_df = pd.read_pickle(self.labels_path)
         return loaded_df
 
 
-def convert_1d_to_onehot(arr):
+def expand1darr(arr, dim, repeat_dim=128):
     """
     Convert 1d numpy array (values parsed to integers) to 2d one-hot vector array.
     Parameters
     ----------
     arr : numpy.darray
         1d-array
-
-    Returns
-    -------
-        2d-array with one hot vectors along axis 1
+    dim : int
+        dimension of the label
     """
-    arr_int = arr.astype(np.int)
-    label_types = [0, 1, 2, 3, 4, 5, 6, 7]
-    output = np.zeros((arr_int.shape[0], len(label_types)))
-    for i in range(arr_int.shape[0]):
-        output[i, arr_int[i]] = 1
-    return output
+    output_arr = np.zeros((arr.shape[0], dim))
+    for i in range(arr.shape[0]):
+        output_arr[i, arr[i]] = 1
+
+    output_arr = np.repeat(output_arr[:, :, np.newaxis], repeat_dim, axis=2)
+    return output_arr
 
 
 def load_df_pickle(df_path):
