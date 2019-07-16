@@ -11,7 +11,8 @@ import pandas as pd
 import umap
 import re
 from glob import glob
-from common.utils import MeterAssembly, RunningAverageMeter, dict2json, tensor2numpy, numpy2tensor, load_df_pickle, write_df_pickle
+from common.utils import MeterAssembly, RunningAverageMeter, dict2json, tensor2numpy, numpy2tensor, load_df_pickle, \
+    write_df_pickle
 from common.visualisation import LatentSpaceVideoVisualizer, save_vis_data_for_interactiveplot
 from common.data_preparation import prepare_data_for_concatenated_latent
 from .Model import SpatioTemporalVAE
@@ -106,12 +107,11 @@ class STVAEmodel:
             for epoch in range(n_epochs):
                 iter_idx = 0
 
-                for train_data, test_data in self.data_gen.iterator():
+                for train_data, test_data, towards_info in self.data_gen.iterator():
                     x, nan_masks, labels, labels_mask, _, _ = train_data
                     x_test, nan_masks_test, labels_test, labels_mask_test, _, _ = test_data
+                    towards, towards_test = towards_info
 
-                for (x, nan_masks, labels, labels_mask), (
-                        x_test, nan_masks_test, labels_test, labels_mask_test) in self.data_gen.iterator():
                     # Convert numpy to torch.tensor
                     x = torch.from_numpy(x).float().to(self.device)
                     x_test = torch.from_numpy(x_test).float().to(self.device)
@@ -501,15 +501,16 @@ class STVAEmodel:
         self.data_gen = data_gen
 
         # Lists for concatenation
-        x_equal_phenos_list, tasks_equal_list, phenos_equal_list = [], [], []
+        x_equal_phenos_list, tasks_equal_list, phenos_equal_list, towards_equal_list = [], [], [], []
 
         # Get data from data generator's first loop
-        for train_data, test_data in self.data_gen.iterator():
+        for train_data, test_data, towards_info in self.data_gen.iterator():
 
             # x_fit for umap embedding
             x, x_masks, tasks, task_masks, phenos, pheno_masks = train_data
+            towards, _ = towards_info
             masks = (task_masks == 1) & (pheno_masks == 1)
-            x, tasks, phenos = x[masks,].copy(), tasks[masks,], phenos[masks,]
+            x, tasks, phenos, towards = x[masks,].copy(), tasks[masks,], phenos[masks,], towards[masks,]
 
             # Produce phenos of equal/similar amounts
             uniphenos, phenos_counts = np.unique(phenos, return_counts=True)
@@ -520,18 +521,24 @@ class STVAEmodel:
                 x_each_pheno = x[phenos == pheno_idx,]
                 tasks_each_pheno = tasks[phenos == pheno_idx,]
                 phenos_each_pheno = phenos[phenos == pheno_idx,]
+                towards_each_pheno = towards[phenos == pheno_idx,]
                 x_equal_phenos_list.append(x_each_pheno[0:max_counts, ])
                 tasks_equal_list.append(tasks_each_pheno[0:max_counts, ])
                 phenos_equal_list.append(phenos_each_pheno[0:max_counts, ])
+                towards_equal_list.append(towards_each_pheno[0:max_counts, ])
 
             # Concatenate and prepare data
             x_equal_pheno = np.vstack(x_equal_phenos_list)
             tasks_equal_pheno = np.concatenate(tasks_equal_list)
             phenos_equal_pheno = np.concatenate(phenos_equal_list)
+            towards_equal_pheno = np.concatenate(towards_equal_list)
+
             np.random.seed(50)
             ran_vec = np.random.permutation(x_equal_pheno.shape[0])
-            x_equal_pheno, tasks_equal_pheno, phenos_equal_pheno = x_equal_pheno[ran_vec,], tasks_equal_pheno[ran_vec,], \
-                                                                   phenos_equal_pheno[ran_vec,]
+            x_equal_pheno, tasks_equal_pheno, phenos_equal_pheno, towards_equal_pheno = x_equal_pheno[ran_vec,], \
+                                                                                        tasks_equal_pheno[ran_vec,], \
+                                                                                        phenos_equal_pheno[ran_vec,], \
+                                                                                        towards_equal_pheno[ran_vec]
 
             x_base, tasks_base, phenos_base = x[0:fit_samples_num, ], tasks[0:fit_samples_num, ], phenos[
                                                                                                   0:fit_samples_num, ]
@@ -553,6 +560,7 @@ class STVAEmodel:
                                           motion_z_umap=motion_z_equal_umap,
                                           pheno_labels=phenos_equal_pheno,
                                           tasks_labels=tasks_equal_pheno,
+                                          towards_labels=towards_equal_pheno,
                                           save_data_dir=vis_data_dir,
                                           dirname="equal_phenos")
         return
@@ -568,12 +576,12 @@ class STVAEmodel:
 
         motion_z_list = []
         batch = 512
-        batch_times = int(x.shape[0]/batch)
-        for i in range(batch_times+1):
+        batch_times = int(x.shape[0] / batch)
+        for i in range(batch_times + 1):
             if i < batch_times:
-                x_each = numpy2tensor(self.device, x[i*batch: (i+1)*batch, ])[0]
+                x_each = numpy2tensor(self.device, x[i * batch: (i + 1) * batch, ])[0]
             else:
-                x_each = numpy2tensor(self.device, x[i * batch: , ])[0]
+                x_each = numpy2tensor(self.device, x[i * batch:, ])[0]
             _, _, _, motion_z_batch = self._forward_pass(x_each)
             motion_z_batch = tensor2numpy(motion_z_batch)[0]
             motion_z_list.append(motion_z_batch)

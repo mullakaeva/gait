@@ -83,8 +83,8 @@ class GaitGeneratorFromDF:
         df_shuffled = self.df_train.iloc[np.random.permutation(self.num_rows), :]
 
         for start, stop in duration_indices:
-            sampled_data, times = self._convert_df_to_data(df_shuffled, start, stop)
-            yield sampled_data, times
+            info = self._convert_df_to_data(df_shuffled, start, stop)
+            yield info
 
     def _convert_df_to_data(self, df_shuffled, start, stop):
 
@@ -143,13 +143,17 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
 
     def _convert_df_to_data(self, df_shuffled, start, stop):
         selected_df = df_shuffled.iloc[start:stop, :].copy()
-        (x_train, x_train_masks), (task_train, task_train_masks), (pheno_train, pheno_train_masks) = self._loop_for_array_construction(selected_df, self.m)
+        (x_train, x_train_masks), (task_train, task_train_masks), (
+        pheno_train, pheno_train_masks), towards = self._loop_for_array_construction(selected_df, self.m)
 
-        (x_test, x_test_masks), (task_test, task_test_masks), (pheno_test, pheno_test_masks) = self._loop_for_array_construction(self.df_test, self.df_test.shape[0])
+        (x_test, x_test_masks), (task_test, task_test_masks), (
+        pheno_test, pheno_test_masks), towards_test = self._loop_for_array_construction(self.df_test,
+                                                                                        self.df_test.shape[0])
 
         train_info = (x_train, x_train_masks, task_train, task_train_masks, pheno_train, pheno_train_masks)
         test_info = (x_test, x_test_masks, task_test, task_test_masks, pheno_test, pheno_test_masks)
-        return train_info, test_info
+        other_info = (towards, towards_test)
+        return train_info, test_info, other_info
 
     def _loop_for_array_construction(self, df, num_samples):
         """
@@ -175,7 +179,7 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         task_masks_arr = np.zeros(num_samples)
         phenos_arr = np.zeros(num_samples)
         pheno_masks_arr = np.zeros(num_samples)
-
+        towards_arr = np.zeros(num_samples)
         for i in range(num_samples):
             # Get features and labels
             fea_vec = df["features"].iloc[i]  # numpy.darray (num_frames, 25, 2)
@@ -184,6 +188,7 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
             task_mask = df["task_masks"].iloc[i]  # numpy.bool, True for non-nan, False for nan
             pheno = df["phenos"].iloc[i]  # numpy.int64
             pheno_mask = df["pheno_masks"].iloc[i]  # numpy.bool, True for non-nan, False for nan
+            towards = df["towards_camera"].iloc[i]  # numpy.int64. 0=unknown, 1=left, 2=right
 
             # Slice to the receptive window
             slice_start = np.random.choice(fea_vec.shape[0] - self.n)
@@ -195,6 +200,7 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
             task_masks_arr[i] = task_mask
             phenos_arr[i] = pheno
             pheno_masks_arr[i] = pheno_mask
+            towards_arr[i] = towards
 
             # Construct output
             features_arr[i, 0:self.keyps_x_dims, :] = fea_vec_sliced[:, :, 0].T  # Store x-coordinates
@@ -203,5 +209,4 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
             fea_masks_arr[i, self.keyps_x_dims:self.total_fea_dims, :] = fea_mask_vec_sliced[:, :,
                                                                          1].T  # Store y-coordinates
 
-        return (features_arr, fea_masks_arr), (tasks_arr, task_masks_arr), (phenos_arr, pheno_masks_arr)
-
+        return (features_arr, fea_masks_arr), (tasks_arr, task_masks_arr), (phenos_arr, pheno_masks_arr), towards_arr

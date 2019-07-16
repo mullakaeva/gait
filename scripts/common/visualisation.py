@@ -52,8 +52,8 @@ def build_frame_2by3(*args):
 def draw_skeleton(ax, x, y, linewidth=1):
     side_dict = {
         "m": "0",
-        "l": "0",
-        "r": "0.3"
+        "l": "r",
+        "r": "b"
     }
     for start, end, side in openpose_body_draw_sequence:
         ax.plot(x[[start, end]], y[[start, end]], c=side_dict[side], linewidth=linewidth)
@@ -285,7 +285,7 @@ def gen_motion_space_scatter_animation(recon_motion, motion_z_umap, labels, kern
     return recon_motion_pooled, motion_z_umap_pooled, labels_pooled
 
 
-def save_vis_data_for_interactiveplot(x, recon, motion_z_umap, pheno_labels, tasks_labels, save_data_dir, dirname):
+def save_vis_data_for_interactiveplot(x, recon, motion_z_umap, pheno_labels, tasks_labels, towards_labels, save_data_dir, dirname):
 
     # Save arrays
     np.save(os.path.join(save_data_dir, "x.npy"), x)
@@ -293,6 +293,7 @@ def save_vis_data_for_interactiveplot(x, recon, motion_z_umap, pheno_labels, tas
     np.save(os.path.join(save_data_dir, "motion_z_umap.npy"), motion_z_umap)
     np.save(os.path.join(save_data_dir, "pheno_labels.npy"), pheno_labels)
     np.save(os.path.join(save_data_dir, "tasks_labels.npy"), tasks_labels)
+    np.save(os.path.join(save_data_dir, "towards_labels.npy"), towards_labels)
 
     return
     # Define and make directories

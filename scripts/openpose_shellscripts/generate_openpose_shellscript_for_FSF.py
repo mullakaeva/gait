@@ -20,7 +20,7 @@ def gen_template(all_videos_list, output_videos_dir, output_data_dir):
 
     all_videos = sorted(all_videos_list)
     move_directory = "cd /opt/openpose/\n"
-    command_template = "./build/examples/openpose/openpose.bin --video {} --write_video {} --write_json {} --display 0 --logging_level 4\n"
+    command_template = './build/examples/openpose/openpose.bin --video "{}" --write_video "{}" --write_json "{}" --display 0 --logging_level 4\n'
     whole_command = move_directory
     skipped_num = 0
     for idx, input_vid_path in enumerate(all_videos):

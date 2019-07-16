@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import os
 import json
 import numpy as np
@@ -275,6 +277,7 @@ class LabelsReader():
             task_found = False
 
         # Phenos
+
         try:
             pheno = pheno2idx(self.vid2pheno[vid_name_root])
             pheno_found = True
@@ -282,11 +285,17 @@ class LabelsReader():
             pheno = 0  # shall be masked later
             pheno_found = False
 
+        # if (task_found == True) and (pheno_found == False):
+        #     import pdb
+        #     pdb.set_trace()
+
         # idpatients
         try:
             idpatient = self.vid2idpatients[vid_name_root]
         except KeyError:
             idpatient = None
+
+        # print("Task: {} | Pheno: {}".format(task_found, pheno_found))
 
         return (task, pheno, idpatient), (task_found, pheno_found)
 
@@ -304,10 +313,11 @@ class LabelsReader():
         vid2task = dict()
         vid2pheno = dict()
         vid2idpatients = dict()
+
         for i in range(df_pheno_filtered.shape[0]):
             vid_name, task, pheno, idpatient, pheno_order = df_pheno_filtered.iloc[i].copy()
             vid2task[vid_name] = task
-            vid2pheno[vid_name] = pheno
+            vid2pheno[vid_name] = str(pheno)
             vid2idpatients[vid_name] = idpatient
 
         return vid2task, vid2pheno, vid2idpatients
@@ -364,6 +374,7 @@ def load_df_pickle(df_path):
     with open(df_path, "rb") as fh:
         try:
             loaded_df = pickle.load(fh, encoding='latin1')
+            # loaded_df = pickle.load(fh, encoding='utf-8')
         except TypeError:
             loaded_df = pickle.load(fh)
     return loaded_df
@@ -569,21 +580,20 @@ def task2idx(task):
 #  'ppv' 'psychogenic' 'sensory ataxia' 'spastic' 'suspectnph']
 
 pheno2idx_dict = {
-    "ataxia": 0,
-    "episodic": 1,
-    "hs": 2,
-    "hypokinetic": 3,
-    "normal": 4,
-    "nph": 5,
-    "paretic": 6,
-    "phobic": 7,
-    "ppv": 8,
-    "psychogenic": 9,
-    "sensory ataxis": 10,
-    "spastic": 11,
-    "suspectnph": 12
+    "aengstliches Gangbild": 0,
+    "antalgisches Gangbild": 1,
+    "ataktisches Gangbild": 2,
+    "dyskinetisches Gangbild": 3,
+    "funktionelles Gangbild": 4,
+    "gesundes Gangbild": 5,
+    "hypokinetisch-frontales Gangbild": 6,
+    "hypokinetisches Gangbild": 7,
+    "motorisch-kognitives Gangbild": 8,
+    "paretisches Gangbild": 9,
+    "sensorisch-ataktisches Gangbild": 10,
+    "spastisch-ataktisches Gangbild": 11,
+    "spastisches Gangbild": 12
 }
-
 idx2pheno_dict = {v: k for k, v in pheno2idx_dict.items()}
 
 

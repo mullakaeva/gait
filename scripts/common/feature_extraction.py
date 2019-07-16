@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import os
 import numpy as np
 import pandas as pd
@@ -106,8 +108,8 @@ class FeatureExtractor():
         data_accumulator = np.zeros([num] + [x for x in self.keyps_shape])
 
         for idx, data_info in enumerate(data_gen.iterator()):
-            if idx > 500:
-                break
+            # if idx > 500:
+            #     break
             print("\r%d/%d Estimating means incrementally from each data file." % (idx, data_gen.num_files), end="",
                   flush=True)
             data, _ = data_info
@@ -266,26 +268,25 @@ class FeatureExtractorForODE(FeatureExtractor):
 
             # Second column: features + Forth column: nan_mask
             feature, feature_mask = self._transform_to_features(keyps_arr)
+            feature_mask = np.invert(feature_mask)  # False = masked
 
             # 3rd-5th column: labels
             (task, pheno, idpatient), (task_mask, pheno_mask) = self.lreader.get_label(vid_name_root)
 
             # Detact walking direction
-            towards = self._check_towards(feature, np.invert(feature_mask))
-            if towards is None:  # If towards is None, the array has all-none values
-                print("Cannot determine direction")
-                continue
+            towards = self._check_towards(feature,
+                                          np.invert(feature_mask))  # For feature mask here, we want True = masked
 
             # Append to lists
             self.vid_name_roots_list.append(vid_name_root)
             self.features_list.append(feature)
-            self.feature_masks_list.append(np.invert(feature_mask))  # False = masked
+            self.feature_masks_list.append(feature_mask)  # False = masked
             self.tasks_list.append(task)
             self.task_masks_list.append(task_mask)  # False = masked
             self.phenos_list.append(pheno)
             self.pheno_masks_list.append(pheno_mask)  # False = masked
             self.idpatients_list.append(idpatient)  # None if not found
-            self.towards_camera_list.append(towards)  # True = towards camera. False = otherwise
+            self.towards_camera_list.append(towards)  # 0=unknown, 1=left, 2=right
 
         # Create dataframe
         self.df["vid_name_roots"] = self.vid_name_roots_list
@@ -335,7 +336,7 @@ class FeatureExtractorForODE(FeatureExtractor):
         arr : numpy.darray
             With shape (num_frames, 25, 2), scaled by ./250 and translated to hip centre
         mask : numpy.darray
-            With shape (num_frames, 25, 2), boolean values. True for masked entry.
+            With shape (num_frames, 25, 2), boolean values. True for masked entries.
         Returns
         -------
         towards : bool
@@ -351,9 +352,9 @@ class FeatureExtractorForODE(FeatureExtractor):
         x_sign_L = np.ma.median(np.ma.mean(masked_arr_L, axis=1)) > 0  # Shape -> (num_joints, ) -> (1,)
         x_sign_R = np.ma.median(np.ma.mean(masked_arr_R, axis=1)) > 0  # Shape -> (num_joints, ) -> (1,)
 
-        if (x_sign_L == True) or (x_sign_R == False):
-            return True  # Facing to camera
-        elif (x_sign_L == False) or (x_sign_R == True):
-            return False  # Back to camera
+        if (x_sign_L == True) and (x_sign_R == False):
+            return 1  # Facing to camera
+        elif (x_sign_L == False) and (x_sign_R == True):
+            return 2  # Back to camera
         else:
-            return None
+            return 0
