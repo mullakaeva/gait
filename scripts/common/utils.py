@@ -359,11 +359,9 @@ def expand1darr(arr, dim, repeat_dim=128):
     dim : int
         dimension of the label
     """
-    output_arr = np.zeros((arr.shape[0], dim))
-    for i in range(arr.shape[0]):
-        output_arr[i, arr[i]] = 1
-
-    output_arr = np.repeat(output_arr[:, :, np.newaxis], repeat_dim, axis=2)
+    m = arr.shape[0]
+    output_arr = np.zeros((m, dim, repeat_dim))
+    output_arr[np.arange(m), arr, :] = 1
     return output_arr
 
 

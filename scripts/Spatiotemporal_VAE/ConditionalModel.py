@@ -1,5 +1,6 @@
-from .Model import SpatioTemporalVAE, PoseVAE, MotionVAE
+from .Model import SpatioTemporalVAE, PoseVAE, MotionVAE, Unsqueeze, ClassNet
 import torch
+import torch.nn as nn
 
 
 class ConditionalSpatioTemporalVAE(SpatioTemporalVAE):
@@ -47,19 +48,25 @@ class ConditionalSpatioTemporalVAE(SpatioTemporalVAE):
             device=device
         )
         self.conditional_label_dim = conditional_label_dim
-        self.pose_vae = PoseVAE(fea_dim=self.fea_dim,
-                                latent_dim=self.posenet_latent_dim,
-                                kld=self.posenet_kld,
-                                dropout_p=self.posenet_kld,
-                                device=self.device)
+        self.pose_vae = ConditionalPoseVAE(fea_dim=self.fea_dim,
+                                           latent_dim=self.posenet_latent_dim,
+                                           conditional_label_dim=self.conditional_label_dim,
+                                           kld=self.posenet_kld,
+                                           dropout_p=self.posenet_kld,
+                                           device=self.device)
 
-        self.motion_vae = MotionVAE(fea_dim=self.posenet_latent_dim,
-                                    seq_dim=self.seq_dim,
-                                    hidden_dim=self.motionnet_hidden_dim,
-                                    latent_dim=self.motionnet_latent_dim,
-                                    kld=self.motionnet_kld,
-                                    dropout_p=self.motionnet_dropout_p,
-                                    device=self.device)
+        self.motion_vae = ConditionalMotionVAE(fea_dim=self.posenet_latent_dim,
+                                               seq_dim=self.seq_dim,
+                                               hidden_dim=self.motionnet_hidden_dim,
+                                               latent_dim=self.motionnet_latent_dim,
+                                               conditional_label_dim=self.conditional_label_dim,
+                                               kld=self.motionnet_kld,
+                                               dropout_p=self.motionnet_dropout_p,
+                                               device=self.device)
+        self.class_net = ConditionalClassNet(input_dim=self.motionnet_latent_dim,
+                                             conditional_label_dim=self.conditional_label_dim,
+                                             n_classes=self.n_classes,
+                                             device=self.device)
 
     def forward(self, x, labels):
         """
@@ -70,16 +77,25 @@ class ConditionalSpatioTemporalVAE(SpatioTemporalVAE):
         labels : torch.tensor
             With shape (m, label_dim, seq)
         """
+
+        # Concatenation of input for encoding
         if self.conditional_label_dim > 0:
             concat_x = torch.cat([x, labels], dim=1)
         else:
             concat_x = x
 
         (pose_z_seq, pose_mu, pose_logvar), (motion_z, motion_mu, motion_logvar) = self.encode(concat_x)
-        recon_motion, recon_pose_z_seq = self.decode(motion_z,
-                                                     labels[:, :,
-                                                     0])  # Convert (m, motion_latent_dim+label_dim) to (m, fea+label_dim, seq)
-        pred_labels = self.class_net(motion_z)  # Convert (m, motion_latent_dim) to (m, n_classes)
+
+        # Concatenation of latents for decoding
+        if self.conditional_label_dim > 0:
+            concat_motion_z = torch.cat([motion_z, labels[:, :, 0]], dim=1)
+        else:
+            concat_motion_z = motion_z
+
+        recon_motion, recon_pose_z_seq = self.decode(
+            concat_motion_z
+        )  # Convert (m, motion_latent_dim+label_dim) to (m, fea, seq)
+        pred_labels = self.class_net(concat_motion_z)  # Convert (m, motion_latent_dim+label_dim) to (m, n_classes)
         return recon_motion, pred_labels, (pose_z_seq, recon_pose_z_seq, pose_mu, pose_logvar), (
             motion_z, motion_mu, motion_logvar)
 
@@ -94,11 +110,7 @@ class ConditionalSpatioTemporalVAE(SpatioTemporalVAE):
         motion_z, motion_mu, motion_logvar = self.motion_bottoleneck(out)  # all outputs (m, motion_latent_dim)
         return (pose_z_seq, pose_mu, pose_logvar), (motion_z, motion_mu, motion_logvar)
 
-    def decode(self, motion_z, labels):
-        if self.conditional_label_dim > 0:
-            concat_motion_z = torch.cat([motion_z, labels], dim=1)
-        else:
-            concat_motion_z = motion_z
+    def decode(self, concat_motion_z):
         recon_pose_z_seq = self.motion_decode(
             concat_motion_z)  # Convert (m, motion_latent_dim) to  (m, pose_latent_dim, seq)
         out = self.transpose_flatten(
@@ -106,3 +118,48 @@ class ConditionalSpatioTemporalVAE(SpatioTemporalVAE):
         out = self.pose_decode(out)  # Convert (m * seq, pose_latent_dim) to (m * seq, fea+label_dim)
         recon_motion = self.unflatten_transpose(out)  # Convert (m * seq, fea+label_dim) to (m, fea+label_dim, seq)
         return recon_motion, recon_pose_z_seq
+
+
+class ConditionalPoseVAE(PoseVAE):
+    def __init__(self, fea_dim, latent_dim, conditional_label_dim, kld, dropout_p, device=None):
+        super(ConditionalPoseVAE, self).__init__(
+            fea_dim=fea_dim,
+            latent_dim=latent_dim,
+            kld=kld,
+            dropout_p=dropout_p,
+            device=device
+        )
+        self.conditional_label_dim = conditional_label_dim
+        self.first_layer = nn.Linear(self.fea_dim + self.conditional_label_dim, self.encode_units[0])
+
+
+class ConditionalMotionVAE(MotionVAE):
+    def __init__(self, fea_dim=50, seq_dim=128, hidden_dim=1024, latent_dim=8, conditional_label_dim=0, kld=False,
+                 dropout_p=0, device=None):
+        super(ConditionalMotionVAE, self).__init__(
+            fea_dim=fea_dim,
+            seq_dim=seq_dim,
+            hidden_dim=hidden_dim,
+            latent_dim=latent_dim,
+            kld=kld,
+            dropout_p=dropout_p,
+            device=device
+        )
+        self.conditional_label_dim = conditional_label_dim
+        self.latents2de = nn.Sequential(
+            Unsqueeze(),
+            nn.ConvTranspose1d(self.latent_dim + self.conditional_label_dim,
+                               hidden_dim,
+                               kernel_size=self.decoding_kernels[0],
+                               stride=self.decoding_strides[0])
+        )
+
+
+class ConditionalClassNet(ClassNet):
+    def __init__(self, input_dim, conditional_label_dim, n_classes, device=None):
+        self.conditional_label_dim = conditional_label_dim
+        super(ConditionalClassNet, self).__init__(input_dim=input_dim,
+                                                  n_classes=n_classes,
+                                                  device=device)
+        self.first_layer = nn.Linear(self.input_dim + self.conditional_label_dim,
+                                     self.encode_units[0])

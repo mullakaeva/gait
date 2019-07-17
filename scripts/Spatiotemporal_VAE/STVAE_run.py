@@ -12,11 +12,11 @@ import umap
 import re
 from glob import glob
 from common.utils import MeterAssembly, RunningAverageMeter, dict2json, tensor2numpy, numpy2tensor, load_df_pickle, \
-    write_df_pickle
+    write_df_pickle, expand1darr
 from common.visualisation import LatentSpaceVideoVisualizer, save_vis_data_for_interactiveplot
 from common.data_preparation import prepare_data_for_concatenated_latent
 from .Model import SpatioTemporalVAE
-from .GraphModel import GraphSpatioTemporalVAE
+from .ConditionalModel import ConditionalSpatioTemporalVAE
 
 
 class STVAEmodel:
@@ -113,8 +113,7 @@ class STVAEmodel:
                     towards, towards_test = towards_info
 
                     # Convert numpy to torch.tensor
-                    x = torch.from_numpy(x).float().to(self.device)
-                    x_test = torch.from_numpy(x_test).float().to(self.device)
+                    x, x_test = numpy2tensor(self.device, x, x_test)
                     labels = torch.from_numpy(labels).long().to(self.device)
                     labels_test = torch.from_numpy(labels_test).long().to(self.device)
                     labels_mask = torch.from_numpy(labels_mask * 1 + 1e-5).float().to(self.device)
@@ -333,12 +332,12 @@ class STVAEmodel:
             pose_latent_grad_loss_indicator, acc)
 
     def _model_initialization(self):
-        if self.model_type == "graph":
-            model_class = GraphSpatioTemporalVAE
+        if self.model_type == "conditional":
+            model_class = ConditionalSpatioTemporalVAE
         elif self.model_type == "normal":
             model_class = SpatioTemporalVAE
         else:
-            print('Enter either "graph" or "normal" as the argument of model_type')
+            print('Enter either "conditional" or "normal" as the argument of model_type')
         model = model_class(
             fea_dim=self.fea_dim,
             seq_dim=self.seq_dim,
@@ -780,3 +779,272 @@ class STVAEmodel:
     #             mean_val = np.nanmean(arr_np, axis=0)
     #             eval_dict[key] = mean_val.tolist()
     #         dict2json(os.path.join(eval_results_dir, "{}.json".format(model_file_name)), eval_dict)
+
+
+class CSTVAEmodel(STVAEmodel):
+    def __init__(self,
+                 data_gen,
+                 fea_dim=50,
+                 seq_dim=128,
+                 conditional_label_dim=0,  # New
+                 model_type="conditional",
+                 posenet_latent_dim=10,
+                 posenet_dropout_p=0,
+                 posenet_kld=None,
+                 motionnet_latent_dim=25,
+                 motionnet_hidden_dim=512,
+                 motionnet_dropout_p=0,
+                 motionnet_kld=None,
+                 recon_weight=1,
+                 pose_latent_gradient=0,
+                 recon_gradient=0,
+                 classification_weight=0,
+                 rmse_weighting_startepoch=None,
+                 latent_recon_loss=None,  # None = disabled
+                 recon_loss_power=2,  # Can also be list, e.g. [2, 4, 50]
+                 gpu=0,
+                 init_lr=0.001,
+                 lr_milestones=[50, 100, 150],
+                 lr_decay_gamma=0.1,
+                 save_chkpt_path=None,
+                 load_chkpt_path=None):
+
+        self.conditional_label_dim = conditional_label_dim
+        super(CSTVAEmodel, self).__init__(
+            data_gen=data_gen,
+            fea_dim=fea_dim,
+            seq_dim=seq_dim,
+            model_type=model_type,
+            posenet_latent_dim=posenet_latent_dim,
+            posenet_dropout_p=posenet_dropout_p,
+            posenet_kld=posenet_kld,
+            motionnet_latent_dim=motionnet_latent_dim,
+            motionnet_hidden_dim=motionnet_hidden_dim,
+            motionnet_dropout_p=motionnet_dropout_p,
+            motionnet_kld=motionnet_kld,
+            recon_weight=recon_weight,
+            pose_latent_gradient=pose_latent_gradient,
+            recon_gradient=recon_gradient,
+            classification_weight=classification_weight,
+            rmse_weighting_startepoch=rmse_weighting_startepoch,
+            latent_recon_loss=latent_recon_loss,
+            recon_loss_power=recon_loss_power,
+            gpu=gpu,
+            init_lr=init_lr,
+            lr_milestones=lr_milestones,
+            lr_decay_gamma=lr_decay_gamma,
+            save_chkpt_path=save_chkpt_path,
+            load_chkpt_path=load_chkpt_path,
+        )
+
+    def _model_initialization(self):
+        if self.model_type == "conditional":
+            model_class = ConditionalSpatioTemporalVAE
+        elif self.model_type == "normal":
+            model_class = SpatioTemporalVAE
+        else:
+            print('Enter either "conditional" or "normal" as the argument of model_type')
+        model = model_class(
+            fea_dim=self.fea_dim,
+            seq_dim=self.seq_dim,
+            posenet_latent_dim=self.posenet_latent_dim,
+            posenet_dropout_p=self.posenet_dropout_p,
+            posenet_kld=self.posenet_kld_bool,
+            motionnet_latent_dim=self.motionnet_latent_dim,
+            motionnet_hidden_dim=self.motionnet_hidden_dim,
+            motionnet_dropout_p=self.motionnet_dropout_p,
+            motionnet_kld=self.motionnet_kld_bool,
+            conditional_label_dim=self.conditional_label_dim
+        ).to(self.device)
+        params = model.parameters()
+        optimizer = optim.Adam(params, lr=self.init_lr)
+        lr_scheduler = MultiStepLR(optimizer, milestones=self.lr_milestones, gamma=self.lr_decay_gamma)
+        return model, optimizer, lr_scheduler
+
+    def train(self, n_epochs=50):
+        try:
+            for epoch in range(n_epochs):
+                iter_idx = 0
+
+                for train_data, test_data, towards_info in self.data_gen.iterator():
+                    x, nan_masks, labels, labels_mask, _, _ = train_data
+                    x_test, nan_masks_test, labels_test, labels_mask_test, _, _ = test_data
+                    towards, towards_test = towards_info
+
+                    # Convert numpy to torch.tensor
+                    x, x_test = numpy2tensor(self.device, x, x_test)
+                    labels = torch.from_numpy(labels).long().to(self.device)
+                    labels_test = torch.from_numpy(labels_test).long().to(self.device)
+                    labels_mask = torch.from_numpy(labels_mask * 1 + 1e-5).float().to(self.device)
+                    labels_mask_test = torch.from_numpy(labels_mask_test * 1 + 1e-5).float().to(self.device)
+                    nan_masks = torch.from_numpy(nan_masks * 1 + 1e-5).float().to(self.device)
+                    nan_masks_test = torch.from_numpy(nan_masks_test * 1 + 1e-5).float().to(self.device)
+                    towards, towards_test = numpy2tensor(self.device,
+                                                         expand1darr(towards.astype(np.int64),
+                                                                     self.conditional_label_dim, self.seq_dim),
+                                                         expand1darr(towards_test.astype(np.int64),
+                                                                     self.conditional_label_dim,
+                                                                     self.seq_dim)
+                                                         )
+
+                    # Clear optimizer's previous gradients
+                    self.optimizer.zero_grad()
+
+                    # CV set
+                    self.model.eval()
+                    with torch.no_grad():
+                        recon_motion_t, pred_labels_t, pose_stats_t, motion_stats_t = self.model(x_test, towards_test)
+                        recon_info_t, class_info_t = (x_test, recon_motion_t), (labels_test, pred_labels_t)
+                        loss_t, (
+                            recon_t, posekld_t, motionkld_t, recongrad_t, latentgrad_t, acc_t) = self.loss_function(
+                            recon_info_t,
+                            class_info_t,
+                            pose_stats_t,
+                            motion_stats_t,
+                            nan_masks_test,
+                            labels_mask_test
+                        )
+                        self.loss_meter.update_meters(
+                            test_total_loss=loss_t.item(),
+                            test_recon=recon_t.item(),
+                            test_pose_kld=posekld_t.item(),
+                            test_motion_kld=motionkld_t.item(),
+                            test_recon_grad=recongrad_t.item(),
+                            test_latent_grad=latentgrad_t.item(),
+                            test_acc=acc_t
+                        )
+
+                    # Train set
+                    self.model.train()
+                    recon_motion, pred_labels, pose_stats, motion_stats = self.model(x, towards)
+                    recon_info, class_info = (x, recon_motion), (labels, pred_labels)
+                    loss, (recon, posekld, motionkld, recongrad, latentgrad, acc) = self.loss_function(recon_info,
+                                                                                                       class_info,
+                                                                                                       pose_stats,
+                                                                                                       motion_stats,
+                                                                                                       nan_masks,
+                                                                                                       labels_mask)
+
+                    # Running average of RMSE weighting
+                    if (self.rmse_weighting_startepoch is not None) and (self.epoch == self.rmse_weighting_startepoch):
+                        squared_diff = nan_masks((recon_motion - x) ** 2)  # (n_samples, 50, 128)
+                        self._update_rmse_weighting_vec(squared_diff)
+
+                    self.loss_meter.update_meters(
+                        train_total_loss=loss.item(),
+                        train_recon=recon.item(),
+                        train_pose_kld=posekld.item(),
+                        train_motion_kld=motionkld.item(),
+                        train_recon_grad=recongrad.item(),
+                        train_latent_grad=latentgrad.item(),
+                        train_acc=acc
+                    )
+
+                    # Back-prop
+                    loss.backward()
+                    self.optimizer.step()
+                    iter_idx += 1
+
+                    # Print Info
+                    print("\rEpoch %d/%d at iter %d/%d | loss = %0.8f, %0.8f | acc = %0.3f, %0.3f" % (
+                        self.epoch,
+                        n_epochs,
+                        iter_idx,
+                        self.data_gen.num_rows / self.data_gen.m,
+                        self.loss_meter.get_meter_avg()["train_total_loss"],
+                        self.loss_meter.get_meter_avg()["test_total_loss"],
+                        acc, acc_t
+                    ), flush=True, end=""
+                          )
+
+                # Print losses and update recorders
+                print()
+                pprint.pprint(self.loss_meter.get_meter_avg())
+                self.loss_meter.update_recorders()
+                self.epoch = len(self.loss_meter.get_recorders()["train_total_loss"])
+                self.lr_scheduler.step(epoch=self.epoch)
+
+                # Assign the average RMSE_weight to weighting vector
+                if (self.rmse_weighting_startepoch is not None) and (self.epoch == self.rmse_weighting_startepoch):
+                    self.rmse_weighting_vec = self.rmse_weighting_vec_meter.avg.clone()
+
+                # save (overwrite) model file every epoch
+                self._save_model()
+                self._plot_loss()
+
+        except KeyboardInterrupt as e:
+            self._save_model()
+            raise e
+
+    def _load_model(self):
+        checkpoint = torch.load(self.load_chkpt_path)
+        print('Loaded ckpt from {}'.format(self.load_chkpt_path))
+        # Attributes for model initialization
+        self.loss_meter = checkpoint['loss_meter']
+        self.epoch = len(self.loss_meter.get_recorders()["train_total_loss"])
+        self.fea_dim = checkpoint['fea_dim']
+        self.seq_dim = checkpoint['seq_dim']
+        self.conditional_label_dim = checkpoint['conditional_label_dim']  # New
+        self.init_lr = checkpoint['init_lr']
+        self.lr_milestones = checkpoint['lr_milestones']
+        self.lr_decay_gamma = checkpoint['lr_decay_gamma']
+        self.posenet_latent_dim = checkpoint['posenet_latent_dim']
+        self.posenet_dropout_p = checkpoint['posenet_dropout_p']
+        self.motionnet_latent_dim = checkpoint['motionnet_latent_dim']
+        self.motionnet_dropout_p = checkpoint['motionnet_dropout_p']
+        self.motionnet_hidden_dim = checkpoint['motionnet_hidden_dim']
+        self.recon_weight = checkpoint['recon_weight']
+        self.pose_latent_gradient = checkpoint['pose_latent_gradient']
+        self.recon_gradient = checkpoint['recon_gradient']
+        self.classification_weight = checkpoint['classification_weight']
+        self.posenet_kld = checkpoint['posenet_kld']
+        self.motionnet_kld = checkpoint['motionnet_kld']
+        self.posenet_kld_bool = checkpoint['posenet_kld_bool']
+        self.motionnet_kld_bool = checkpoint['motionnet_kld_bool']
+        self.rmse_weighting_startepoch = checkpoint['rmse_weighting_startepoch']
+        self.rmse_weighting_vec_meter = checkpoint['rmse_weighting_vec_meter']
+        self.rmse_weighting_vec = checkpoint['rmse_weighting_vec']
+        self.latent_recon_loss = checkpoint['latent_recon_loss']
+        self.recon_loss_power = checkpoint['recon_loss_power']
+
+        # Model initialization
+        model, optimizer, lr_scheduler = self._model_initialization()
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+        return model, optimizer, lr_scheduler
+
+    def _save_model(self):
+        if self.save_chkpt_path is not None:
+            torch.save({
+                'model_state_dict': self.model.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+                'lr_scheduler': self.lr_scheduler.state_dict(),
+                'loss_meter': self.loss_meter,
+                'fea_dim': self.fea_dim,
+                'seq_dim': self.seq_dim,
+                'conditional_label_dim': self.conditional_label_dim,  # New
+                'init_lr': self.init_lr,
+                'lr_milestones': self.lr_milestones,
+                'lr_decay_gamma': self.lr_decay_gamma,
+                'posenet_latent_dim': self.posenet_latent_dim,
+                'posenet_dropout_p': self.posenet_dropout_p,
+                'motionnet_latent_dim': self.motionnet_latent_dim,
+                'motionnet_dropout_p': self.motionnet_dropout_p,
+                'motionnet_hidden_dim': self.motionnet_hidden_dim,
+                'recon_weight': self.recon_weight,
+                'pose_latent_gradient': self.pose_latent_gradient,
+                'recon_gradient': self.recon_gradient,
+                'classification_weight': self.classification_weight,
+                'posenet_kld': self.posenet_kld,
+                'motionnet_kld': self.motionnet_kld,
+                'posenet_kld_bool': self.posenet_kld_bool,
+                'motionnet_kld_bool': self.motionnet_kld_bool,
+                'rmse_weighting_startepoch': self.rmse_weighting_startepoch,
+                'rmse_weighting_vec_meter': self.rmse_weighting_vec_meter,
+                'rmse_weighting_vec': self.rmse_weighting_vec,
+                'latent_recon_loss': self.latent_recon_loss,
+                'recon_loss_power': self.recon_loss_power
+            }, self.save_chkpt_path)
+
+            print('Stored ckpt at {}'.format(self.save_chkpt_path))
