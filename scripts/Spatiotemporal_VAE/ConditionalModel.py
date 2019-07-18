@@ -77,7 +77,6 @@ class ConditionalSpatioTemporalVAE(SpatioTemporalVAE):
         labels : torch.tensor
             With shape (m, label_dim, seq)
         """
-
         # Concatenation of input for encoding
         if self.conditional_label_dim > 0:
             concat_x = torch.cat([x, labels], dim=1)
@@ -115,8 +114,8 @@ class ConditionalSpatioTemporalVAE(SpatioTemporalVAE):
             concat_motion_z)  # Convert (m, motion_latent_dim) to  (m, pose_latent_dim, seq)
         out = self.transpose_flatten(
             recon_pose_z_seq)  # Convert (m, pose_latent_dim, seq) to (m * seq, pose_latent_dim)
-        out = self.pose_decode(out)  # Convert (m * seq, pose_latent_dim) to (m * seq, fea+label_dim)
-        recon_motion = self.unflatten_transpose(out)  # Convert (m * seq, fea+label_dim) to (m, fea+label_dim, seq)
+        out = self.pose_decode(out)  # Convert (m * seq, pose_latent_dim) to (m * seq, fea)
+        recon_motion = self.unflatten_transpose(out)  # Convert (m * seq, fea) to (m, fea+, seq)
         return recon_motion, recon_pose_z_seq
 
 

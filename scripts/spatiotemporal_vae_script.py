@@ -25,7 +25,7 @@ def run_train_and_vis_on_stvae():
     lr_decay_gamma = 0.1
 
     # Naming of models: N=Normal
-    model_identifier = "CB-K(0.00001)-C-G-S2-New"
+    model_identifier = "CB-K(0.001)-C-G-S2-New"
 
     # Hyper-parameters
     hyper_params = {
@@ -38,7 +38,7 @@ def run_train_and_vis_on_stvae():
         "pose_latent_gradient": 0.0001,  # 0.0001
         "motionnet_latent_dim": 128,
         "motionnet_dropout_p": 0,
-        "motionnet_kld": [200, 250, 0.00001],  # [200, 250, 0.0001],
+        "motionnet_kld": [200, 250, 0.001],  # [200, 250, 0.0001],
         "recon_gradient": 0.0001,  # 0.0001
         "class_weight": 0.001,  # 0.001
         "rmse_weighting_startepoch": None,
@@ -89,7 +89,7 @@ def run_train_and_vis_on_stvae():
                                   save_chkpt_path=save_model_path, load_chkpt_path=load_model_path)
     # model_container._save_model()
 
-    model_container.train(800)
+    model_container.train(900)
 
     # # Visualization
     # if os.path.isfile(save_model_path):
@@ -99,6 +99,6 @@ def run_train_and_vis_on_stvae():
     #                                         "/mnt/JupyterNotebook/interactive_latent_exploration/data",
     #                                         model_identifier)
     #     # model_container.save_for_concatenated_latent_vis(df_path, save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data")
-    #
+
     # else:
     #     print("Chkpt cannot be found")

@@ -1,9 +1,10 @@
-from .utils import read_preprocessed_keypoints, fullfile, idx2task, idx2task_dict, idx2pheno, pool_points
+from .utils import read_preprocessed_keypoints, fullfile, idx2task, idx2task_dict, idx2pheno, pool_points, write_df_pickle
 from .keypoints_format import openpose_body_draw_sequence, excluded_points
 from glob import glob
 import numpy as np
 import skvideo.io as skv
 import skimage.io as ski
+import pandas as pd
 from skimage.color import rgba2rgb
 import torch
 import matplotlib.pyplot as plt
@@ -286,18 +287,21 @@ def gen_motion_space_scatter_animation(recon_motion, motion_z_umap, labels, kern
 
 
 def save_vis_data_for_interactiveplot(x, recon, motion_z_umap, pheno_labels, tasks_labels, towards_labels, save_data_dir, dirname):
-
-    # Save arrays
-    np.save(os.path.join(save_data_dir, "x.npy"), x)
-    np.save(os.path.join(save_data_dir, "recon.npy"), recon)
-    np.save(os.path.join(save_data_dir, "motion_z_umap.npy"), motion_z_umap)
-    np.save(os.path.join(save_data_dir, "pheno_labels.npy"), pheno_labels)
-    np.save(os.path.join(save_data_dir, "tasks_labels.npy"), tasks_labels)
-    np.save(os.path.join(save_data_dir, "towards_labels.npy"), towards_labels)
-
     # Define and make directories
     compare_vids_dir = os.path.join(save_data_dir, "videos", dirname)
     os.makedirs(compare_vids_dir, exist_ok=True)
+
+    # Save arrays
+    df = pd.DataFrame({"ori_motion": list(x),
+                            "recon_motion": list(recon),
+                            "motion_z_umap": list(motion_z_umap),
+                            "phenotype": list(pheno_labels),
+                            "task": list(tasks_labels),
+                            "direction": list(towards_labels)
+                            })
+    write_df_pickle(df, os.path.join(save_data_dir, "conditional-latent_space.pickle"))
+
+    return
 
     # Draw videos
     total_vids_num = x.shape[0]
