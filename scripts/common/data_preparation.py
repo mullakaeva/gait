@@ -64,7 +64,8 @@ def prepare_data_for_concatenated_latent(df_input_path, equal_phenos=False, outp
 
     average_idx = 0
     grand_arr_list, grand_tasks_list, grand_idpatients_list, grand_uniphenos_list = [], [], [], []
-    grand_avg_idx_list = []
+    grand_avg_idx_list, grand_direction_list = [], []
+
     for patient_idx in range(num_ids):
 
         patient_id = unique_ids[patient_idx]
@@ -83,37 +84,47 @@ def prepare_data_for_concatenated_latent(df_input_path, equal_phenos=False, outp
 
             split_arr_list = []
             avg_idx_list = []
+            direction_list = []
             for each_id in range(df_each.shape[0]):
+
+                # Features of each video
                 fea_arr = df_each.iloc[each_id]["features"]
                 split_fea_arr = split_arr(fea_arr, stride=100)
                 split_arr_list.append(split_fea_arr)
+
+                # Directions
+                direction = df_each.iloc[each_id]["towards_camera"]
+                direction_list.append(np.ones(split_fea_arr.shape[0]) * direction)
+
+                # Averging identifier
                 avg_idx_list.append(np.ones(split_fea_arr.shape[0])*average_idx)
                 average_idx += 1
 
             arr_each = np.vstack(split_arr_list)
+            direction_each = np.concatenate(direction_list)
             avg_idx_each = np.concatenate(avg_idx_list)
             tasks_id_arr = np.ones(arr_each.shape[0]) * task_id
             patient_id_arr = np.ones(arr_each.shape[0]) * patient_id
             uniphenos_list = [uniphenos, ] * arr_each.shape[0]
 
             grand_arr_list.append(arr_each)
+            grand_direction_list.append(direction_each)
             grand_avg_idx_list.append(avg_idx_each)
             grand_tasks_list.append(tasks_id_arr)
             grand_idpatients_list.append(patient_id_arr)
             grand_uniphenos_list += uniphenos_list
     print()
     features = np.vstack(grand_arr_list)
+    directions_all = np.concatenate(grand_direction_list)
     avg_indexes = np.concatenate(grand_avg_idx_list)
     tasks = np.concatenate(grand_tasks_list)
     idpatients = np.concatenate(grand_idpatients_list)
     df_output = pd.DataFrame(
         {"features": list(features), "tasks": tasks, "idpatients": idpatients, "phenos": grand_uniphenos_list,
-         "avg_idx": list(avg_indexes)})
+         "avg_idx": list(avg_indexes), "directions":directions_all})
     if output_save_path:
         write_df_pickle(df_output, output_save_path)
         print("dataframe with shape {} written to {}".format(df_output.shape,
                                                              output_save_path))
     print("Shape of concatenated dataframe = ", df_output.shape)
     return df_output
-
-

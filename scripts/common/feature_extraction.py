@@ -275,7 +275,7 @@ class FeatureExtractorForODE(FeatureExtractor):
 
             # Detact walking direction
             towards = self._check_towards(feature,
-                                          np.invert(feature_mask))  # For feature mask here, we want True = masked
+                                          np.invert(feature_mask))  # For argument here, we want True = masked
 
             # Append to lists
             self.vid_name_roots_list.append(vid_name_root)

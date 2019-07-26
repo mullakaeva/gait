@@ -1,4 +1,5 @@
-from .utils import read_preprocessed_keypoints, fullfile, idx2task, idx2task_dict, idx2pheno, pool_points, write_df_pickle
+from .utils import read_preprocessed_keypoints, fullfile, idx2task, idx2task_dict, idx2pheno, pool_points, \
+    write_df_pickle
 from .keypoints_format import openpose_body_draw_sequence, excluded_points
 from glob import glob
 import numpy as np
@@ -98,7 +99,8 @@ def gen_single_vid_two_skeleton_motion(x, recon, save_vid_path, x_lim=(-0.5, 0.5
     vwrtier = skv.FFmpegWriter(save_vid_path)
     for t in range(x.shape[1]):
         draw_x = plot2arr_skeleton(x=x[0:25, t], y=x[25:, t], title="", x_lim=x_lim, y_lim=y_lim, show_axis=False)
-        draw_recon = plot2arr_skeleton(x=recon[0:25, t], y=recon[25:, t], title="", x_lim=x_lim, y_lim=y_lim, show_axis=False)
+        draw_recon = plot2arr_skeleton(x=recon[0:25, t], y=recon[25:, t], title="", x_lim=x_lim, y_lim=y_lim,
+                                       show_axis=False)
         final_frame = np.concatenate([draw_x[:, 150:530, :], draw_recon[:, 150:530, :]], axis=1)
         vwrtier.writeFrame(final_frame)
     vwrtier.close()
@@ -286,20 +288,21 @@ def gen_motion_space_scatter_animation(recon_motion, motion_z_umap, labels, kern
     return recon_motion_pooled, motion_z_umap_pooled, labels_pooled
 
 
-def save_vis_data_for_interactiveplot(x, recon, motion_z_umap, pheno_labels, tasks_labels, towards_labels, save_data_dir, dirname):
+def save_vis_data_for_interactiveplot(x, recon, motion_z_umap, pheno_labels, tasks_labels, towards_labels,
+                                      save_data_dir, dirname):
     # Define and make directories
     compare_vids_dir = os.path.join(save_data_dir, "videos", dirname)
     os.makedirs(compare_vids_dir, exist_ok=True)
 
     # Save arrays
     df = pd.DataFrame({"ori_motion": list(x),
-                            "recon_motion": list(recon),
-                            "motion_z_umap": list(motion_z_umap),
-                            "phenotype": list(pheno_labels),
-                            "task": list(tasks_labels),
-                            "direction": list(towards_labels)
-                            })
-    write_df_pickle(df, os.path.join(save_data_dir, "conditional-latent_space.pickle"))
+                       "recon_motion": list(recon),
+                       "motion_z_umap": list(motion_z_umap),
+                       "phenotype": list(pheno_labels),
+                       "task": list(tasks_labels),
+                       "direction": list(towards_labels)
+                       })
+    write_df_pickle(df, os.path.join(save_data_dir, "conditional-0.0001-latent_space.pickle"))
 
     return
 
@@ -308,8 +311,7 @@ def save_vis_data_for_interactiveplot(x, recon, motion_z_umap, pheno_labels, tas
     for i in range(total_vids_num):
         print("\rWriting {}/{} input and recon videos".format(i, total_vids_num), end="", flush=True)
         compare_vid_save_path = os.path.join(compare_vids_dir, "%s_%d.mp4" % (dirname, i))
-        gen_single_vid_two_skeleton_motion(x[i, ], recon[i, ], compare_vid_save_path)
-
+        gen_single_vid_two_skeleton_motion(x[i,], recon[i,], compare_vid_save_path)
 
 
 class LatentSpaceVideoVisualizer:
@@ -456,7 +458,6 @@ class LatentSpaceVideoVisualizer:
 
         print()
         vreader_latent_motion_space.close()
-
 
     def visualization_wrapper(self, x, recon_motion, labels, pred_labels, motion_z_umap, pose_z_seq, recon_pose_z_seq,
                               test_acc, mode, plotting_mode=[True, True, True], num_samples_pose_z_seq=128,
