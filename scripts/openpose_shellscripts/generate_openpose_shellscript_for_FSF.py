@@ -33,7 +33,11 @@ def gen_template(all_videos_list, output_videos_dir, output_data_dir):
             print("{} exists. Skipped".format(output_vid_path))
             skipped_num += 1
             continue
-
+        # If video name contains bracket, also skip (since I haven't found a way to interpret names with brackets in shell script)
+        if "(" in vid_name_root or ")" in vid_name_root:
+            print("Brackets exists. Skipped".format(output_vid_path))
+            skipped_num += 1
+            continue
         # Make folder for storing keypoints 
         output_data_path = os.path.join(output_data_dir, vid_name_root)  # output_data_path should point to a directory!
         if os.path.isdir(output_data_path) is not True:
@@ -45,6 +49,7 @@ def gen_template(all_videos_list, output_videos_dir, output_data_dir):
         whole_command += 'echo "$NUM videos"\n'
 
     with open("openpose_inference_script.sh", "w") as fh:
+        fh.write("#!/bin/bash\n")
         fh.write("NUM=0\n")
         fh.write(whole_command)
 
