@@ -128,5 +128,3 @@ def prepare_data_for_concatenated_latent(df_input_path, equal_phenos=False, outp
                                                              output_save_path))
     print("Shape of concatenated dataframe = ", df_output.shape)
     return df_output
-
-

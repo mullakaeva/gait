@@ -94,6 +94,8 @@ def run_train_and_vis_on_stvae():
     # Visualization
     if os.path.isfile(save_model_path):
         data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=data_gen.num_rows - 1, n=seq_dim, seed=60)
+
+
         model_container.save_for_latent_vis(data_gen2,
                                             4096,
                                             "/mnt/JupyterNotebook/interactive_latent_exploration/data",
