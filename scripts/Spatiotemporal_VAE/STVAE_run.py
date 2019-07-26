@@ -635,151 +635,6 @@ class STVAEmodel:
         print("Saving")
         write_df_pickle(df_concat, os.path.join(save_data_dir, "concat_fingerprint.pickle"))
 
-    # def evaluate_all_models(self, data_gen, project_dir, model_list, draw_vid=False):
-    #
-    #     def cale_additional_stasts(x, recon_motion, nan_masks):
-    #         x_np, recon_motion_np, nan_masks_np = x.cpu().detach().numpy(), recon_motion.cpu().detach().numpy(), nan_masks.cpu().detach().numpy()
-    #         nan_masks_np[nan_masks_np == 0] = np.nan  # convert 0 to nan, s.t. they can be masked
-    #         masked_sq_diff = nan_masks_np * ((x_np - recon_motion_np) ** 2)
-    #         joint_RSE = np.nanmean(np.nanmean(masked_sq_diff, axis=2), axis=0)
-    #         rmse_q99 = np.nanquantile(np.nanmean(np.nanmean(masked_sq_diff, axis=2), axis=1), 0.99)
-    #         return rmse_q99, joint_RSE, np.nanmean(masked_sq_diff)
-    #
-    #     # Define the paths of the set of models to be evaluated
-    #     print("Entering eval mode. Now models will be reloaded")
-    #     model_subset = True if isinstance(model_list, list) and len(model_list) > 0 else False
-    #     models_dir = os.path.join(project_dir, "model_chkpt")
-    #     model_paths = []
-    #     if model_subset:
-    #         print("A subset of models are selected =\n", model_list)
-    #         for model_name in model_subset:
-    #             model_paths.append(os.path.join(models_dir, "ckpt_%s.pth" % model_name))
-    #     else:
-    #         print("Searching for all models in {}".format(models_dir))
-    #         model_paths = glob(os.path.join(models_dir, "ckpt*.pth"))
-    #     eval_results_dir = os.path.join(project_dir, "evaluation")
-    #     if os.path.isdir(eval_results_dir) is not True:
-    #         os.makedirs(eval_results_dir)
-    #
-    #     # Refresh data generator
-    #     self.data_gen = data_gen
-    #
-    #     for idx, model_path in enumerate(model_paths):
-    #
-    #         # Load model
-    #         self.load_chkpt_path = model_path
-    #         self.model, self.optimizer, self.lr_scheduler = self._load_model()
-    #         self.model.eval()
-    #         model_file_name = os.path.split(model_path)[1]
-    #         model_identifier = re.match("ckpt_(.*?).pth", model_file_name).group(1)
-    #         save_vid_dir = os.path.join(project_dir, "vis", model_identifier)
-    #         if os.path.isdir(save_vid_dir) is not True:
-    #             os.makedirs(save_vid_dir)
-    #         print("Now evalulating model {}\n".format(model_identifier))
-    #         batch_idx = 1
-    #
-    #         # Quantities to evaluate
-    #         eval_meter = MeterAssembly(
-    #             "train_RMSE",
-    #             "train_q99_RMSE",
-    #             "train_joint_RSE",
-    #             "train_recon_grad",
-    #             "train_latent_grad",
-    #             "train_acc",
-    #             "test_RMSE",
-    #             "test_q99_RMSE",
-    #             "test_joint_RSE",
-    #             "test_recon_grad",
-    #             "test_latent_grad",
-    #             "test_acc"
-    #         )
-    #
-    #         # Load batches of training/testing data
-    #         for (x, nan_masks, labels, labels_mask), (
-    #                 x_test, nan_masks_test, labels_test, labels_mask_test) in self.data_gen.iterator():
-    #             print("\r Model {}/{} Current progress : {}/{}".format(idx, len(model_paths), batch_idx,
-    #                                                                    self.data_gen.num_rows / self.data_gen.m),
-    #                   flush=True, end="")
-    #
-    #             # Convert numpy to torch.tensor
-    #             x = torch.from_numpy(x).float().to(self.device)
-    #             x_test = torch.from_numpy(x_test).float().to(self.device)
-    #             labels = torch.from_numpy(labels).long().to(self.device)
-    #             labels_test = torch.from_numpy(labels_test).long().to(self.device)
-    #             nan_masks = torch.from_numpy(nan_masks * 1).float().to(self.device)
-    #             nan_masks_test = torch.from_numpy(nan_masks_test * 1).float().to(self.device)
-    #
-    #             # Forward pass
-    #             with torch.no_grad():
-    #                 recon_motion_t, pred_labels_t, pose_stats_t, motion_stats_t = self.model(x_test)
-    #                 recon_info_t, class_info_t = (x_test, recon_motion_t), (labels_test, pred_labels_t)
-    #                 loss_t, (
-    #                     recon_t, posekld_t, motionkld_t, recongrad_t, latentgrad_t, acc_t) = self.loss_function(
-    #                     recon_info_t,
-    #                     class_info_t,
-    #                     pose_stats_t,
-    #                     motion_stats_t,
-    #                     nan_masks_test
-    #                 )
-    #                 recon_motion, pred_labels, pose_stats, motion_stats = self.model(x)
-    #                 recon_info, class_info = (x, recon_motion), (labels, pred_labels)
-    #                 loss, (recon, posekld, motionkld, recongrad, latentgrad, acc) = self.loss_function(recon_info,
-    #                                                                                                    class_info,
-    #                                                                                                    pose_stats,
-    #                                                                                                    motion_stats,
-    #                                                                                                    nan_masks)
-    #
-    #             # draw videos if enabled
-    #             if draw_vid and (batch_idx == 1):
-    #                 (pose_z_seq, recon_pose_z_seq, pose_mu, pose_logvar) = pose_stats
-    #                 (pose_z_seq_test, recon_pose_z_seq_test, pose_mu_test, pose_logvar_test) = pose_stats_t
-    #                 (motion_z, motion_mu, motion_logvar) = motion_stats
-    #                 (motion_z_test, motion_mu_test, motion_logvar_test) = motion_stats_t
-    #
-    #                 # Videos and Umap plots for Train data
-    #                 gen_videos(x=x, recon_motion=recon_motion, motion_z=motion_z, pose_z_seq=pose_z_seq,
-    #                            recon_pose_z_seq=recon_pose_z_seq, labels=labels.cpu().detach().numpy(),
-    #                            pred_labels=pred_labels, test_acc=acc.item(),
-    #                            sample_num=1,
-    #                            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="train")
-    #
-    #                 # Videos and Umap plots for Test data
-    #                 gen_videos(x=x_test, recon_motion=recon_motion_t, motion_z=motion_z_test,
-    #                            pose_z_seq=pose_z_seq_test,
-    #                            recon_pose_z_seq=recon_pose_z_seq_test,
-    #                            labels=labels_test.cpu().detach().numpy(),
-    #                            pred_labels=pred_labels_t, test_acc=acc_t.item(),
-    #                            sample_num=1,
-    #                            save_vid_dir=save_vid_dir, model_identifier=model_identifier, mode="test")
-    #
-    #             rmse_q99, joint_RSE, rmse = cale_additional_stasts(x, recon_motion, nan_masks)
-    #             rmse_q99_t, joint_RSE_t, rmse_t = cale_additional_stasts(x_test, recon_motion_t, nan_masks_test)
-    #
-    #             # Add quantity of interest to lists
-    #             eval_meter.append_recorders(
-    #                 train_RMSE=rmse.item(),
-    #                 train_q99_RMSE=rmse_q99,
-    #                 train_joint_RSE=joint_RSE,
-    #                 train_recon_grad=recongrad.item(),
-    #                 train_latent_grad=latentgrad.item(),
-    #                 train_acc=acc.item(),
-    #                 test_RMSE=rmse_t.item(),
-    #                 test_q99_RMSE=rmse_q99_t,
-    #                 test_joint_RSE=joint_RSE_t,
-    #                 test_recon_grad=recongrad_t.item(),
-    #                 test_latent_grad=latentgrad_t.item(),
-    #                 test_acc=acc_t.item()
-    #             )
-    #             batch_idx += 1
-    #         print("\nEvaluating...")
-    #
-    #         eval_dict = dict()
-    #         for key in eval_meter.recorder.keys():
-    #             arr_np = np.array(eval_meter.recorder[key])
-    #             mean_val = np.nanmean(arr_np, axis=0)
-    #             eval_dict[key] = mean_val.tolist()
-    #         dict2json(os.path.join(eval_results_dir, "{}.json".format(model_file_name)), eval_dict)
-
 
 class CSTVAEmodel(STVAEmodel):
     def __init__(self,
@@ -1133,3 +988,82 @@ class CSTVAEmodel(STVAEmodel):
                                           save_data_dir=vis_data_dir,
                                           dirname="equal_phenos")
         return
+
+    def save_for_concatenated_latent_vis(self, df_path, save_data_dir):
+
+        # Load data
+        df_shuffled = prepare_data_for_concatenated_latent(df_path, equal_phenos=False)
+        df_shuffled = df_shuffled.sample(frac=1, random_state=60).reset_index(drop=True)
+
+        # Forward pass and add column
+        x = np.asarray(list(df_shuffled["features"]))
+        directions = np.asarray(list(df_shuffled["directions"]))
+
+        motion_z_list = []
+        batch = 512
+        batch_times = int(x.shape[0] / batch)
+        for i in range(batch_times + 1):
+            if i < batch_times:
+                x_each = numpy2tensor(self.device, x[i * batch: (i + 1) * batch, ])[0]
+                direction_each = directions[i * batch: (i + 1) * batch, ]
+            else:
+                x_each = numpy2tensor(self.device, x[i * batch:, ])[0]
+                direction_each = directions[i * batch:, ]
+
+            _, _, _, motion_z_batch = self._forward_pass(x_each, direction_each)
+            motion_z_batch = tensor2numpy(motion_z_batch)[0]
+            motion_z_list.append(motion_z_batch)
+
+        motion_z = np.vstack(motion_z_list)
+        df_shuffled["motion_z"] = list(motion_z)
+        del df_shuffled["features"]  # The "features" column is not needed anymore after forward pass
+        df_aver = df_shuffled.groupby("avg_idx", as_index=False).apply(np.mean)  # Average across avg_idx. They are split from the same video.
+        del df_aver["avg_idx"]
+
+
+        # Calc grand means for each tasks
+        print("Calculating grand means")
+        task_means = dict()
+        for task_idx in range(8):
+            mask = df_aver["tasks"] == task_idx
+            task_means[task_idx] = np.mean(np.asarray(list(df_aver[mask].motion_z)), axis=0)
+
+        # Calc means for each tasks in each patients
+        print("Calculating patient's task's mean")
+        all_patient_ids = np.unique(df_aver["idpatients"])
+        num_patient_ids = all_patient_ids.shape[0]
+        patient_id_list, features_list, phenos_list = [], [], []
+
+        for p_idx in range(num_patient_ids):
+            print("\rpatient {}/{}".format(p_idx, num_patient_ids), flush=True, end="")
+            patient_id = all_patient_ids[p_idx]
+            patient_mask = df_aver["idpatients"] == patient_id
+            unique_tasks = np.unique(df_aver[patient_mask]["tasks"])
+            unique_phenos = np.unique(np.concatenate(list(df_aver[patient_mask]["phenos"])))
+            task_vec_list = []
+
+            for task_idx in range(8):
+
+                if task_idx not in unique_tasks:
+                    task_vec_list.append(task_means[task_idx])
+                else:
+                    mask = (df_aver["idpatients"] == patient_id) & (df_aver["tasks"] == task_idx)
+                    patient_task_mean = np.mean(np.asarray(list(df_aver[mask]["motion_z"])), axis=0)
+                    task_vec_list.append(patient_task_mean)
+            task_vec = np.concatenate(task_vec_list)
+
+            patient_id_list.append(patient_id)
+            features_list.append(task_vec)
+            phenos_list.append(unique_phenos)
+
+        df_concat = pd.DataFrame({"patient_id": patient_id_list, "fingerprint": features_list,
+                                  "phenos": phenos_list})
+        print("Umapping")
+        self.fingerprint_umapper = umap.UMAP(n_neighbors=15,
+                                             n_components=2,
+                                             min_dist=0.1,
+                                             metric="euclidean")
+        fingerprint_z = self.fingerprint_umapper.fit_transform(np.asarray(list(df_concat["fingerprint"])))
+        df_concat["fingerprint_z"] = list(fingerprint_z)
+        print("Saving")
+        write_df_pickle(df_concat, os.path.join(save_data_dir, "concat_fingerprint_CB-K-0.0001.pickle"))
