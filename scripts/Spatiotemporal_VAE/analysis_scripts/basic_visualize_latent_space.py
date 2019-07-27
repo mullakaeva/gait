@@ -31,7 +31,6 @@ def concat_generator_batches(data_gen, fit_samples_num):
             tasks_equal_list.append(tasks_each_pheno[0:max_counts, ])
             phenos_equal_list.append(phenos_each_pheno[0:max_counts, ])
             towards_equal_list.append(towards_each_pheno[0:max_counts, ])
-
         # Concatenate and prepare data
         x_equal_pheno = np.vstack(x_equal_phenos_list)
         tasks_equal_pheno = np.concatenate(tasks_equal_list)

@@ -552,16 +552,23 @@ class SkeletonPainter:
         self.translation_x_vec = np.array([self.sep_x * i for i in range(self.num_skeletons)]).reshape(-1, 1, 1)
         self.text_y = -0.5
         self.x_trans = self.x + self.translation_x_vec
+        self.x_trans_flat, self.y_flat, self.concated_excluded_pts = self._concat_excluded_points()
+        # Plotting
         self.y_lim = [y_lim[1], y_lim[0]]
+        self.x_lim = [np.min(self.translation_x_vec)-0.2, np.max(self.translation_x_vec)+0.2 ]
+        self.figsize = (2.2*self.num_skeletons, 4.8)
 
     def draw_multiple_skeletons(self):
 
         for t in range(128):
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(figsize=self.figsize)
             ax.set_ylim(self.y_lim[0], self.y_lim[1])
+            ax.set_xlim(self.x_lim[0], self.x_lim[1])
+
             ax.axis("off")
             for i in range(self.num_skeletons):
                 ax = draw_skeleton_new(ax, self.x_trans[i, :, t], self.y[i, :, t])
+                ax.scatter(np.delete(self.x_trans_flat[:, t], self.concated_excluded_pts), np.delete(self.y_flat[:, t], self.concated_excluded_pts))
                 ax.text(self.translation_x_vec[i, 0, 0], self.text_y, "{}".format(self.texts[i]))
 
             fig.tight_layout()
@@ -570,3 +577,13 @@ class SkeletonPainter:
             data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
             plt.close()
             yield data
+
+    def _concat_excluded_points(self):
+        excluded_points_np = np.array(excluded_points)
+        all_excluded_list = [excluded_points_np + 25*idx for idx in range(self.num_skeletons)]
+        concated_excluded_pts = np.concatenate(all_excluded_list)
+
+        x_trans_flat = self.x_trans.reshape(-1, 128)
+        y_flat = self.y.reshape(-1, 128)
+
+        return x_trans_flat, y_flat, concated_excluded_pts
