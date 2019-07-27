@@ -494,75 +494,6 @@ class STVAEmodel:
             motion_z, _, _ = motion_z_info
         return recon_motion, pose_z_seq, recon_pose_z_seq, motion_z
 
-    def save_for_latent_vis(self, data_gen, fit_samples_num, vis_data_dir, model_identifier):
-
-        # Refresh data generator
-        self.data_gen = data_gen
-
-        # Lists for concatenation
-        x_equal_phenos_list, tasks_equal_list, phenos_equal_list, towards_equal_list = [], [], [], []
-
-        # Get data from data generator's first loop
-        for train_data, test_data, towards_info in self.data_gen.iterator():
-
-            # x_fit for umap embedding
-            x, x_masks, tasks, task_masks, phenos, pheno_masks = train_data
-            towards, _ = towards_info
-            masks = (task_masks == 1) & (pheno_masks == 1)
-            x, tasks, phenos, towards = x[masks,].copy(), tasks[masks,], phenos[masks,], towards[masks,]
-
-            # Produce phenos of equal/similar amounts
-            uniphenos, phenos_counts = np.unique(phenos, return_counts=True)
-            max_counts = np.sort(phenos_counts)[3]
-
-            # Clap the maximum count of phenotype labels, s.t. certain label won't overrepresent the visualization
-            for pheno_idx in range(13):
-                x_each_pheno = x[phenos == pheno_idx,]
-                tasks_each_pheno = tasks[phenos == pheno_idx,]
-                phenos_each_pheno = phenos[phenos == pheno_idx,]
-                towards_each_pheno = towards[phenos == pheno_idx,]
-                x_equal_phenos_list.append(x_each_pheno[0:max_counts, ])
-                tasks_equal_list.append(tasks_each_pheno[0:max_counts, ])
-                phenos_equal_list.append(phenos_each_pheno[0:max_counts, ])
-                towards_equal_list.append(towards_each_pheno[0:max_counts, ])
-
-            # Concatenate and prepare data
-            x_equal_pheno = np.vstack(x_equal_phenos_list)
-            tasks_equal_pheno = np.concatenate(tasks_equal_list)
-            phenos_equal_pheno = np.concatenate(phenos_equal_list)
-            towards_equal_pheno = np.concatenate(towards_equal_list)
-
-            np.random.seed(50)
-            ran_vec = np.random.permutation(x_equal_pheno.shape[0])
-            x_equal_pheno, tasks_equal_pheno, phenos_equal_pheno, towards_equal_pheno = x_equal_pheno[ran_vec,], \
-                                                                                        tasks_equal_pheno[ran_vec,], \
-                                                                                        phenos_equal_pheno[ran_vec,], \
-                                                                                        towards_equal_pheno[ran_vec]
-
-            x_base, tasks_base, phenos_base = x[0:fit_samples_num, ], tasks[0:fit_samples_num, ], phenos[
-                                                                                                  0:fit_samples_num, ]
-
-        # Forward pass
-        x_equal_pheno, x_base = numpy2tensor(self.device, x_equal_pheno, x_base)
-        recon_motion_equal, pose_z_seq_equal, recon_pose_z_seq_equal, motion_z_equal = self._forward_pass(x_equal_pheno)
-        recon_motion_base, pose_z_seq_base, recon_pose_z_seq_base, motion_z_base = self._forward_pass(x_base)
-
-        # Fit Umap embedding
-        vis = LatentSpaceVideoVisualizer(model_identifier=model_identifier, save_vid_dir=None)
-        vis.fit_umap(pose_z_seq=pose_z_seq_base, motion_z=motion_z_base)
-        x_equal_pheno, recon_motion_equal, motion_z_equal = tensor2numpy(x_equal_pheno, recon_motion_equal,
-                                                                         motion_z_equal)
-        motion_z_equal_umap = vis.motion_z_umapper.transform(motion_z_equal)
-
-        save_vis_data_for_interactiveplot(x=x_equal_pheno,
-                                          recon=recon_motion_equal,
-                                          motion_z_umap=motion_z_equal_umap,
-                                          pheno_labels=phenos_equal_pheno,
-                                          tasks_labels=tasks_equal_pheno,
-                                          towards_labels=towards_equal_pheno,
-                                          save_data_dir=vis_data_dir,
-                                          dirname="equal_phenos")
-        return
 
     def save_for_concatenated_latent_vis(self, df_path, save_data_dir):
 
@@ -904,90 +835,15 @@ class CSTVAEmodel(STVAEmodel):
 
             print('Stored ckpt at {}'.format(self.save_chkpt_path))
 
-    def _forward_pass(self, x, towards):
+    def _forward_pass(self, x, towards2d):
         self.model.eval()
         with torch.no_grad():
-            towards = numpy2tensor(self.device,
-                                   expand1darr(towards.astype(np.int64),
-                                               self.conditional_label_dim, self.seq_dim)
-                                   )[0]
             # For projection
-            recon_motion, pred_tasks, pose_z_info, motion_z_info = self.model(x, towards)
+            towards2d = numpy2tensor(self.device, towards2d)[0]
+            recon_motion, pred_tasks, pose_z_info, motion_z_info = self.model(x, towards2d)
             pose_z_seq, recon_pose_z_seq, _, _ = pose_z_info
             motion_z, _, _ = motion_z_info
         return recon_motion, pose_z_seq, recon_pose_z_seq, motion_z
-
-    def save_for_latent_vis(self, data_gen, fit_samples_num, vis_data_dir, model_identifier):
-
-        # Refresh data generator
-        self.data_gen = data_gen
-
-        # Lists for concatenation
-        x_equal_phenos_list, tasks_equal_list, phenos_equal_list, towards_equal_list = [], [], [], []
-
-        # Get data from data generator's first loop
-        for train_data, test_data, towards_info in self.data_gen.iterator():
-
-            # x_fit for umap embedding
-            x, x_masks, tasks, task_masks, phenos, pheno_masks = train_data
-            towards, _ = towards_info
-            masks = (task_masks == 1) & (pheno_masks == 1)
-            x, tasks, phenos, towards = x[masks,].copy(), tasks[masks,], phenos[masks,], towards[masks,]
-
-            # Produce phenos of equal/similar amounts
-            uniphenos, phenos_counts = np.unique(phenos, return_counts=True)
-            max_counts = np.sort(phenos_counts)[3]
-
-            # Clap the maximum count of phenotype labels, s.t. certain label won't overrepresent the visualization
-            for pheno_idx in range(13):
-                x_each_pheno = x[phenos == pheno_idx,]
-                tasks_each_pheno = tasks[phenos == pheno_idx,]
-                phenos_each_pheno = phenos[phenos == pheno_idx,]
-                towards_each_pheno = towards[phenos == pheno_idx,]
-                x_equal_phenos_list.append(x_each_pheno[0:max_counts, ])
-                tasks_equal_list.append(tasks_each_pheno[0:max_counts, ])
-                phenos_equal_list.append(phenos_each_pheno[0:max_counts, ])
-                towards_equal_list.append(towards_each_pheno[0:max_counts, ])
-
-            # Concatenate and prepare data
-            x_equal_pheno = np.vstack(x_equal_phenos_list)
-            tasks_equal_pheno = np.concatenate(tasks_equal_list)
-            phenos_equal_pheno = np.concatenate(phenos_equal_list)
-            towards_equal_pheno = np.concatenate(towards_equal_list)
-
-            np.random.seed(50)
-            ran_vec = np.random.permutation(x_equal_pheno.shape[0])
-            x_equal_pheno, tasks_equal_pheno, phenos_equal_pheno, towards_equal_pheno = x_equal_pheno[ran_vec,], \
-                                                                                        tasks_equal_pheno[ran_vec,], \
-                                                                                        phenos_equal_pheno[ran_vec,], \
-                                                                                        towards_equal_pheno[ran_vec]
-
-            x_base, tasks_base, phenos_base, towards_base = x[0:fit_samples_num, ], tasks[0:fit_samples_num, ], \
-                                              phenos[0:fit_samples_num, ], towards[0:fit_samples_num, ]
-
-        # Forward pass
-        x_equal_pheno, x_base = numpy2tensor(self.device, x_equal_pheno, x_base)
-        recon_motion_equal, pose_z_seq_equal, recon_pose_z_seq_equal, motion_z_equal = self._forward_pass(x_equal_pheno,
-                                                                                                          towards_equal_pheno)
-        recon_motion_base, pose_z_seq_base, recon_pose_z_seq_base, motion_z_base = self._forward_pass(x_base,
-                                                                                                      towards_base)
-
-        # Fit Umap embedding
-        vis = LatentSpaceVideoVisualizer(model_identifier=model_identifier, save_vid_dir=None)
-        vis.fit_umap(pose_z_seq=pose_z_seq_base, motion_z=motion_z_base)
-        x_equal_pheno, recon_motion_equal, motion_z_equal = tensor2numpy(x_equal_pheno, recon_motion_equal,
-                                                                         motion_z_equal)
-        motion_z_equal_umap = vis.motion_z_umapper.transform(motion_z_equal)
-
-        save_vis_data_for_interactiveplot(x=x_equal_pheno,
-                                          recon=recon_motion_equal,
-                                          motion_z_umap=motion_z_equal_umap,
-                                          pheno_labels=phenos_equal_pheno,
-                                          tasks_labels=tasks_equal_pheno,
-                                          towards_labels=towards_equal_pheno,
-                                          save_data_dir=vis_data_dir,
-                                          dirname="equal_phenos")
-        return
 
     def save_for_concatenated_latent_vis(self, df_path, save_data_dir):
 

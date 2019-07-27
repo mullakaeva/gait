@@ -53,6 +53,8 @@ openpose_body25_labels = {
     24:"r_heel",
 }
 
+openpose_body25_indexes = {v: k for k, v in openpose_body25_labels.items()}
+
 openpose_body_draw_sequence = (
     # (0, 1, "m"),  # nose to neck
     # (0, 15, "r"),  # nose to r_eye
@@ -118,6 +120,22 @@ openpose_central_indexes = [0, 1, 8] # From top to bottom. 0=nose, 1=neck, 8=hip
 
 excluded_points = [0, 15, 16]
 excluded_points_flatten = [0, 15, 16, 25, 40, 41]
+
+draw_seq1 = [["l_ear", "neck", "l_shoulder", "l_elbow", "l_wrist"], "r"]
+draw_seq2 = [["r_ear", "neck", "r_shoulder", "r_elbow", "r_wrist"], "b"]
+draw_seq3 = [["neck", "hip_centre", "l_hip", "l_knee", "l_ankle", "l_bigtoe", "l_smalltoe"], "r"]
+draw_seq4 = [["neck", "hip_centre", "r_hip", "r_knee", "r_ankle", "r_bigtoe", "r_smalltoe"], "b"]
+draw_seq5 = [["l_ankle", "l_heel"], "r"]
+draw_seq6 = [["r_ankle", "r_heel"], "b"]
+draw_seq_list = [draw_seq1, draw_seq2, draw_seq3, draw_seq4, draw_seq5, draw_seq6]
+
+def convert2indexes_in_list(seq):
+    seq_labels, color = seq
+    seq_indexes = np.array([openpose_body25_indexes[x] for x in seq_labels])
+    return [seq_indexes, color]
+
+draw_seq_col_indexes = list(map(convert2indexes_in_list, draw_seq_list ))
+
 
 def index2feature_dist(n):
     relative_dists_indexes = np.triu_indices(25, k=1)

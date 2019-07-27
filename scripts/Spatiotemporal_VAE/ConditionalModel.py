@@ -77,28 +77,23 @@ class ConditionalSpatioTemporalVAE(SpatioTemporalVAE):
         labels : torch.tensor
             With shape (m, label_dim, seq)
         """
-        # Concatenation of input for encoding
-        if self.conditional_label_dim > 0:
-            concat_x = torch.cat([x, labels], dim=1)
-        else:
-            concat_x = x
 
-        (pose_z_seq, pose_mu, pose_logvar), (motion_z, motion_mu, motion_logvar) = self.encode(concat_x)
+        (pose_z_seq, pose_mu, pose_logvar), (motion_z, motion_mu, motion_logvar) = self.encode(x, labels)
 
-        # Concatenation of latents for decoding
-        if self.conditional_label_dim > 0:
-            concat_motion_z = torch.cat([motion_z, labels[:, :, 0]], dim=1)
-        else:
-            concat_motion_z = motion_z
-
-        recon_motion, recon_pose_z_seq = self.decode(
-            concat_motion_z
+        recon_motion, recon_pose_z_seq, concat_motion_z = self.decode(
+            motion_z, labels
         )  # Convert (m, motion_latent_dim+label_dim) to (m, fea, seq)
         pred_labels = self.class_net(concat_motion_z)  # Convert (m, motion_latent_dim+label_dim) to (m, n_classes)
         return recon_motion, pred_labels, (pose_z_seq, recon_pose_z_seq, pose_mu, pose_logvar), (
             motion_z, motion_mu, motion_logvar)
 
-    def encode(self, concat_x):
+    def encode(self, x, labels):
+        # Concatenation of input for encoding
+        if self.conditional_label_dim > 0:
+            concat_x = torch.cat([x, labels], dim=1)
+        else:
+            concat_x = x
+        # Propagtion
         out = self.transpose_flatten(concat_x)  # Convert (m, fea+label_dim, seq) to (m * seq, fea+label_dim)
         pose_out = self.pose_encode(
             out)  # Convert (m * seq, fea+label_dim) to (m * seq, pose_latent_dim (or *2 if kld=True) )
@@ -109,14 +104,20 @@ class ConditionalSpatioTemporalVAE(SpatioTemporalVAE):
         motion_z, motion_mu, motion_logvar = self.motion_bottoleneck(out)  # all outputs (m, motion_latent_dim)
         return (pose_z_seq, pose_mu, pose_logvar), (motion_z, motion_mu, motion_logvar)
 
-    def decode(self, concat_motion_z):
+    def decode(self, motion_z, labels):
+        # Concatenation of latents for decoding
+        if self.conditional_label_dim > 0:
+            concat_motion_z = torch.cat([motion_z, labels[:, :, 0]], dim=1)
+        else:
+            concat_motion_z = motion_z
+
         recon_pose_z_seq = self.motion_decode(
             concat_motion_z)  # Convert (m, motion_latent_dim) to  (m, pose_latent_dim, seq)
         out = self.transpose_flatten(
             recon_pose_z_seq)  # Convert (m, pose_latent_dim, seq) to (m * seq, pose_latent_dim)
         out = self.pose_decode(out)  # Convert (m * seq, pose_latent_dim) to (m * seq, fea)
         recon_motion = self.unflatten_transpose(out)  # Convert (m * seq, fea) to (m, fea+, seq)
-        return recon_motion, recon_pose_z_seq
+        return recon_motion, recon_pose_z_seq, concat_motion_z
 
 
 class ConditionalPoseVAE(PoseVAE):

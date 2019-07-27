@@ -1,6 +1,8 @@
 import numpy as np
-from common.utils import numpy2tensor, tensor2numpy
-from common.visualisation import LatentSpaceVideoVisualizer, save_vis_data_for_interactiveplot
+import os
+import pandas as pd
+from common.utils import numpy2tensor, tensor2numpy, expand1darr, write_df_pickle
+from common.visualisation import LatentSpaceVideoVisualizer, gen_single_vid_two_skeleton_motion
 
 
 def concat_generator_batches(data_gen, fit_samples_num):
@@ -51,6 +53,38 @@ def concat_generator_batches(data_gen, fit_samples_num):
 
     return equal_pheno_info, base_info
 
+def convert_towards2onehot(towards, model_container):
+    expanded_towards = expand1darr(towards.astype(np.int64),
+                                   model_container.conditional_label_dim,
+                                   model_container.seq_dim)
+
+    return expanded_towards
+
+def save_vis_data_for_interactiveplot(x, recon, motion_z_umap, pheno_labels, tasks_labels, towards_labels,
+                                      save_data_dir, df_save_fn, vid_dirname, draw=False):
+    # Define and make directories
+    compare_vids_dir = os.path.join(save_data_dir, "videos", vid_dirname)
+    os.makedirs(compare_vids_dir, exist_ok=True)
+
+    # Save arrays
+    df = pd.DataFrame({"ori_motion": list(x),
+                       "recon_motion": list(recon),
+                       "motion_z_umap": list(motion_z_umap),
+                       "phenotype": list(pheno_labels),
+                       "task": list(tasks_labels),
+                       "direction": list(towards_labels)
+                       })
+    write_df_pickle(df, os.path.join(save_data_dir, df_save_fn))
+
+    if draw:
+        # Draw videos
+        total_vids_num = x.shape[0]
+        for i in range(total_vids_num):
+            print("\rWriting {}/{} input and recon videos".format(i, total_vids_num), end="", flush=True)
+            compare_vid_save_path = os.path.join(compare_vids_dir, "%s_%d.mp4" % (vid_dirname, i))
+            gen_single_vid_two_skeleton_motion(x[i,], recon[i,], compare_vid_save_path)
+
+
 
 def save_for_latent_vis(model_container, data_gen, fit_samples_num, vis_data_dir, model_identifier):
     # Get data with (relatively) equal sizes of phenotypes, and base data for fitting
@@ -59,6 +93,8 @@ def save_for_latent_vis(model_container, data_gen, fit_samples_num, vis_data_dir
     (x_base, tasks_base, phenos_base, towards_base) = base_info
 
     # Forward pass
+    towards_equal_pheno = convert_towards2onehot(towards_equal_pheno, model_container)
+    towards_base = convert_towards2onehot(towards_base, model_container)
     x_equal_pheno, x_base = numpy2tensor(model_container.device, x_equal_pheno, x_base)
     recon_motion_equal, pose_z_seq_equal, recon_pose_z_seq_equal, motion_z_equal = model_container._forward_pass(
         x_equal_pheno,
@@ -80,5 +116,6 @@ def save_for_latent_vis(model_container, data_gen, fit_samples_num, vis_data_dir
                                       tasks_labels=tasks_equal_pheno,
                                       towards_labels=towards_equal_pheno,
                                       save_data_dir=vis_data_dir,
-                                      dirname="equal_phenos")
+                                      df_save_fn="conditional-0.0001-latent_space.pickle",
+                                      vid_dirname="equal_phenos")
     return

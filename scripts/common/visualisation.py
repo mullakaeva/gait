@@ -1,6 +1,6 @@
 from .utils import read_preprocessed_keypoints, fullfile, idx2task, idx2task_dict, idx2pheno, pool_points, \
     write_df_pickle
-from .keypoints_format import openpose_body_draw_sequence, excluded_points
+from .keypoints_format import openpose_body_draw_sequence, excluded_points, draw_seq_col_indexes
 from glob import glob
 import numpy as np
 import skvideo.io as skv
@@ -49,6 +49,11 @@ def build_frame_2by3(*args):
                 output_arr[h * i: h * (i + 1), w * j: w * (j + 1), :] = args[iter_idx]
             iter_idx += 1
     return output_arr
+
+def draw_skeleton_new(ax, x, y, linewidth=1):
+    for seq_indexes in draw_seq_col_indexes:
+        ax.plot(x[seq_indexes[0]], y[seq_indexes[0]], c=seq_indexes[1], linewidth=linewidth)
+    return ax
 
 
 def draw_skeleton(ax, x, y, linewidth=1):
@@ -288,32 +293,6 @@ def gen_motion_space_scatter_animation(recon_motion, motion_z_umap, labels, kern
     return recon_motion_pooled, motion_z_umap_pooled, labels_pooled
 
 
-def save_vis_data_for_interactiveplot(x, recon, motion_z_umap, pheno_labels, tasks_labels, towards_labels,
-                                      save_data_dir, dirname):
-    # Define and make directories
-    compare_vids_dir = os.path.join(save_data_dir, "videos", dirname)
-    os.makedirs(compare_vids_dir, exist_ok=True)
-
-    # Save arrays
-    df = pd.DataFrame({"ori_motion": list(x),
-                       "recon_motion": list(recon),
-                       "motion_z_umap": list(motion_z_umap),
-                       "phenotype": list(pheno_labels),
-                       "task": list(tasks_labels),
-                       "direction": list(towards_labels)
-                       })
-    write_df_pickle(df, os.path.join(save_data_dir, "conditional-0.0001-latent_space.pickle"))
-
-    return
-
-    # Draw videos
-    total_vids_num = x.shape[0]
-    for i in range(total_vids_num):
-        print("\rWriting {}/{} input and recon videos".format(i, total_vids_num), end="", flush=True)
-        compare_vid_save_path = os.path.join(compare_vids_dir, "%s_%d.mp4" % (dirname, i))
-        gen_single_vid_two_skeleton_motion(x[i,], recon[i,], compare_vid_save_path)
-
-
 class LatentSpaceVideoVisualizer:
     def __init__(self, model_identifier, save_vid_dir, seq_length=128):
         self.pose_umapper, self.motion_z_umapper = None, None
@@ -546,3 +525,48 @@ class LatentSpaceVideoVisualizer:
 
         """
         return np.transpose(x_flat.reshape(x_seq_shape[0], x_seq_shape[2], -1), (0, 2, 1))
+
+
+class SkeletonPainter:
+    def __init__(self, x, y, texts, sep_x=0.4, y_lim=[-0.6, 0.6]):
+        """
+
+        Parameters
+        ----------
+        x : numpy.darray
+            It has shape (m, 25, 128). x-coordinates of the walking sequence of 25 joints
+        y : numpy.darray
+            It has shape (m, 25, 128). y-coordinates of ^
+        texts : tuple or list or iterable
+            It should has length m
+        sep_x : float
+            Separation between the centers of skeletons on x-axis
+        y_lim : tuple or list
+
+        """
+
+        self.x, self.y = x, y
+        self.texts = texts
+        self.num_skeletons = self.x.shape[0]
+        self.sep_x = sep_x
+        self.translation_x_vec = np.array([self.sep_x * i for i in range(self.num_skeletons)]).reshape(-1, 1, 1)
+        self.text_y = -0.5
+        self.x_trans = self.x + self.translation_x_vec
+        self.y_lim = [y_lim[1], y_lim[0]]
+
+    def draw_multiple_skeletons(self):
+
+        for t in range(128):
+            fig, ax = plt.subplots()
+            ax.set_ylim(self.y_lim[0], self.y_lim[1])
+            ax.axis("off")
+            for i in range(self.num_skeletons):
+                ax = draw_skeleton_new(ax, self.x_trans[i, :, t], self.y[i, :, t])
+                ax.text(self.translation_x_vec[i, 0, 0], self.text_y, "{}".format(self.texts[i]))
+
+            fig.tight_layout()
+            fig.canvas.draw()
+            data = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+            data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+            plt.close()
+            yield data
