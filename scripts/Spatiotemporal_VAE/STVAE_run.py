@@ -107,19 +107,11 @@ class STVAEmodel:
             for epoch in range(n_epochs):
                 iter_idx = 0
 
-                for train_data, test_data, towards_info in self.data_gen.iterator():
-                    x, nan_masks, labels, labels_mask, _, _ = train_data
-                    x_test, nan_masks_test, labels_test, labels_mask_test, _, _ = test_data
-                    towards, towards_test = towards_info
+                for train_data, test_data in self.data_gen.iterator():
 
-                    # Convert numpy to torch.tensor
-                    x, x_test = numpy2tensor(self.device, x, x_test)
-                    labels = torch.from_numpy(labels).long().to(self.device)
-                    labels_test = torch.from_numpy(labels_test).long().to(self.device)
-                    labels_mask = torch.from_numpy(labels_mask * 1 + 1e-5).float().to(self.device)
-                    labels_mask_test = torch.from_numpy(labels_mask_test * 1 + 1e-5).float().to(self.device)
-                    nan_masks = torch.from_numpy(nan_masks * 1 + 1e-5).float().to(self.device)
-                    nan_masks_test = torch.from_numpy(nan_masks_test * 1 + 1e-5).float().to(self.device)
+                    train_converted, test_converted = self._convert_input_data(train_data, test_data)
+                    x, nan_masks, labels, labels_mask = train_converted
+                    x_test, labels_test, labels_mask_test, nan_masks_test = test_converted
 
                     # Clear optimizer's previous gradients
                     self.optimizer.zero_grad()
@@ -395,6 +387,22 @@ class STVAEmodel:
         fig.suptitle(os.path.splitext(os.path.split(self.save_chkpt_path)[1])[0])
         plt.savefig(self.save_chkpt_path + ".png", dpi=300)
 
+    def _convert_input_data(self, train_data, test_data):
+        # Unfolding
+        x, nan_masks, tasks, tasks_mask, _, _, _ = train_data
+        x_test, nan_masks_test, tasks_test, tasks_mask_test, _, _, _ = test_data
+
+        # Convert numpy to torch.tensor
+        x, x_test = numpy2tensor(self.device, x, x_test)
+        tasks = torch.from_numpy(tasks).long().to(self.device)
+        tasks_test = torch.from_numpy(tasks_test).long().to(self.device)
+        tasks_mask = torch.from_numpy(tasks_mask * 1 + 1e-5).float().to(self.device)
+        tasks_mask_test = torch.from_numpy(tasks_mask_test * 1 + 1e-5).float().to(self.device)
+        nan_masks = torch.from_numpy(nan_masks * 1 + 1e-5).float().to(self.device)
+        nan_masks_test = torch.from_numpy(nan_masks_test * 1 + 1e-5).float().to(self.device)
+
+        return (x, nan_masks, tasks, tasks_mask), (x_test, tasks_test, tasks_mask_test, nan_masks_test)
+
     def _initilize_rmse_weighting_vec(self):
         unnormalized = torch.ones(self.data_gen.batch_shape).float().to(self.device)
         normalized = torch.mean(unnormalized, dim=0, keepdim=True) / torch.sum(unnormalized)
@@ -493,7 +501,6 @@ class STVAEmodel:
             pose_z_seq, recon_pose_z_seq, _, _ = pose_z_info
             motion_z, _, _ = motion_z_info
         return recon_motion, pose_z_seq, recon_pose_z_seq, motion_z
-
 
     def save_for_concatenated_latent_vis(self, df_path, save_data_dir):
 
@@ -652,26 +659,11 @@ class CSTVAEmodel(STVAEmodel):
             for epoch in range(n_epochs):
                 iter_idx = 0
 
-                for train_data, test_data, towards_info in self.data_gen.iterator():
-                    x, nan_masks, labels, labels_mask, _, _ = train_data
-                    x_test, nan_masks_test, labels_test, labels_mask_test, _, _ = test_data
-                    towards, towards_test = towards_info
+                for train_data, test_data in self.data_gen.iterator():
 
-                    # Convert numpy to torch.tensor
-                    x, x_test = numpy2tensor(self.device, x, x_test)
-                    labels = torch.from_numpy(labels).long().to(self.device)
-                    labels_test = torch.from_numpy(labels_test).long().to(self.device)
-                    labels_mask = torch.from_numpy(labels_mask * 1 + 1e-5).float().to(self.device)
-                    labels_mask_test = torch.from_numpy(labels_mask_test * 1 + 1e-5).float().to(self.device)
-                    nan_masks = torch.from_numpy(nan_masks * 1 + 1e-5).float().to(self.device)
-                    nan_masks_test = torch.from_numpy(nan_masks_test * 1 + 1e-5).float().to(self.device)
-                    towards, towards_test = numpy2tensor(self.device,
-                                                         expand1darr(towards.astype(np.int64),
-                                                                     self.conditional_label_dim, self.seq_dim),
-                                                         expand1darr(towards_test.astype(np.int64),
-                                                                     self.conditional_label_dim,
-                                                                     self.seq_dim)
-                                                         )
+                    train_converted, test_converted = self._convert_input_data(train_data, test_data)
+                    x, nan_masks, labels, labels_mask, cond = train_converted
+                    x_test, nan_masks_test, labels_test, labels_mask_test, cond_test = test_converted
 
                     # Clear optimizer's previous gradients
                     self.optimizer.zero_grad()
@@ -679,7 +671,7 @@ class CSTVAEmodel(STVAEmodel):
                     # CV set
                     self.model.eval()
                     with torch.no_grad():
-                        recon_motion_t, pred_labels_t, pose_stats_t, motion_stats_t = self.model(x_test, towards_test)
+                        recon_motion_t, pred_labels_t, pose_stats_t, motion_stats_t = self.model(x_test, cond_test)
                         recon_info_t, class_info_t = (x_test, recon_motion_t), (labels_test, pred_labels_t)
                         loss_t, (
                             recon_t, posekld_t, motionkld_t, recongrad_t, latentgrad_t, acc_t) = self.loss_function(
@@ -702,7 +694,7 @@ class CSTVAEmodel(STVAEmodel):
 
                     # Train set
                     self.model.train()
-                    recon_motion, pred_labels, pose_stats, motion_stats = self.model(x, towards)
+                    recon_motion, pred_labels, pose_stats, motion_stats = self.model(x, cond)
                     recon_info, class_info = (x, recon_motion), (labels, pred_labels)
                     loss, (recon, posekld, motionkld, recongrad, latentgrad, acc) = self.loss_function(recon_info,
                                                                                                        class_info,
@@ -845,6 +837,25 @@ class CSTVAEmodel(STVAEmodel):
             motion_z, _, _ = motion_z_info
         return recon_motion, pose_z_seq, recon_pose_z_seq, motion_z
 
+    def _convert_input_data(self, train_data, test_data):
+        x, nan_masks, tasks, tasks_mask, _, _, towards = train_data
+        x_test, nan_masks_test, tasks_test, tasks_mask_test, _, _, towards_test = test_data
+
+        # Convert numpy to torch.tensor
+        x, x_test = numpy2tensor(self.device, x, x_test)
+        tasks = torch.from_numpy(tasks).long().to(self.device)
+        tasks_test = torch.from_numpy(tasks_test).long().to(self.device)
+        tasks_mask = torch.from_numpy(tasks_mask * 1 + 1e-5).float().to(self.device)
+        tasks_mask_test = torch.from_numpy(tasks_mask_test * 1 + 1e-5).float().to(self.device)
+        nan_masks = torch.from_numpy(nan_masks * 1 + 1e-5).float().to(self.device)
+        nan_masks_test = torch.from_numpy(nan_masks_test * 1 + 1e-5).float().to(self.device)
+        towards, towards_test = numpy2tensor(self.device,
+                                             expand1darr(towards.astype(np.int64), 3, self.seq_dim),
+                                             expand1darr(towards_test.astype(np.int64), 3, self.seq_dim)
+                                             )
+        return (x, nan_masks, tasks, tasks_mask, towards), (
+            x_test, nan_masks_test, tasks_test, tasks_mask_test, towards_test)
+
     def save_for_concatenated_latent_vis(self, df_path, save_data_dir):
 
         # Load data
@@ -873,9 +884,9 @@ class CSTVAEmodel(STVAEmodel):
         motion_z = np.vstack(motion_z_list)
         df_shuffled["motion_z"] = list(motion_z)
         del df_shuffled["features"]  # The "features" column is not needed anymore after forward pass
-        df_aver = df_shuffled.groupby("avg_idx", as_index=False).apply(np.mean)  # Average across avg_idx. They are split from the same video.
+        df_aver = df_shuffled.groupby("avg_idx", as_index=False).apply(
+            np.mean)  # Average across avg_idx. They are split from the same video.
         del df_aver["avg_idx"]
-
 
         # Calc grand means for each tasks
         print("Calculating grand means")
@@ -923,3 +934,44 @@ class CSTVAEmodel(STVAEmodel):
         df_concat["fingerprint_z"] = list(fingerprint_z)
         print("Saving")
         write_df_pickle(df_concat, os.path.join(save_data_dir, "concat_fingerprint_CB-K-0.0001.pickle"))
+
+
+class CtaskSVAEmodel(CSTVAEmodel):
+    def _convert_input_data(self, train_data, test_data):
+        x, nan_masks, tasks, tasks_mask, _, _, towards = train_data
+        x_test, nan_masks_test, tasks_test, tasks_mask_test, _, _, towards_test = test_data
+
+        # Select those data with task labels
+        train_mask = tasks_mask == True
+        test_mask = tasks_mask_test == True
+        x, nan_masks, tasks, tasks_mask, towards = x[train_mask], nan_masks[train_mask], tasks[train_mask], tasks_mask[
+            train_mask], towards[train_mask]
+        x_test, nan_masks_test, tasks_test, tasks_mask_test, towards_test = x_test[test_mask], nan_masks_test[
+            test_mask], tasks_test[test_mask], tasks_mask_test[test_mask], towards_test[test_mask]
+
+        # Convert numpy to torch.tensor
+        x, x_test = numpy2tensor(self.device, x, x_test)
+
+        tasks_input = torch.from_numpy(tasks).long().to(self.device)
+        tasks_test_input = torch.from_numpy(tasks_test).long().to(self.device)
+        tasks_mask_input = torch.from_numpy(tasks_mask * 1 + 1e-5).float().to(self.device)
+        tasks_mask_test_input = torch.from_numpy(tasks_mask_test * 1 + 1e-5).float().to(self.device)
+
+        nan_masks = torch.from_numpy(nan_masks * 1 + 1e-5).float().to(self.device)
+        nan_masks_test = torch.from_numpy(nan_masks_test * 1 + 1e-5).float().to(self.device)
+        towards, towards_test = numpy2tensor(self.device,
+                                             expand1darr(towards.astype(np.int64), 3, self.seq_dim),
+                                             expand1darr(towards_test.astype(np.int64), 3, self.seq_dim)
+                                             )
+
+        # concatenate between task labels and direction labels
+        tasks_onehot, tasks_test_onehot = numpy2tensor(self.device,
+                                                       expand1darr(tasks.astype(np.int64), 8, self.seq_dim),
+                                                       expand1darr(tasks_test.astype(np.int64), 8, self.seq_dim)
+                                                       )
+
+        cond = torch.cat([towards, tasks_onehot], dim=1)
+        cond_test = torch.cat([towards_test, tasks_test_onehot], dim=1)
+
+        return (x, nan_masks, tasks_input, tasks_mask_input, cond), (
+            x_test, nan_masks_test, tasks_test_input, tasks_mask_test_input, cond_test)

@@ -175,10 +175,9 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         pheno_test, pheno_test_masks = pheno_test_info
 
         # Combine as output
-        train_info = (x_train, x_train_masks, task_train, task_train_masks, pheno_train, pheno_train_masks)
-        test_info = (x_test, x_test_masks, task_test, task_test_masks, pheno_test, pheno_test_masks)
-        other_info = (towards_train, towards_test)
-        return train_info, test_info, other_info
+        train_info = (x_train, x_train_masks, task_train, task_train_masks, pheno_train, pheno_train_masks, towards_train)
+        test_info = (x_test, x_test_masks, task_test, task_test_masks, pheno_test, pheno_test_masks, towards_test)
+        return train_info, test_info
 
     def _loop_for_array_construction(self, df, num_samples):
         """

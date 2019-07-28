@@ -9,11 +9,10 @@ def concat_generator_batches(data_gen, fit_samples_num):
     # Lists for concatenation
     x_equal_phenos_list, tasks_equal_list, phenos_equal_list, towards_equal_list = [], [], [], []
     # Get data from data generator's first loop
-    for train_data, test_data, towards_info in data_gen.iterator():
+    for train_data, test_data in data_gen.iterator():
 
         # x_fit for umap embedding
-        x, x_masks, tasks, task_masks, phenos, pheno_masks = train_data
-        towards, _ = towards_info
+        x, x_masks, tasks, task_masks, phenos, pheno_masks, towards = train_data
         masks = (task_masks == 1) & (pheno_masks == 1)
         x, tasks, phenos, towards = x[masks,].copy(), tasks[masks,], phenos[masks,], towards[masks,]
 
