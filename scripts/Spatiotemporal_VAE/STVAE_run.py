@@ -12,7 +12,7 @@ import umap
 import re
 from glob import glob
 from common.utils import MeterAssembly, RunningAverageMeter, dict2json, tensor2numpy, numpy2tensor, load_df_pickle, \
-    write_df_pickle, expand1darr
+    write_df_pickle, expand1darr, expand_1dfloat_arr
 from common.visualisation import LatentSpaceVideoVisualizer
 from common.data_preparation import prepare_data_for_concatenated_latent
 from .Model import SpatioTemporalVAE
@@ -389,8 +389,8 @@ class STVAEmodel:
 
     def _convert_input_data(self, train_data, test_data):
         # Unfolding
-        x, nan_masks, tasks, tasks_mask, _, _, _ = train_data
-        x_test, nan_masks_test, tasks_test, tasks_mask_test, _, _, _ = test_data
+        x, nan_masks, tasks, tasks_mask, _, _, _, _, _ = train_data
+        x_test, nan_masks_test, tasks_test, tasks_mask_test, _, _, _, _, _ = test_data
 
         # Convert numpy to torch.tensor
         x, x_test = numpy2tensor(self.device, x, x_test)
@@ -501,77 +501,6 @@ class STVAEmodel:
             pose_z_seq, recon_pose_z_seq, _, _ = pose_z_info
             motion_z, _, _ = motion_z_info
         return recon_motion, pose_z_seq, recon_pose_z_seq, motion_z
-
-    def save_for_concatenated_latent_vis(self, df_path, save_data_dir):
-
-        # Load data
-        df_shuffled = prepare_data_for_concatenated_latent(df_path, equal_phenos=False)
-        df_shuffled = df_shuffled.sample(frac=1, random_state=60).reset_index(drop=True)
-
-        # Forward pass and add column
-        x = np.asarray(list(df_shuffled["features"]))
-
-        motion_z_list = []
-        batch = 512
-        batch_times = int(x.shape[0] / batch)
-        for i in range(batch_times + 1):
-            if i < batch_times:
-                x_each = numpy2tensor(self.device, x[i * batch: (i + 1) * batch, ])[0]
-            else:
-                x_each = numpy2tensor(self.device, x[i * batch:, ])[0]
-            _, _, _, motion_z_batch = self._forward_pass(x_each)
-            motion_z_batch = tensor2numpy(motion_z_batch)[0]
-            motion_z_list.append(motion_z_batch)
-
-        motion_z = np.vstack(motion_z_list)
-        df_shuffled["motion_z"] = list(motion_z)
-
-        # Calc grand means for each tasks
-        print("Calculating grand means")
-        task_means = dict()
-        for task_idx in range(8):
-            mask = df_shuffled["tasks"] == task_idx
-            task_means[task_idx] = np.mean(np.asarray(list(df_shuffled[mask].motion_z)), axis=0)
-
-        # Calc means for each tasks in each patients
-        print("Calculating patient's task's mean")
-        all_patient_ids = np.unique(df_shuffled["idpatients"])
-        num_patient_ids = all_patient_ids.shape[0]
-        patient_id_list, features_list, phenos_list = [], [], []
-
-        for p_idx in range(num_patient_ids):
-            print("\rpatient {}/{}".format(p_idx, num_patient_ids), flush=True, end="")
-            patient_id = all_patient_ids[p_idx]
-            patient_mask = df_shuffled["idpatients"] == patient_id
-            unique_tasks = np.unique(df_shuffled[patient_mask]["tasks"])
-            unique_phenos = np.unique(np.concatenate(list(df_shuffled[patient_mask]["phenos"])))
-            task_vec_list = []
-
-            for task_idx in range(8):
-
-                if task_idx not in unique_tasks:
-                    task_vec_list.append(task_means[task_idx])
-                else:
-                    mask = (df_shuffled["idpatients"] == patient_id) & (df_shuffled["tasks"] == task_idx)
-                    patient_task_mean = np.mean(np.asarray(list(df_shuffled[mask]["motion_z"])), axis=0)
-                    task_vec_list.append(patient_task_mean)
-            task_vec = np.concatenate(task_vec_list)
-
-            patient_id_list.append(patient_id)
-            features_list.append(task_vec)
-            phenos_list.append(unique_phenos)
-
-        df_concat = pd.DataFrame({"patient_id": patient_id_list, "fingerprint": features_list,
-                                  "phenos": phenos_list})
-        print("Umapping")
-        self.fingerprint_umapper = umap.UMAP(n_neighbors=15,
-                                             n_components=2,
-                                             min_dist=0.1,
-                                             metric="euclidean")
-        fingerprint_z = self.fingerprint_umapper.fit_transform(np.asarray(list(df_concat["fingerprint"])))
-        df_concat["fingerprint_z"] = list(fingerprint_z)
-        print("Saving")
-        write_df_pickle(df_concat, os.path.join(save_data_dir, "concat_fingerprint.pickle"))
 
 
 class CSTVAEmodel(STVAEmodel):
@@ -830,16 +759,14 @@ class CSTVAEmodel(STVAEmodel):
     def _forward_pass(self, x, towards2d):
         self.model.eval()
         with torch.no_grad():
-            # For projection
-            towards2d = numpy2tensor(self.device, towards2d)[0]
             recon_motion, pred_tasks, pose_z_info, motion_z_info = self.model(x, towards2d)
             pose_z_seq, recon_pose_z_seq, _, _ = pose_z_info
             motion_z, _, _ = motion_z_info
         return recon_motion, pose_z_seq, recon_pose_z_seq, motion_z
 
     def _convert_input_data(self, train_data, test_data):
-        x, nan_masks, tasks, tasks_mask, _, _, towards = train_data
-        x_test, nan_masks_test, tasks_test, tasks_mask_test, _, _, towards_test = test_data
+        x, nan_masks, tasks, tasks_mask, _, _, towards, _, _ = train_data
+        x_test, nan_masks_test, tasks_test, tasks_mask_test, _, _, towards_test, _, _ = test_data
 
         # Convert numpy to torch.tensor
         x, x_test = numpy2tensor(self.device, x, x_test)
@@ -856,94 +783,16 @@ class CSTVAEmodel(STVAEmodel):
         return (x, nan_masks, tasks, tasks_mask, towards), (
             x_test, nan_masks_test, tasks_test, tasks_mask_test, towards_test)
 
-    def save_for_concatenated_latent_vis(self, df_path, save_data_dir):
-
-        # Load data
-        df_shuffled = prepare_data_for_concatenated_latent(df_path, equal_phenos=False)
-        df_shuffled = df_shuffled.sample(frac=1, random_state=60).reset_index(drop=True)
-
-        # Forward pass and add column
-        x = np.asarray(list(df_shuffled["features"]))
-        directions = np.asarray(list(df_shuffled["directions"]))
-
-        motion_z_list = []
-        batch = 512
-        batch_times = int(x.shape[0] / batch)
-        for i in range(batch_times + 1):
-            if i < batch_times:
-                x_each = numpy2tensor(self.device, x[i * batch: (i + 1) * batch, ])[0]
-                direction_each = directions[i * batch: (i + 1) * batch, ]
-            else:
-                x_each = numpy2tensor(self.device, x[i * batch:, ])[0]
-                direction_each = directions[i * batch:, ]
-
-            _, _, _, motion_z_batch = self._forward_pass(x_each, direction_each)
-            motion_z_batch = tensor2numpy(motion_z_batch)[0]
-            motion_z_list.append(motion_z_batch)
-
-        motion_z = np.vstack(motion_z_list)
-        df_shuffled["motion_z"] = list(motion_z)
-        del df_shuffled["features"]  # The "features" column is not needed anymore after forward pass
-        df_aver = df_shuffled.groupby("avg_idx", as_index=False).apply(
-            np.mean)  # Average across avg_idx. They are split from the same video.
-        del df_aver["avg_idx"]
-
-        # Calc grand means for each tasks
-        print("Calculating grand means")
-        task_means = dict()
-        for task_idx in range(8):
-            mask = df_aver["tasks"] == task_idx
-            task_means[task_idx] = np.mean(np.asarray(list(df_aver[mask].motion_z)), axis=0)
-
-        # Calc means for each tasks in each patients
-        print("Calculating patient's task's mean")
-        all_patient_ids = np.unique(df_aver["idpatients"])
-        num_patient_ids = all_patient_ids.shape[0]
-        patient_id_list, features_list, phenos_list = [], [], []
-
-        for p_idx in range(num_patient_ids):
-            print("\rpatient {}/{}".format(p_idx, num_patient_ids), flush=True, end="")
-            patient_id = all_patient_ids[p_idx]
-            patient_mask = df_aver["idpatients"] == patient_id
-            unique_tasks = np.unique(df_aver[patient_mask]["tasks"])
-            unique_phenos = np.unique(np.concatenate(list(df_aver[patient_mask]["phenos"])))
-            task_vec_list = []
-
-            for task_idx in range(8):
-
-                if task_idx not in unique_tasks:
-                    task_vec_list.append(task_means[task_idx])
-                else:
-                    mask = (df_aver["idpatients"] == patient_id) & (df_aver["tasks"] == task_idx)
-                    patient_task_mean = np.mean(np.asarray(list(df_aver[mask]["motion_z"])), axis=0)
-                    task_vec_list.append(patient_task_mean)
-            task_vec = np.concatenate(task_vec_list)
-
-            patient_id_list.append(patient_id)
-            features_list.append(task_vec)
-            phenos_list.append(unique_phenos)
-
-        df_concat = pd.DataFrame({"patient_id": patient_id_list, "fingerprint": features_list,
-                                  "phenos": phenos_list})
-        print("Umapping")
-        self.fingerprint_umapper = umap.UMAP(n_neighbors=15,
-                                             n_components=2,
-                                             min_dist=0.1,
-                                             metric="euclidean")
-        fingerprint_z = self.fingerprint_umapper.fit_transform(np.asarray(list(df_concat["fingerprint"])))
-        df_concat["fingerprint_z"] = list(fingerprint_z)
-        print("Saving")
-        write_df_pickle(df_concat, os.path.join(save_data_dir, "concat_fingerprint_CB-K-0.0001.pickle"))
-
 
 class CtaskSVAEmodel(CSTVAEmodel):
     def _convert_input_data(self, train_data, test_data):
-        x, nan_masks, tasks, tasks_mask, _, _, towards = train_data
-        x_test, nan_masks_test, tasks_test, tasks_mask_test, _, _, towards_test = test_data
+        x, nan_masks, tasks, tasks_mask, _, _, towards, _, _ = train_data
+        x_test, nan_masks_test, tasks_test, tasks_mask_test, _, _, towards_test, _, _ = test_data
 
         # Select those data with task labels
         train_mask = tasks_mask == True
         test_mask = tasks_mask_test == True
+
         x, nan_masks, tasks, tasks_mask, towards = x[train_mask], nan_masks[train_mask], tasks[train_mask], tasks_mask[
             train_mask], towards[train_mask]
         x_test, nan_masks_test, tasks_test, tasks_mask_test, towards_test = x_test[test_mask], nan_masks_test[
@@ -975,3 +824,43 @@ class CtaskSVAEmodel(CSTVAEmodel):
 
         return (x, nan_masks, tasks_input, tasks_mask_input, cond), (
             x_test, nan_masks_test, tasks_test_input, tasks_mask_test_input, cond_test)
+
+class CtaskLegSVAEmodel(CSTVAEmodel):
+    def _convert_input_data(self, train_data, test_data):
+        x, nan_masks, tasks, tasks_mask, _, _, towards, leg, leg_mask = train_data
+        x_test, nan_masks_test, tasks_test, tasks_mask_test, _, _, towards_test, leg_test, leg_mask_test = test_data
+        # Select those data with task labels
+        train_mask = leg_mask == True
+        test_mask = leg_mask_test == True
+
+        x, nan_masks, tasks, tasks_mask, towards = x[train_mask], nan_masks[train_mask], tasks[train_mask], tasks_mask[
+            train_mask], towards[train_mask]
+        x_test, nan_masks_test, tasks_test, tasks_mask_test, towards_test = x_test[test_mask], nan_masks_test[
+            test_mask], tasks_test[test_mask], tasks_mask_test[test_mask], towards_test[test_mask]
+        leg, leg_mask = leg[train_mask], leg_mask[train_mask]
+        leg_test, leg_mask_test = leg_test[test_mask], leg_mask_test[test_mask]
+
+
+        # Convert numpy to torch.tensor
+        x, x_test = numpy2tensor(self.device, x, x_test)
+        tasks = torch.from_numpy(tasks).long().to(self.device)
+        tasks_test = torch.from_numpy(tasks_test).long().to(self.device)
+        tasks_mask = torch.from_numpy(tasks_mask * 1 + 1e-5).float().to(self.device)
+        tasks_mask_test = torch.from_numpy(tasks_mask_test * 1 + 1e-5).float().to(self.device)
+        nan_masks = torch.from_numpy(nan_masks * 1 + 1e-5).float().to(self.device)
+        nan_masks_test = torch.from_numpy(nan_masks_test * 1 + 1e-5).float().to(self.device)
+        towards, towards_test = numpy2tensor(self.device,
+                                             expand1darr(towards.astype(np.int64), 3, self.seq_dim),
+                                             expand1darr(towards_test.astype(np.int64), 3, self.seq_dim)
+                                             )
+        # Expand dimensions and convert to tensor
+        leg, leg_test = expand_1dfloat_arr(leg), expand_1dfloat_arr(leg_test)
+        leg, leg_test = numpy2tensor(self.device, leg, leg_test)
+
+        # Conatenate as conditional labels
+        cond = torch.cat([towards, leg], dim=1)
+        cond_test = torch.cat([towards_test, leg_test], dim=1)
+
+        return (x, nan_masks, tasks, tasks_mask, cond), (
+            x_test, nan_masks_test, tasks_test, tasks_mask_test, cond_test)
+

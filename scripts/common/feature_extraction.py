@@ -235,11 +235,12 @@ class FeatureExtractorForODE(FeatureExtractor):
         self.lreader = LabelsReader(labels_path)
         self.df_save_path = df_save_path
 
-        # Initialize list
+        # Initialize lists
         self.vid_name_roots_list, self.features_list, self.feature_masks_list = [], [], []
         self.tasks_list, self.task_masks_list = [], []
         self.phenos_list, self.pheno_masks_list = [], []
         self.idpatients_list, self.towards_camera_list = [], []
+        self.leg_list, self.leg_mask_list = [], []
 
         super(FeatureExtractorForODE, self).__init__(scr_keyps_dir, None)
         self.data_grand_mean = self._incremental_mean_estimation()  # Shape = (25, 3)
@@ -271,7 +272,7 @@ class FeatureExtractorForODE(FeatureExtractor):
             feature_mask = np.invert(feature_mask)  # False = masked
 
             # 3rd-5th column: labels
-            (task, pheno, idpatient), (task_mask, pheno_mask) = self.lreader.get_label(vid_name_root)
+            (task, pheno, idpatient, leg), (task_mask, pheno_mask, leg_mask) = self.lreader.get_label(vid_name_root)
 
             # Detact walking direction
             towards = self._check_towards(feature,
@@ -287,6 +288,8 @@ class FeatureExtractorForODE(FeatureExtractor):
             self.pheno_masks_list.append(pheno_mask)  # False = masked
             self.idpatients_list.append(idpatient)  # None if not found
             self.towards_camera_list.append(towards)  # 0=unknown, 1=left, 2=right
+            self.leg_list.append(leg)
+            self.leg_mask_list.append(leg_mask)
 
         # Create dataframe
         self.df["vid_name_roots"] = self.vid_name_roots_list
@@ -298,6 +301,8 @@ class FeatureExtractorForODE(FeatureExtractor):
         self.df["pheno_masks"] = self.pheno_masks_list
         self.df["idpatients"] = self.idpatients_list
         self.df["towards_camera"] = self.towards_camera_list
+        self.df["leg"] = self.leg_mask_list
+        self.df["leg_masks"] = self.leg_mask_list
 
         # Filter rows with number of frames smaller than "filter_window"
         if (filter_window is not None) and (isinstance(filter_window, int)):

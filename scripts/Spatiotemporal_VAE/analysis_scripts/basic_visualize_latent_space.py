@@ -12,7 +12,7 @@ def concat_generator_batches(data_gen, fit_samples_num):
     for train_data, test_data in data_gen.iterator():
 
         # x_fit for umap embedding
-        x, x_masks, tasks, task_masks, phenos, pheno_masks, towards = train_data
+        x, x_masks, tasks, task_masks, phenos, pheno_masks, towards, _, _ = train_data
         masks = (task_masks == 1) & (pheno_masks == 1)
         x, tasks, phenos, towards = x[masks,].copy(), tasks[masks,], phenos[masks,], towards[masks,]
 
@@ -93,12 +93,13 @@ def save_for_latent_vis(model_container, data_gen, fit_samples_num, vis_data_dir
     # Forward pass
     towards_equal_pheno = convert_towards2onehot(towards_equal_pheno, model_container)
     towards_base = convert_towards2onehot(towards_base, model_container)
-    x_equal_pheno, x_base = numpy2tensor(model_container.device, x_equal_pheno, x_base)
+    x_equal_pheno, x_base, towards_ep_tensor, towards_base_tensor = numpy2tensor(model_container.device, x_equal_pheno, x_base, towards_equal_pheno, towards_base)
+
     recon_motion_equal, pose_z_seq_equal, recon_pose_z_seq_equal, motion_z_equal = model_container._forward_pass(
         x_equal_pheno,
-        towards_equal_pheno)
+        towards_ep_tensor)
     recon_motion_base, pose_z_seq_base, recon_pose_z_seq_base, motion_z_base = model_container._forward_pass(x_base,
-                                                                                                             towards_base)
+                                                                                                             towards_base_tensor)
 
     # Fit Umap embedding
     vis = LatentSpaceVideoVisualizer(model_identifier=model_identifier, save_vid_dir=None)

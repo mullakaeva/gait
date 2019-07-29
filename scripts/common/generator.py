@@ -160,23 +160,28 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         selected_df = df_shuffled.iloc[start:stop, :].copy()
 
         # Retrieve train data
-        x_train_info, task_train_info, pheno_train_info, towards_train = self._loop_for_array_construction(selected_df,
+        x_train_info, task_train_info, pheno_train_info, towards_train, leg_train_info = self._loop_for_array_construction(selected_df,
                                                                                                            self.m)
         x_train, x_train_masks = x_train_info
         task_train, task_train_masks = task_train_info
         pheno_train, pheno_train_masks = pheno_train_info
+        leg_train, leg_train_masks = leg_train_info
 
         # Retrieve test data
-        x_test_info, task_test_info, pheno_test_info, towards_test = self._loop_for_array_construction(self.df_test,
+        x_test_info, task_test_info, pheno_test_info, towards_test, leg_test_info = self._loop_for_array_construction(self.df_test,
                                                                                                        self.df_test.shape[
                                                                                                            0])
         x_test, x_test_masks = x_test_info
         task_test, task_test_masks = task_test_info
         pheno_test, pheno_test_masks = pheno_test_info
+        leg_test, leg_test_masks = leg_test_info
 
         # Combine as output
-        train_info = (x_train, x_train_masks, task_train, task_train_masks, pheno_train, pheno_train_masks, towards_train)
-        test_info = (x_test, x_test_masks, task_test, task_test_masks, pheno_test, pheno_test_masks, towards_test)
+        train_info = (x_train, x_train_masks, task_train, task_train_masks, pheno_train, pheno_train_masks,
+                      towards_train, leg_train, leg_train_masks)
+        test_info = (x_test, x_test_masks, task_test, task_test_masks, pheno_test, pheno_test_masks,
+                     towards_test, leg_test, leg_test_masks)
+
         return train_info, test_info
 
     def _loop_for_array_construction(self, df, num_samples):
@@ -204,15 +209,17 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         phenos_arr = np.zeros(num_samples)
         pheno_masks_arr = np.zeros(num_samples)
         towards_arr = np.zeros(num_samples)
+        leg_arr = np.zeros(num_samples)
+        leg_masks_arr = np.zeros(num_samples)
         for i in range(num_samples):
             # Get features and labels
-            fea_vec = df["features"].iloc[i]  # numpy.darray (num_frames, 25, 2)
-            fea_mask_vec = df["feature_masks"].iloc[i]  # numpy.bool (num_frames, 25, 2)
-            task = df["tasks"].iloc[i]  # numpy.int64
-            task_mask = df["task_masks"].iloc[i]  # numpy.bool, True for non-nan, False for nan
-            pheno = df["phenos"].iloc[i]  # numpy.int64
-            pheno_mask = df["pheno_masks"].iloc[i]  # numpy.bool, True for non-nan, False for nan
-            towards = df["towards_camera"].iloc[i]  # numpy.int64. 0=unknown, 1=left, 2=right
+
+            # fea_vec/fea_mask_vec ~ (num_frames, 25, 2), task ~ int, task_mask ~ bool (True for non-nan, False for nan)
+            fea_vec, fea_mask_vec, task, task_mask = df.iloc[i][["features", "feature_masks", "tasks", "task_masks"]]
+            # pheno ~ int, pheno_mask ~ bool (True for non-nan, False for nan), towards ~ int (0=unknown, 1=left, 2=right)
+            pheno, pheno_mask, towards = df.iloc[i][["phenos", "pheno_masks", "towards_camera"]]
+            # leg ~ float, leg_mask ~ bool (True for non-nan, False for nan)
+            leg, leg_mask = df.iloc[i][["leg", "leg_masks"]]
 
             # Slice to the receptive window
             slice_start = np.random.choice(fea_vec.shape[0] - self.n)
@@ -225,6 +232,8 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
             phenos_arr[i] = pheno
             pheno_masks_arr[i] = pheno_mask
             towards_arr[i] = towards
+            leg_arr[i] = leg
+            leg_masks_arr[i] = leg_mask
 
             # Construct output
             x_end_idx, y_end_idx = self.keyps_x_dims, self.keyps_x_dims + self.keyps_y_dims
@@ -233,4 +242,5 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
             fea_masks_arr[i, 0:x_end_idx, :] = fea_mask_vec_sliced[:, :, 0].T  # Store x-coordinates
             fea_masks_arr[i, x_end_idx:y_end_idx, :] = fea_mask_vec_sliced[:, :, 1].T  # Store y-coordinates
 
-        return (features_arr, fea_masks_arr), (tasks_arr, task_masks_arr), (phenos_arr, pheno_masks_arr), towards_arr
+        return (features_arr, fea_masks_arr), (tasks_arr, task_masks_arr), (phenos_arr, pheno_masks_arr), towards_arr, \
+               (leg_arr, leg_masks_arr)

@@ -62,23 +62,21 @@ def draw_videos_direction_fraction(x, recon_list, fracion_list, save_data_dir, v
             vwriter.writeFrame(frame)
         vwriter.close()
 
-def save_for_convex_direction(model_container, data_gen, fit_samples_num, save_data_dir, model_identifier):
+def save_for_convex_direction(model_container, data_gen, fit_samples_num, save_data_dir, model_identifier, draw):
     # Get data with (relatively) equal sizes of phenotypes, and base data for fitting
     equal_pheno_info, base_info = concat_generator_batches(data_gen=data_gen, fit_samples_num=fit_samples_num)
     (x_equal_pheno, tasks_equal_pheno, phenos_equal_pheno, towards_equal_pheno) = equal_pheno_info
     (x_base, tasks_base, phenos_base, towards_base) = base_info
 
     # Forward pass for base
-    x_equal_pheno, x_base = numpy2tensor(model_container.device, x_equal_pheno, x_base)
     towards2d_base = convert_direction_convex_combinaiton(towards_base, 1)
-
+    x_equal_pheno, x_base, towards2d_base = numpy2tensor(model_container.device, x_equal_pheno, x_base, towards2d_base)
     recon_motion_base, pose_z_seq_base, recon_pose_z_seq_base, motion_z_base = model_container._forward_pass(x_base,
                                                                                                              towards2d_base)
 
     # Fit Umap with base
     vis = LatentSpaceVideoVisualizer(model_identifier=model_identifier, save_vid_dir=None)
     vis.fit_umap(pose_z_seq=pose_z_seq_base, motion_z=motion_z_base)
-
     del x_base, towards2d_base, recon_motion_base, pose_z_seq_base, recon_pose_z_seq_base, motion_z_base
 
 
@@ -91,6 +89,7 @@ def save_for_convex_direction(model_container, data_gen, fit_samples_num, save_d
         towards2d_equal = convert_direction_convex_combinaiton(towards_equal_pheno, 1)
         towards2d_equal = numpy2tensor(model_container.device, towards2d_equal)[0]
         (pose_z_seq_equal, _, _), (motion_z_equal, _, _) = model_container.model.encode(x_equal_pheno, towards2d_equal)
+
         del towards2d_equal
     # -Decoding with respect to each fraction
     for direction_frac in fraction_list:
@@ -114,6 +113,6 @@ def save_for_convex_direction(model_container, data_gen, fit_samples_num, save_d
                                           tasks_labels=tasks_equal_pheno,
                                           towards_labels=towards_equal_pheno,
                                           save_data_dir=save_data_dir,
-                                          df_save_fn="direction_fraction_CN_K-0.0001.pickle",
-                                          vid_dirname="direction_fraction",
-                                          draw=True)
+                                          df_save_fn="Cond-Direct-Task_K-0.0001.pickle",
+                                          vid_dirname="Cond-Direct-Task",
+                                          draw=draw)

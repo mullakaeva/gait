@@ -265,7 +265,8 @@ class LabelsReader():
         self.labels_path = labels_path
         self.loaded_df = self._read_data_meta_info()
         self.all_filenames = []
-        self.vid2task, self.vid2pheno, self.vid2idpatients = self._construct_conversion_dict()
+        self.output_cols = ["fn_mp4", 'task', "phenotyp_label", "idpatient", "phenotyp_order", "aver_leg"]
+        self.vid2task, self.vid2pheno, self.vid2idpatients, self.vid2leg = self._construct_conversion_dict()
 
     def get_label(self, vid_name_root):
 
@@ -278,7 +279,6 @@ class LabelsReader():
             task_found = False
 
         # Phenos
-
         try:
             pheno = pheno2idx(self.vid2pheno[vid_name_root])
             pheno_found = True
@@ -286,23 +286,19 @@ class LabelsReader():
             pheno = 0  # shall be masked later
             pheno_found = False
 
-        # if (task_found == True) and (pheno_found == False):
-        #     import pdb
-        #     pdb.set_trace()
+        try:
+            leg = self.vid2leg[vid_name_root]
+            leg_found = True
+        except KeyError:
+            leg = 0
+            leg_found = False
 
         # idpatients
-        try:
-            idpatient = self.vid2idpatients[vid_name_root]
-        except KeyError:
-            idpatient = None
+        idpatient = self.vid2idpatients.get(vid_name_root, None)
 
-        # print("Task: {} | Pheno: {}".format(task_found, pheno_found))
 
-        return (task, pheno, idpatient), (task_found, pheno_found)
+        return (task, pheno, idpatient, leg), (task_found, pheno_found, leg_found)
 
-    def get_idpatient(self, vid_name_root):
-
-        pass
 
     def get_all_filenames(self):
         return self.all_filenames
@@ -314,21 +310,29 @@ class LabelsReader():
         vid2task = dict()
         vid2pheno = dict()
         vid2idpatients = dict()
+        vid2leg = dict()
 
         for i in range(df_pheno_filtered.shape[0]):
-            vid_name, task, pheno, idpatient, pheno_order = df_pheno_filtered.iloc[i].copy()
+            vid_name, task, pheno, idpatient, pheno_order, leg = df_pheno_filtered.iloc[i][self.output_cols].copy()
             vid2task[vid_name] = task
             vid2pheno[vid_name] = str(pheno)
             vid2idpatients[vid_name] = idpatient
+            vid2leg[vid_name] = leg
 
-        return vid2task, vid2pheno, vid2idpatients
+        return vid2task, vid2pheno, vid2idpatients, vid2leg
 
     def _dataframe_preprocessing(self):
         print("Preprocessing dataframe in LabelReader while constructing vid2* convertor dict.")
 
         # Strip away unnecessary columns
-        related_cols = ["fn_mp4", 'task', "phenotyp_label", "idpatient", "phenotyp_order"]
+        related_cols = ["fn_mp4", 'task', "phenotyp_label", "idpatient", "phenotyp_order", "leg_length_right", "leg_length_left"]
         df_output = self.loaded_df[related_cols].copy()
+
+        # Calculate the average leg length
+        df_output["aver_leg"] = (df_output.leg_length_right + df_output.leg_length_left)/2
+        df_output["aver_leg"] = df_output["aver_leg"]/100
+        del df_output["leg_length_right"]
+        del df_output["leg_length_left"]
 
         # Strip away phenotype label that is nan
         phenolabel_nan_mask = df_output["phenotyp_label"].astype(str) != 'nan'
@@ -364,6 +368,11 @@ def expand1darr(arr, dim, repeat_dim=128):
     output_arr[np.arange(m), arr, :] = 1
     return output_arr
 
+def expand_1dfloat_arr(arr, repeat_dim=128):
+    m = arr.shape[0]
+    output_arr = np.ones((m, 1, repeat_dim))
+    output_arr[:, :, :] = arr.reshape(m, 1, 1)
+    return output_arr
 
 def load_df_pickle(df_path):
     with open(df_path, "rb") as fh:
