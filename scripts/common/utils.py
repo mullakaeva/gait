@@ -57,6 +57,11 @@ def numpy2tensor(device, *numpy_arrs):
         output_list.append(torch.from_numpy(arr).float().to(device))
     return output_list
 
+def slice_by_mask(mask, *arrs):
+    new_arrs = []
+    for arr in arrs:
+        new_arrs.append(arr[mask,])
+    return new_arrs
 
 def extract_contagious(binary_train, max_neigh):
     """

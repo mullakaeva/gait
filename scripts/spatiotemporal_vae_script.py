@@ -4,6 +4,7 @@ from Spatiotemporal_VAE.STVAE_run import STVAEmodel, CSTVAEmodel, CtaskSVAEmodel
 from common.generator import GaitGeneratorFromDFforTemporalVAE
 from common.utils import dict2json, json2dict
 from Spatiotemporal_VAE.analysis_scripts.visualize_convex_direction import save_for_convex_direction
+from Spatiotemporal_VAE.analysis_scripts.latent_space_visualization import LatentSpaceSaver_CondDirectTask
 import os
 import pprint
 
@@ -25,8 +26,8 @@ def run_train_and_vis_on_stvae():
     lr_decay_gamma = 0.1
 
     # Naming of models: N=Normal
-    model_identifier = "Cond_Direct_Leg_K-0.0001"  # Direction + Leg
-    # model_identifier = "Cond_Task_Direct_K-0.0001"  # Direction + Task
+    # model_identifier = "Cond_Direct_Leg_K-0.0001"  # Direction + Leg
+    model_identifier = "Cond_Task_Direct_K-0.0001"  # Direction + Task
     # model_identifier = "CB-K(0.0001)-C-G-S2-New"  # Only Direction
 
     # Hyper-parameters
@@ -74,7 +75,7 @@ def run_train_and_vis_on_stvae():
     # Train
     data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=512, n=seq_dim)
 
-    model_container = CtaskLegSVAEmodel(data_gen=data_gen, fea_dim=50, seq_dim=seq_dim,
+    model_container = CtaskSVAEmodel(data_gen=data_gen, fea_dim=50, seq_dim=seq_dim,
                                         conditional_label_dim=hyper_params["conditional_label_dim"],
                                         model_type=hyper_params["model_type"],
                                         posenet_latent_dim=hyper_params["posenet_latent_dim"],
@@ -93,17 +94,29 @@ def run_train_and_vis_on_stvae():
                                         save_chkpt_path=save_model_path, load_chkpt_path=load_model_path)
     # model_container._save_model()
 
-    model_container.train(900)
+    # model_container.train(900)
     #
     # Visualization
-    # if os.path.isfile(save_model_path):
-    #     data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=data_gen.num_rows - 1, n=seq_dim, seed=60)
-    #     save_for_convex_direction(model_container=model_container,
-    #                               data_gen=data_gen2,
-    #                               fit_samples_num=4096,
-    #                               save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data",
-    #                               model_identifier=model_identifier,
-    #                               draw=False)
+    if os.path.isfile(save_model_path):
+        data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path, m=data_gen.num_rows - 1, n=seq_dim, seed=60)
+        viser = LatentSpaceSaver_CondDirectTask(
+            model_container=model_container,
+            data_gen=data_gen2,
+            fit_samples_num=4096,
+            save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data",
+            df_save_fn="LatentSpace_FitByEqual_Cond-Direct-Task.pickle",
+            vid_dirname="",
+            model_identifier=model_identifier,
+            draw=False
+        )
+        viser.process()
+
+        # save_for_convex_direction(model_container=model_container,
+        #                           data_gen=data_gen2,
+        #                           fit_samples_num=4096,
+        #                           save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data",
+        #                           model_identifier=model_identifier,
+        #                           draw=False)
 
     # else:
     #     print("Chkpt cannot be found")
