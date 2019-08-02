@@ -759,7 +759,7 @@ def openpose_preprocess_fromDetectronBox_wrapper(openpose_main_dir,
 
 
 def openpose_preprocess_wrapper(src_vid_dir, input_data_main_dir, output_vid_dir,
-                                output_data_dir, error_log_path, plot_keypoints=False,
+                                output_data_dir, error_log_path="", plot_keypoints=False,
                                 write_video=True):
     """
     This function preprocesses the raw videos and keypoints that were inferred by openpose, by cropping, centering and
@@ -782,42 +782,48 @@ def openpose_preprocess_wrapper(src_vid_dir, input_data_main_dir, output_vid_dir
     write_video : bool
         True if you want to store the output preprocessed visualisation videos.
     """
+    import traceback
 
     subfolder_paths = sorted(glob(os.path.join(input_data_main_dir, "*")))
     num_vids = len(subfolder_paths)
+    if error_log_path:
+        with open(error_log_path, "w") as fh:
+            fh.write("\n")
 
     for idx, subfolder_path_each in enumerate(subfolder_paths):
+        try:
+            # Monitor progress
+            print("\rPreprocessing {}/{}: from {}".format(idx, num_vids, subfolder_path_each))
 
-        # Monitor progress
-        print("\rPreprocessing {}/{}: from {}".format(idx, num_vids, subfolder_path_each))
+            # Define paths
+            vid_name_root = os.path.split(subfolder_path_each)[1]
+            input_video_path = os.path.join(src_vid_dir, vid_name_root + ".mp4")
+            output_vid_path = os.path.join(output_vid_dir, vid_name_root + ".mp4")
+            output_keypoints_path = os.path.join(output_data_dir, vid_name_root + ".npz")
 
-        # Define paths
-        vid_name_root = os.path.split(subfolder_path_each)[1]
-        input_video_path = os.path.join(src_vid_dir, vid_name_root + ".mp4")
-        output_vid_path = os.path.join(output_vid_dir, vid_name_root + ".mp4")
-        output_keypoints_path = os.path.join(output_data_dir, vid_name_root + ".npz")
+            # Create output_vid and output_data directory if not exist
+            os.makedirs(output_vid_dir, exist_ok=True)
+            os.makedirs(output_data_dir, exist_ok=True)
 
-        # Create output_vid and output_data directory if not exist
-        os.makedirs(output_vid_dir, exist_ok=True)
-        os.makedirs(output_data_dir, exist_ok=True)
+            # Skip if the outputp already exists
+            if os.path.isfile(output_keypoints_path):
+                print("Skipped: ", vid_name_root)
+                continue
 
-        # Skip if the outputp already exists
-        if os.path.isfile(output_keypoints_path):
-            print("Skipped: ", vid_name_root)
-            continue
+            # Start preprocessing
+            preprop = OpenposePreprocessor(input_video_path=input_video_path,
+                                           openpose_data_each_video_dir=subfolder_path_each,
+                                           output_video_path=output_vid_path,
+                                           output_data_path=output_keypoints_path)
+            preprop.initialize()
 
-        # Start preprocessing
-        preprop = OpenposePreprocessor(input_video_path=input_video_path,
-                                       openpose_data_each_video_dir=subfolder_path_each,
-                                       output_video_path=output_vid_path,
-                                       output_data_path=output_keypoints_path)
-        preprop.initialize()
-        preprop.preprocess(plot_keypoints=plot_keypoints, write_video=write_video)
+            preprop.preprocess(plot_keypoints=plot_keypoints, write_video=write_video)
 
-        # print("Error encountered. Logged in {}".format(error_log_path))
-        # with open(error_log_path, "a") as fh:
-        #     fh.write("\n{}_{}\n".format(idx, vid_name_root))
-        #     fh.write(str(e))
+        except Exception:
+            with open(error_log_path, "a") as fh:
+                fh.write("\n{}\n".format("="*30))
+                traceback.print_exc(file=fh)
+                print("\nError encountered, logged.")
 
 if __name__ == "__main__":
     pass
