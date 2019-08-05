@@ -15,7 +15,7 @@ def print_model_info(model_identifier, hyper_params):
     pp = pprint.PrettyPrinter(indent=4)
     pp.pprint(hyper_params)
 
-def load_model_container(model_identifier, df_path):
+def load_model_container(model_identifier, df_path, datagen_batch_size=512):
     # Hard-coded stuffs
     seq_dim = 128
     init_lr = 0.001
@@ -59,7 +59,7 @@ def load_model_container(model_identifier, df_path):
 
     print_model_info(model_identifier, hyper_params)
 
-    data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=512, n=seq_dim)
+    data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=datagen_batch_size, n=seq_dim)
 
     model_container = CtaskSVAEmodel(data_gen=data_gen, fea_dim=50, seq_dim=seq_dim,
                                      conditional_label_dim=hyper_params["conditional_label_dim"],

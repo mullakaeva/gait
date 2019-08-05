@@ -1,6 +1,8 @@
 from .Model import SpatioTemporalVAE, PoseVAE, MotionVAE, Unsqueeze, ClassNet
+from common.utils import TensorAssigner, TensorAssignerDouble, numpy_bool_index_select
 import torch
 import torch.nn as nn
+import numpy as np
 
 
 class ConditionalSpatioTemporalVAE(SpatioTemporalVAE):
@@ -163,3 +165,52 @@ class ConditionalClassNet(ClassNet):
                                                   device=device)
         self.first_layer = nn.Linear(self.input_dim + self.conditional_label_dim,
                                      self.encode_units[0])
+
+
+class IdentifyNet:
+    def __init__(self, hidden_dim, num_patient_id, motion_z_dim=128, task_dim=8, device=None):
+        self.hidden_dim = hidden_dim
+        self.num_patient_id = num_patient_id
+        self.task_dim = task_dim
+        self.motion_z_dim = motion_z_dim
+        self.device = torch.device('cuda:0') if device is None else device
+
+    def _transform_to_patient_task_means(self, motion_z, tasks, tasks_mask, patient_ids):
+        # Masking
+        true_mask = (tasks_mask == 1) & (np.isnan(patient_ids)==False)
+
+        # Slicing
+        sliced_z = numpy_bool_index_select(tensor_arr=motion_z, mask=true_mask, device=self.device)
+        tasks = tasks[true_mask]
+        patient_ids = patient_ids[true_mask]
+
+        # Labels
+        uni_patients = np.unique(patient_ids)
+        num_uni_patients = uni_patients.shape[0]
+
+        # Enabling gradient record on slice assignment
+        patient_assigner = TensorAssignerDouble(size=(num_uni_patients, self.task_dim, self.motion_z_dim), device=self.device)
+        task_assigner = TensorAssigner(size=(self.task_dim, self.motion_z_dim), device=self.device)
+
+        # Calc grand means
+        for i in range(self.task_dim):
+            average_tasks = torch.mean(numpy_bool_index_select(tensor_arr=sliced_z, mask=(tasks == i)), dim=0)
+            task_assigner.assign(i, average_tasks)
+        aver_tasks_all = task_assigner.get_fingerprint()
+
+        # Calc patient's task's means
+        for p_id in uni_patients:
+            for j in range(8):
+                patient_task_mask = (tasks == j) & (patient_ids == p_id)
+                if np.sum(patient_task_mask) > 0:
+                    average_patient_task = torch.mean(numpy_bool_index_select(tensor_arr=sliced_z, mask=(tasks == j)),
+                                                      dim=0)
+
+                else:
+                    average_patient_task = aver_tasks_all[j,]
+
+                patient_assigner.assign(i, j, average_patient_task)
+        # Reshape
+        fingerprint = patient_assigner.get_fingerprint()
+        fingerprint = fingerprint.reshape(num_uni_patients, -1)
+        return fingerprint, uni_patients

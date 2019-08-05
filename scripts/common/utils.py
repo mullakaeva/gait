@@ -43,6 +43,33 @@ def split_arr(arr, stride=10, kernel=128):
 
     return split_arr
 
+class TensorAssigner:
+    def __init__(self, size, device):
+        self.size = size
+        self.helper_tensor, self.finger_print_base = None, None
+        self.device = device
+        self.clean()
+
+    def assign(self, idx, arr):
+        self.helper_tensor[idx, ] = arr
+
+    def get_fingerprint(self):
+        return self.finger_print_base * self.helper_tensor
+
+    def clean(self):
+        self.helper_tensor = torch.ones(size=self.size, dtype=torch.float).to(self.device)
+        self.finger_print_base = torch.ones(size=self.size, dtype=torch.float, requires_grad=True).to(self.device)
+
+class TensorAssignerDouble(TensorAssigner):
+    def assign(self, idx1, idx2, arr):
+        self.helper_tensor[idx1, idx2, ] = arr
+
+def numpy_bool_index_select(tensor_arr, mask, device, select_dim=0):
+    idx = np.where(mask == True)[0]
+    idx_tensor = torch.LongTensor(idx).to(device)
+    sliced_tensor = tensor_arr.index_select(select_dim, idx_tensor)
+    return sliced_tensor
+
 
 def tensor2numpy(*tensor_arrs):
     output_list = []
