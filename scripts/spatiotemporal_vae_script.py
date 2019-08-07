@@ -1,13 +1,11 @@
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:1 bash
 
-from Spatiotemporal_VAE.STVAE_run import STVAEmodel, CSTVAEmodel, CtaskSVAEmodel, CtaskLegSVAEmodel
+from Spatiotemporal_VAE.STVAE_run import STVAEmodel, CSTVAEmodel, CtaskSVAEmodel, CtaskLegSVAEmodel, CISTVAEmodel
 from common.generator import GaitGeneratorFromDFforTemporalVAE
 from common.utils import dict2json, json2dict
-from Spatiotemporal_VAE.analysis_scripts.latent_space_visualization import LatentSpaceSaver_CondDirectTask
+from Spatiotemporal_VAE.analysis_scripts.latent_space_visualization import LatentSpaceSaver_CondDirectTask, LatentSpaceSaver_CondDirectLeg
 import os
 import pprint
-
-
 
 
 def print_model_info(model_identifier, hyper_params):
@@ -15,7 +13,8 @@ def print_model_info(model_identifier, hyper_params):
     pp = pprint.PrettyPrinter(indent=4)
     pp.pprint(hyper_params)
 
-def load_model_container(model_identifier, df_path, datagen_batch_size=512):
+
+def load_model_container(model_class, model_identifier, df_path, datagen_batch_size=512):
     # Hard-coded stuffs
     seq_dim = 128
     init_lr = 0.001
@@ -61,56 +60,61 @@ def load_model_container(model_identifier, df_path, datagen_batch_size=512):
 
     data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=datagen_batch_size, n=seq_dim)
 
-    model_container = CtaskSVAEmodel(data_gen=data_gen, fea_dim=50, seq_dim=seq_dim,
-                                     conditional_label_dim=hyper_params["conditional_label_dim"],
-                                     model_type=hyper_params["model_type"],
-                                     posenet_latent_dim=hyper_params["posenet_latent_dim"],
-                                     posenet_dropout_p=hyper_params["posenet_dropout_p"],
-                                     posenet_kld=hyper_params["posenet_kld"],
-                                     motionnet_latent_dim=hyper_params["motionnet_latent_dim"],
-                                     motionnet_hidden_dim=512,
-                                     motionnet_dropout_p=hyper_params["motionnet_dropout_p"],
-                                     motionnet_kld=hyper_params["motionnet_kld"],
-                                     pose_latent_gradient=hyper_params["pose_latent_gradient"],
-                                     recon_gradient=hyper_params["recon_gradient"],
-                                     classification_weight=hyper_params["class_weight"],
-                                     rmse_weighting_startepoch=hyper_params["rmse_weighting_startepoch"],
-                                     latent_recon_loss=hyper_params["latent_recon_loss"],
-                                     init_lr=init_lr, lr_milestones=lr_milestones, lr_decay_gamma=lr_decay_gamma,
-                                     save_chkpt_path=save_model_path, load_chkpt_path=load_model_path)
+    model_container = model_class(data_gen=data_gen, fea_dim=50, seq_dim=seq_dim,
+                                   conditional_label_dim=hyper_params["conditional_label_dim"],
+                                   model_type=hyper_params["model_type"],
+                                   posenet_latent_dim=hyper_params["posenet_latent_dim"],
+                                   posenet_dropout_p=hyper_params["posenet_dropout_p"],
+                                   posenet_kld=hyper_params["posenet_kld"],
+                                   motionnet_latent_dim=hyper_params["motionnet_latent_dim"],
+                                   motionnet_hidden_dim=512,
+                                   motionnet_dropout_p=hyper_params["motionnet_dropout_p"],
+                                   motionnet_kld=hyper_params["motionnet_kld"],
+                                   pose_latent_gradient=hyper_params["pose_latent_gradient"],
+                                   recon_gradient=hyper_params["recon_gradient"],
+                                   classification_weight=hyper_params["class_weight"],
+                                   rmse_weighting_startepoch=hyper_params["rmse_weighting_startepoch"],
+                                   latent_recon_loss=hyper_params["latent_recon_loss"],
+                                   init_lr=init_lr, lr_milestones=lr_milestones, lr_decay_gamma=lr_decay_gamma,
+                                   save_chkpt_path=save_model_path, load_chkpt_path=load_model_path)
     return model_container, save_model_path
 
+
 def run_train_and_vis_on_stvae():
-
-    df_path = "/mnt/data/feas_tasks_phenos_nanMasks_idpatient_leg.pickle"
-    # model_identifier = "Cond_Direct_Leg_K-0.0001"  # Direction + Leg
-    model_identifier = "Cond_Task_Direct_K-0.0001"  # Direction + Task
+    df_path = "/mnt/data/full_feas_tasks_phenos_nanMasks_idpatient_leg.pickle"
+    model_identifier = "Cond_Direct_Leg_K-0.0001"  # Direction + Leg
+    # model_identifier = "Cond_Task_Direct_K-0.0001"  # Direction + Task
     # model_identifier = "CB-K(0.0001)-C-G-S2-New"  # Only Direction
+    # model_identifier = "Ident_Cond_Direct_K-0.0001"  # Identity loss + Direction
 
-    model_container, save_model_path = load_model_container(model_identifier, df_path)
+    model_container, save_model_path = load_model_container(model_class=CtaskLegSVAEmodel,
+                                                            model_identifier=model_identifier,
+                                                            df_path=df_path,
+                                                            datagen_batch_size=1024)
 
-    # model_container.train(900)
+    model_container.train(900)
 
     # Visualization
-    if os.path.isfile(save_model_path):
-        data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path,
-                                                      m=model_container.data_gen.num_rows - 1,
-                                                      n=model_container.seq_dim, seed=60)
-        viser = LatentSpaceSaver_CondDirectTask(
-            model_container=model_container,
-            data_gen=data_gen2,
-            fit_samples_num=4096,
-            save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data",
-            df_save_fn="LatentSpace_FitByEqual_Cond-Direct-Task.pickle",
-            vid_dirname="Cond-Direct-Task",
-            model_identifier=model_identifier,
-            draw=True
-        )
-        viser.process()
+    # if os.path.isfile(save_model_path):
+    #     data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path,
+    #                                                   m=model_container.data_gen.num_rows - 1,
+    #                                                   n=model_container.seq_dim, seed=60)
+    #     viser = LatentSpaceSaver_CondDirectLeg(
+    #         model_container=model_container,
+    #         data_gen=data_gen2,
+    #         fit_samples_num=4096,
+    #         save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data",
+    #         df_save_fn="LatentSpace_Cond-Direct-Leg.pickle",
+    #         vid_dirname="Cond-Direct-Leg",
+    #         model_identifier=model_identifier,
+    #         draw=True
+    #     )
+    #     viser.process()
+    #
+    #
+    # else:
+    #     print("Chkpt cannot be found")
 
-
-    else:
-        print("Chkpt cannot be found")
 
 def dual_fingerprint_analysis():
     from Spatiotemporal_VAE.analysis_scripts.fingerprint import DualDirectTaskFingerprintSaver
@@ -126,6 +130,7 @@ def dual_fingerprint_analysis():
                                            save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data",
                                            save_df_name="Fingerprint_dual_direct_task.pickle")
     saver.process_and_save()
+
 
 def single_fingerprint_analysis():
     from Spatiotemporal_VAE.analysis_scripts.fingerprint import CondFingerprintSaver

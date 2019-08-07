@@ -4,7 +4,7 @@ import os
 import pandas as pd
 import skvideo.io as skv
 import torch
-from common.utils import expand1darr, numpy2tensor, tensor2numpy, write_df_pickle, slice_by_mask
+from common.utils import expand1darr, numpy2tensor, tensor2numpy, write_df_pickle, slice_by_mask, expand_1dfloat_arr
 from common.visualisation import SkeletonPainter
 
 def convert_direction_convex_combinaiton(labels, frac):
@@ -57,9 +57,8 @@ class LatentSpaceSaver_CondDirect:
         x_ep_list, tasks_ep_list, phenos_ep_list, towards_ep_list, leg_ep_list = [], [], [], [], []
         # Get data from data generator's first loop
         for train_data, test_data in self.data_gen.iterator():
-
             # x_fit for umap embedding
-            x, x_masks, tasks, task_masks, phenos, pheno_masks, towards, leg, leg_masks = train_data
+            x, x_masks, tasks, task_masks, phenos, pheno_masks, towards, leg, leg_masks, idpatients = train_data
             masks = (task_masks == 1) & (pheno_masks == 1) & (leg_masks == 1)
             x, tasks, phenos, towards, leg = slice_by_mask(masks, x, tasks, phenos, towards, leg)
 
@@ -93,7 +92,7 @@ class LatentSpaceSaver_CondDirect:
             # Slice data for fitting base
             self.x_base, self.tasks_base = x[0:self.fit_samples_num, ], tasks[0:self.fit_samples_num, ]
             self.phenos_base, self.towards_base = phenos[0:self.fit_samples_num, ], towards[0:self.fit_samples_num, ]
-            self.leg_bas = leg[0:self.fit_samples_num, ]
+            self.leg_base = leg[0:self.fit_samples_num, ]
 
     def _define_model_inputs(self):
         # Convert labels to vector + from numpy to tensor
@@ -133,7 +132,7 @@ class LatentSpaceSaver_CondDirect:
                                      n_components=2,
                                      min_dist=0.1,
                                      metric="euclidean")
-        motion_z_umapper.fit(self.motion_z_ep)
+        motion_z_umapper.fit(self.motion_z_base)
 
         self.motion_z_ep_umap = motion_z_umapper.transform(self.motion_z_ep)
 
@@ -145,7 +144,8 @@ class LatentSpaceSaver_CondDirect:
                            "motion_z_umap": list(self.motion_z_ep_umap),
                            "phenotype": list(self.phenos_ep),
                            "task": list(self.tasks_ep),
-                           "direction": list(self.towards_ep)
+                           "direction": list(self.towards_ep),
+                           "leg": list(self.leg_ep)
                            })
         write_df_pickle(df, os.path.join(self.save_data_dir, self.df_save_fn))
 
@@ -194,6 +194,33 @@ class LatentSpaceSaver_CondDirectTask(LatentSpaceSaver_CondDirect):
         # Conatenate between towards and tasks conditionals
         cond_ep = torch.cat((towards_ep2d, tasks_ep2d), dim=1)
         cond_base = torch.cat((towards_base2d, tasks_base2d), dim=1)
+
+        ep_input = (x_ep, cond_ep)
+        base_input = (x_base, cond_base)
+        return ep_input, base_input
+
+
+class LatentSpaceSaver_CondDirectLeg(LatentSpaceSaver_CondDirect):
+    """
+    Working with scripts.STVAE_run.CtaskLegSVAEmodel, with
+        (1) direction conditionals,
+        (2) leg length conditionals
+
+    """
+
+    def _define_model_inputs(self):
+        # Convert labels to vector + from numpy to tensor
+        towards_ep2d = expand1darr(self.towards_ep.astype(np.int), 3, self.model_container.seq_dim)
+        towards_base2d = expand1darr(self.towards_base.astype(np.int), 3, self.model_container.seq_dim)
+        leg_ep2d, leg_base2d = expand_1dfloat_arr(self.leg_ep), expand_1dfloat_arr(self.leg_base)
+
+        x_ep, x_base, towards_ep2d, towards_base2d, leg_ep2d, leg_base2d = numpy2tensor(
+            self.model_container.device, self.x_ep, self.x_base, towards_ep2d, towards_base2d, leg_ep2d, leg_base2d
+        )
+
+        # Conatenate between towards and leg conditionals
+        cond_ep = torch.cat((towards_ep2d, leg_ep2d), dim=1)
+        cond_base = torch.cat((towards_base2d, leg_base2d), dim=1)
 
         ep_input = (x_ep, cond_ep)
         base_input = (x_base, cond_base)

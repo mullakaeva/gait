@@ -328,7 +328,6 @@ class LabelsReader():
         # idpatients
         idpatient = self.vid2idpatients.get(vid_name_root, None)
 
-
         return (task, pheno, idpatient, leg), (task_found, pheno_found, leg_found)
 
 
@@ -343,7 +342,6 @@ class LabelsReader():
         vid2pheno = dict()
         vid2idpatients = dict()
         vid2leg = dict()
-
         for i in range(df_pheno_filtered.shape[0]):
             vid_name, task, pheno, idpatient, pheno_order, leg = df_pheno_filtered.iloc[i][self.output_cols].copy()
             vid2task[vid_name] = task
@@ -359,6 +357,7 @@ class LabelsReader():
         # Strip away unnecessary columns
         related_cols = ["fn_mp4", 'task', "phenotyp_label", "idpatient", "phenotyp_order", "leg_length_right", "leg_length_left"]
         df_output = self.loaded_df[related_cols].copy()
+
 
         # Calculate the average leg length
         df_output["aver_leg"] = (df_output.leg_length_right + df_output.leg_length_left)/2

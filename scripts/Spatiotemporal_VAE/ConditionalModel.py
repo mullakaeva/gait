@@ -1,4 +1,4 @@
-from .Model import SpatioTemporalVAE, PoseVAE, MotionVAE, Unsqueeze, ClassNet
+from .Model import SpatioTemporalVAE, PoseVAE, MotionVAE, Unsqueeze, ClassNet, pose_block
 from common.utils import TensorAssigner, TensorAssignerDouble, numpy_bool_index_select
 import torch
 import torch.nn as nn
@@ -70,7 +70,7 @@ class ConditionalSpatioTemporalVAE(SpatioTemporalVAE):
                                              n_classes=self.n_classes,
                                              device=self.device)
 
-    def forward(self, x, labels):
+    def forward(self, *inputs):
         """
         Parameters
         ----------
@@ -79,6 +79,7 @@ class ConditionalSpatioTemporalVAE(SpatioTemporalVAE):
         labels : torch.tensor
             With shape (m, label_dim, seq)
         """
+        x, labels = inputs
 
         (pose_z_seq, pose_mu, pose_logvar), (motion_z, motion_mu, motion_logvar) = self.encode(x, labels)
 
@@ -167,17 +168,39 @@ class ConditionalClassNet(ClassNet):
                                      self.encode_units[0])
 
 
-class IdentifyNet:
-    def __init__(self, hidden_dim, num_patient_id, motion_z_dim=128, task_dim=8, device=None):
-        self.hidden_dim = hidden_dim
+class IdentifyNet(nn.Module):
+    def __init__(self, num_patient_id, motion_z_dim=128,
+                 task_dim=8, fingerprint_dim=1024, hidden_dim=1024 * 2, device=None):
+        # init
+        super(IdentifyNet, self).__init__()
         self.num_patient_id = num_patient_id
         self.task_dim = task_dim
         self.motion_z_dim = motion_z_dim
+        self.fingerprint_dim = fingerprint_dim
+        self.hidden_dim = hidden_dim
         self.device = torch.device('cuda:0') if device is None else device
 
+        # Network
+        self.layer_in = nn.Sequential(*pose_block(input_channels=self.fingerprint_dim,
+                                                  output_channels=self.hidden_dim))
+        self.layer2 = nn.Sequential(*pose_block(input_channels=self.hidden_dim,
+                                                output_channels=self.hidden_dim))
+        self.layer_out = nn.Sequential(*pose_block(input_channels=self.hidden_dim,
+                                                   output_channels=self.num_patient_id))
+
+    def forward(self, *inputs):
+        motion_z, tasks, tasks_mask, patient_ids = inputs
+
+        fingerprint, uni_patients = self._transform_to_patient_task_means(motion_z, tasks, tasks_mask, patient_ids)
+
+        out = self.layer_in(fingerprint)
+        out = self.layer2(out)
+        out = self.layer_out(out)
+
+        return out, uni_patients
     def _transform_to_patient_task_means(self, motion_z, tasks, tasks_mask, patient_ids):
         # Masking
-        true_mask = (tasks_mask == 1) & (np.isnan(patient_ids)==False)
+        true_mask = (tasks_mask == 1) & (np.isnan(patient_ids) == False)
 
         # Slicing
         sliced_z = numpy_bool_index_select(tensor_arr=motion_z, mask=true_mask, device=self.device)
@@ -189,28 +212,87 @@ class IdentifyNet:
         num_uni_patients = uni_patients.shape[0]
 
         # Enabling gradient record on slice assignment
-        patient_assigner = TensorAssignerDouble(size=(num_uni_patients, self.task_dim, self.motion_z_dim), device=self.device)
+        patient_assigner = TensorAssignerDouble(size=(num_uni_patients, self.task_dim, self.motion_z_dim),
+                                                device=self.device)
         task_assigner = TensorAssigner(size=(self.task_dim, self.motion_z_dim), device=self.device)
 
         # Calc grand means
         for i in range(self.task_dim):
-            average_tasks = torch.mean(numpy_bool_index_select(tensor_arr=sliced_z, mask=(tasks == i)), dim=0)
+            average_tasks = torch.mean(numpy_bool_index_select(tensor_arr=sliced_z, mask=(tasks == i), device=self.device),
+                                       dim=0)
+
             task_assigner.assign(i, average_tasks)
         aver_tasks_all = task_assigner.get_fingerprint()
 
         # Calc patient's task's means
-        for p_id in uni_patients:
-            for j in range(8):
+        for p_id in range(uni_patients.shape[0]):
+
+            for j in range(self.task_dim):
                 patient_task_mask = (tasks == j) & (patient_ids == p_id)
                 if np.sum(patient_task_mask) > 0:
-                    average_patient_task = torch.mean(numpy_bool_index_select(tensor_arr=sliced_z, mask=(tasks == j)),
+                    average_patient_task = torch.mean(numpy_bool_index_select(tensor_arr=sliced_z, mask=(tasks == j),
+                                                                              device=self.device),
                                                       dim=0)
-
                 else:
                     average_patient_task = aver_tasks_all[j,]
+                patient_assigner.assign(p_id, j, average_patient_task)
 
-                patient_assigner.assign(i, j, average_patient_task)
         # Reshape
         fingerprint = patient_assigner.get_fingerprint()
         fingerprint = fingerprint.reshape(num_uni_patients, -1)
         return fingerprint, uni_patients
+
+
+class ConditionalIdentifySpatioTemporalVAE(ConditionalSpatioTemporalVAE):
+    def __init__(self,
+                 fea_dim=50,
+                 seq_dim=128,
+                 num_patient_id=1000,
+                 posenet_latent_dim=10,
+                 posenet_dropout_p=0,
+                 posenet_kld=True,
+                 motionnet_latent_dim=25,
+                 motionnet_hidden_dim=512,
+                 motionnet_dropout_p=0,
+                 motionnet_kld=True,
+                 conditional_label_dim=0,
+                 device=None
+                 ):
+        super(ConditionalIdentifySpatioTemporalVAE, self).__init__(
+            fea_dim=fea_dim,
+            seq_dim=seq_dim,
+            posenet_latent_dim=posenet_latent_dim,
+            posenet_dropout_p=posenet_dropout_p,
+            posenet_kld=posenet_kld,
+            motionnet_latent_dim=motionnet_latent_dim,
+            motionnet_hidden_dim=motionnet_hidden_dim,
+            motionnet_dropout_p=motionnet_dropout_p,
+            motionnet_kld=motionnet_kld,
+            conditional_label_dim=conditional_label_dim,
+            device=device
+        )
+        self.identify_net = IdentifyNet(
+            num_patient_id=num_patient_id,
+            motion_z_dim=self.motionnet_latent_dim,
+            task_dim=8,
+            fingerprint_dim=self.motionnet_latent_dim*8,
+            hidden_dim=num_patient_id*2,
+            device=self.device
+        )
+
+    def forward(self, *inputs):
+
+        x, labels, tasks_np, tasks_mask_np, patient_ids_np = inputs
+
+        (pose_z_seq, pose_mu, pose_logvar), (motion_z, motion_mu, motion_logvar) = self.encode(x, labels)
+
+        recon_motion, recon_pose_z_seq, concat_motion_z = self.decode(
+            motion_z, labels
+        )  # Convert (m, motion_latent_dim+label_dim) to (m, fea, seq)
+        pred_labels = self.class_net(concat_motion_z)  # Convert (m, motion_latent_dim+label_dim) to (m, n_classes)
+
+        # Identification net
+        pred_patients, uni_patients_np = self.identify_net(motion_z, tasks_np, tasks_mask_np, patient_ids_np)
+
+        return recon_motion, pred_labels, (pose_z_seq, recon_pose_z_seq, pose_mu, pose_logvar), (
+            motion_z, motion_mu, motion_logvar), (pred_patients, uni_patients_np)

@@ -108,8 +108,6 @@ class FeatureExtractor():
         data_accumulator = np.zeros([num] + [x for x in self.keyps_shape])
 
         for idx, data_info in enumerate(data_gen.iterator()):
-            # if idx > 500:
-            #     break
             print("\r%d/%d Estimating means incrementally from each data file." % (idx, data_gen.num_files), end="",
                   flush=True)
             data, _ = data_info
@@ -301,7 +299,7 @@ class FeatureExtractorForODE(FeatureExtractor):
         self.df["pheno_masks"] = self.pheno_masks_list
         self.df["idpatients"] = self.idpatients_list
         self.df["towards_camera"] = self.towards_camera_list
-        self.df["leg"] = self.leg_mask_list
+        self.df["leg"] = self.leg_list
         self.df["leg_masks"] = self.leg_mask_list
 
         # Filter rows with number of frames smaller than "filter_window"
