@@ -8,6 +8,16 @@ import pickle
 import pandas as pd
 import torch
 
+def append_lists(data_list, *args):
+    try:
+        assert len(data_list) == len(args)
+    except AssertionError:
+        print("data_list should have the same number of elements as *args")
+        raise AssertionError
+    for val, arg in zip(args):
+        arg.append(val)
+    return args
+
 
 def split_arr(arr, stride=10, kernel=128):
     """

@@ -988,6 +988,9 @@ class CISTVAEmodel(CSTVAEmodel):
                     ), flush=True, end=""
                           )
 
+                    # print()
+                    # pprint.pprint(self.loss_meter.get_meter_avg())
+
                 # Print losses and update recorders
                 print()
                 pprint.pprint(self.loss_meter.get_meter_avg())
@@ -1159,7 +1162,8 @@ class CISTVAEmodel(CSTVAEmodel):
         # Identity classificaiton
         uni_patient_ids_tensor = torch.LongTensor(uni_patient_ids).to(self.device)
         identity_loss_indicator, identity_acc = self._patient_identity_criterion(pred_patients, uni_patient_ids_tensor)
-        identity_loss = identity_loss_indicator
+        identity_loss = 0.001 * identity_loss_indicator
+
         # Combine different losses
         ## KLD has to be set to 0 manually if it is turned off, otherwise it is not numerically stable
         motionnet_kld_loss = 0 if self.motionnet_kld is None else motionnet_kld_loss
