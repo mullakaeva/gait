@@ -894,7 +894,7 @@ class CISTVAEmodel(CSTVAEmodel):
             motionnet_dropout_p=self.motionnet_dropout_p,
             motionnet_kld=self.motionnet_kld_bool,
             conditional_label_dim=self.conditional_label_dim,
-            num_patient_id=self.data_gen.num_uni_patients
+            num_phenos=13
         ).to(self.device)
         params = model.parameters()
         optimizer = optim.Adam(params, lr=self.init_lr)
@@ -991,7 +991,7 @@ class CISTVAEmodel(CSTVAEmodel):
                 # Print losses and update recorders
                 print()
                 pprint.pprint(self.loss_meter.get_meter_avg())
-                print("Identity loss:\ntest: {} ({})\ntrain: {} ({})".format(ident_loss_t, ident_acc, ident_loss, ident_acc_t))
+                print("Identity loss:\ntest: {} ({})\ntrain: {} ({})".format(ident_loss_t, ident_acc_t, ident_loss, ident_acc))
 
                 self.loss_meter.update_recorders()
                 self.epoch = len(self.loss_meter.get_recorders()["train_total_loss"])
@@ -1092,8 +1092,8 @@ class CISTVAEmodel(CSTVAEmodel):
         return recon_motion, pose_z_seq, recon_pose_z_seq, motion_z, pred_patients
 
     def _convert_input_data(self, train_data, test_data):
-        x, nan_masks, tasks, tasks_mask, _, _, towards, _, _, idpatients = train_data
-        x_test, nan_masks_test, tasks_test, tasks_mask_test, _, _, towards_test, _, _, idpatients_test = test_data
+        x, nan_masks, tasks, tasks_mask, phenos, phenos_mask, towards, _, _, idpatients = train_data
+        x_test, nan_masks_test, tasks_test, tasks_mask_test, phenos_test, phenos_mask_test, towards_test, _, _, idpatients_test = test_data
 
         # Convert numpy to torch.tensor
         x, x_test = numpy2tensor(self.device, x, x_test)
@@ -1108,11 +1108,11 @@ class CISTVAEmodel(CSTVAEmodel):
                                              expand1darr(towards_test.astype(np.int64), 3, self.seq_dim)
                                              )
 
-        train_inputs = (x, towards, tasks, tasks_mask, idpatients)
-        test_inputs = (x_test, towards_test, tasks_test, tasks_mask_test, idpatients_test)
-        train_info = (x, nan_masks, tasks_tensor, tasks_mask_tensor, _, _, towards, _, _, idpatients)
+        train_inputs = (x, towards, tasks, tasks_mask, idpatients, phenos, phenos_mask)
+        test_inputs = (x_test, towards_test, tasks_test, tasks_mask_test, idpatients_test, phenos_test, phenos_mask_test)
+        train_info = (x, nan_masks, tasks_tensor, tasks_mask_tensor, phenos, phenos_mask, towards, _, _, idpatients)
         test_info = (
-        x_test, nan_masks_test, tasks_test_tensor, tasks_mask_test_tensor, _, _, towards_test, _, _, idpatients_test)
+        x_test, nan_masks_test, tasks_test_tensor, tasks_mask_test_tensor, phenos_test, phenos_mask_test, towards_test, _, _, idpatients_test)
         return train_inputs, test_inputs, train_info, test_info
 
     def loss_function(self, recon_info, class_info, pose_stats, motion_stats, nan_masks, label_masks, patient_info):

@@ -169,11 +169,11 @@ class ConditionalClassNet(ClassNet):
 
 
 class IdentifyNet(nn.Module):
-    def __init__(self, num_patient_id, motion_z_dim=128,
+    def __init__(self, num_phenos, motion_z_dim=128,
                  task_dim=8, fingerprint_dim=1024, hidden_dim=1024 * 2, device=None):
         # init
         super(IdentifyNet, self).__init__()
-        self.num_patient_id = num_patient_id
+        self.num_phenos = num_phenos
         self.task_dim = task_dim
         self.motion_z_dim = motion_z_dim
         self.fingerprint_dim = fingerprint_dim
@@ -186,31 +186,41 @@ class IdentifyNet(nn.Module):
         self.layer2 = nn.Sequential(*pose_block(input_channels=self.hidden_dim,
                                                 output_channels=self.hidden_dim))
         self.layer_out = nn.Sequential(*pose_block(input_channels=self.hidden_dim,
-                                                   output_channels=self.num_patient_id))
+                                                   output_channels=self.num_phenos))
 
     def forward(self, *inputs):
-        motion_z, tasks, tasks_mask, patient_ids = inputs
 
-        fingerprint, uni_patients = self._transform_to_patient_task_means(motion_z, tasks, tasks_mask, patient_ids)
+        motion_z, tasks, tasks_mask, patient_ids, phenos, phenos_mask = inputs
+        fingerprint, uni_phenos = self._transform_to_patient_task_means(motion_z, tasks, tasks_mask, patient_ids, phenos, phenos_mask)
 
         out = self.layer_in(fingerprint)
         out = self.layer2(out)
         out = self.layer_out(out)
 
-        return out, uni_patients
-    def _transform_to_patient_task_means(self, motion_z, tasks, tasks_mask, patient_ids):
+        return out, uni_phenos
+    def _transform_to_patient_task_means(self, motion_z, tasks, tasks_mask, patient_ids, phenos, phenos_mask):
+
         # Masking
-        true_mask = (tasks_mask == 1) & (np.isnan(patient_ids) == False)
+        true_mask = (tasks_mask == 1) & (np.isnan(patient_ids) == False) & (phenos_mask == 1)
 
         # Slicing
         sliced_z = numpy_bool_index_select(tensor_arr=motion_z, mask=true_mask, device=self.device)
         tasks = tasks[true_mask]
+        phenos = phenos[true_mask]
         patient_ids = patient_ids[true_mask]
 
         # Labels
         uni_patients = np.unique(patient_ids)
         num_uni_patients = uni_patients.shape[0]
 
+        # Map patient to pheno's label
+        uni_patient_phenos = []
+        phenos_labels = []
+        for p_id in range(uni_patients.shape[0]):
+            patient_index = np.where(patient_ids == patient_ids[p_id])[0]
+            phenos_id_each = phenos[patient_index]
+            uni_patient_phenos.append((p_id, phenos_id_each[0]))
+            phenos_labels.append(phenos_id_each[0])
         # Enabling gradient record on slice assignment
         patient_assigner = TensorAssignerDouble(size=(num_uni_patients, self.task_dim, self.motion_z_dim),
                                                 device=self.device)
@@ -223,12 +233,11 @@ class IdentifyNet(nn.Module):
 
             task_assigner.assign(i, average_tasks)
         aver_tasks_all = task_assigner.get_fingerprint()
-
         # Calc patient's task's means
-        for p_id in range(uni_patients.shape[0]):
+        for p_id, phenos_id in uni_patient_phenos:
 
             for j in range(self.task_dim):
-                patient_task_mask = (tasks == j) & (patient_ids == p_id)
+                patient_task_mask = (tasks == j) & (patient_ids == patient_ids[p_id])
                 if np.sum(patient_task_mask) > 0:
                     average_patient_task = torch.mean(numpy_bool_index_select(tensor_arr=sliced_z, mask=(tasks == j),
                                                                               device=self.device),
@@ -236,18 +245,17 @@ class IdentifyNet(nn.Module):
                 else:
                     average_patient_task = aver_tasks_all[j,]
                 patient_assigner.assign(p_id, j, average_patient_task)
-
         # Reshape
         fingerprint = patient_assigner.get_fingerprint()
         fingerprint = fingerprint.reshape(num_uni_patients, -1)
-        return fingerprint, uni_patients
+        return fingerprint, np.asarray(phenos_labels)
 
 
 class ConditionalIdentifySpatioTemporalVAE(ConditionalSpatioTemporalVAE):
     def __init__(self,
                  fea_dim=50,
                  seq_dim=128,
-                 num_patient_id=1000,
+                 num_phenos=13,
                  posenet_latent_dim=10,
                  posenet_dropout_p=0,
                  posenet_kld=True,
@@ -272,18 +280,17 @@ class ConditionalIdentifySpatioTemporalVAE(ConditionalSpatioTemporalVAE):
             device=device
         )
         self.identify_net = IdentifyNet(
-            num_patient_id=num_patient_id,
+            num_phenos = num_phenos,
             motion_z_dim=self.motionnet_latent_dim,
             task_dim=8,
             fingerprint_dim=self.motionnet_latent_dim*8,
-            hidden_dim=num_patient_id*2,
+            hidden_dim=num_phenos*2,
             device=self.device
         )
 
     def forward(self, *inputs):
 
-        x, labels, tasks_np, tasks_mask_np, patient_ids_np = inputs
-
+        x, labels, tasks_np, tasks_mask_np, patient_ids_np, phenos_np, phenos_mask_np = inputs
         (pose_z_seq, pose_mu, pose_logvar), (motion_z, motion_mu, motion_logvar) = self.encode(x, labels)
 
         recon_motion, recon_pose_z_seq, concat_motion_z = self.decode(
@@ -292,7 +299,7 @@ class ConditionalIdentifySpatioTemporalVAE(ConditionalSpatioTemporalVAE):
         pred_labels = self.class_net(concat_motion_z)  # Convert (m, motion_latent_dim+label_dim) to (m, n_classes)
 
         # Identification net
-        pred_patients, uni_patients_np = self.identify_net(motion_z, tasks_np, tasks_mask_np, patient_ids_np)
+        pred_identify, labels_identify = self.identify_net(motion_z, tasks_np, tasks_mask_np, patient_ids_np, phenos_np, phenos_mask_np)
 
         return recon_motion, pred_labels, (pose_z_seq, recon_pose_z_seq, pose_mu, pose_logvar), (
-            motion_z, motion_mu, motion_logvar), (pred_patients, uni_patients_np)
+            motion_z, motion_mu, motion_logvar), (pred_identify, labels_identify)
