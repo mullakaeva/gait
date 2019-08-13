@@ -92,7 +92,7 @@ def run_train_and_vis_on_stvae():
                                                             df_path=df_path,
                                                             datagen_batch_size=1024)
 
-    model_container.train(900)
+    # model_container.train(900)
 
     # Visualization
     if os.path.isfile(save_model_path):

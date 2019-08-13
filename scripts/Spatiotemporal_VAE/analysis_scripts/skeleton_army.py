@@ -32,6 +32,8 @@ class ArmyVisualizer:
 
         self._pooling_and_transform()
 
+        self.drawing()
+
         pass
 
     def _forward_pass(self):

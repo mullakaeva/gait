@@ -44,6 +44,8 @@ class LatentSpaceSaver_CondDirect:
 
     def process(self):
 
+        import pdb
+        pdb.set_trace()
         self._concat_generator_batches()
         self._forward_pass()
         self._fit_and_transform_umap()
