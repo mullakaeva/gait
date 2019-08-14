@@ -908,8 +908,9 @@ class CISTVAEmodel(CSTVAEmodel):
 
                 for train_data, test_data in self.data_gen.iterator():
 
-                    train_inputs, test_inputs, train_converted, test_converted = self._convert_input_data(train_data,
-                                                                                                          test_data)
+                    train_inputs, train_converted = self._convert_input_data(train_data)
+                    test_inputs, test_converted = self._convert_input_data(test_data)
+
                     x, nan_masks, labels, labels_mask, _, _, cond, _, _, idpatients = train_converted
                     x_test, nan_masks_test, labels_test, labels_mask_test, _, _, cond_test, _, _, idpatients_test = test_converted
 
@@ -1085,38 +1086,45 @@ class CISTVAEmodel(CSTVAEmodel):
 
             print('Stored ckpt at {}'.format(self.save_chkpt_path))
 
-    def _forward_pass(self, x, labels, tasks_np, tasks_mask_np, patient_ids_np):
+    def _forward_pass(self, datagen_tuple, return_np=False):
+
+        inputs_data, inputs_converted  = self._convert_input_data(datagen_tuple)
+        x, nan_masks, labels, labels_mask, phenos, phenos_mask, conds, leg, leg_mask, idpatients = inputs_converted
+
+        # Clear optimizer's previous gradients
+        self.optimizer.zero_grad()
+
+        # CV set
         self.model.eval()
         with torch.no_grad():
-            recon_motion, pred_tasks, pose_z_info, motion_z_info, identity_info = self.model(x, labels)
-            pose_z_seq, recon_pose_z_seq, _, _ = pose_z_info
-            motion_z, _, _ = motion_z_info
-            pred_patients, uni_patients_np = identity_info
-        return recon_motion, pose_z_seq, recon_pose_z_seq, motion_z, pred_patients
+            recon, pred_labels, _, motion_tuple, ident_tuple = self.model(*inputs_data)
+        motion_z, _, _ = motion_tuple
+        pred_ident, labels_ident = ident_tuple
 
-    def _convert_input_data(self, train_data, test_data):
-        x, nan_masks, tasks, tasks_mask, phenos, phenos_mask, towards, _, _, idpatients = train_data
-        x_test, nan_masks_test, tasks_test, tasks_mask_test, phenos_test, phenos_mask_test, towards_test, _, _, idpatients_test = test_data
+        # Convert back to numpy
+        if return_np:
+            recon, motion_z, pred_ident = tensor2numpy(recon, motion_z, pred_ident)
+            x, nan_masks, conds, labels, labels_mask = tensor2numpy(x, nan_masks, conds, labels, labels_mask)
 
-        # Convert numpy to torch.tensor
-        x, x_test = numpy2tensor(self.device, x, x_test)
-        tasks_tensor = torch.from_numpy(tasks).long().to(self.device)
-        tasks_test_tensor = torch.from_numpy(tasks_test).long().to(self.device)
-        tasks_mask_tensor = torch.from_numpy(tasks_mask * 1 + 1e-5).float().to(self.device)
-        tasks_mask_test_tensor = torch.from_numpy(tasks_mask_test * 1 + 1e-5).float().to(self.device)
+        input_info = (x, nan_masks, labels, labels_mask, phenos, phenos_mask, conds, leg, leg_mask, idpatients)
+
+        return recon, motion_z, pred_ident, labels_ident, input_info
+
+    def _convert_input_data(self, data_tuple):
+        """
+        returns:
+        x, nan_masks, tasks, tasks_mask
+        """
+        x, nan_masks, tasks, tasks_mask, phenos, phenos_mask, towards, leg, leg_mask, idpatients = data_tuple
+
+        x, towards = numpy2tensor(self.device, x, expand1darr(towards.astype(np.int64), 3, self.seq_dim))
         nan_masks = torch.from_numpy(nan_masks * 1 + 1e-5).float().to(self.device)
-        nan_masks_test = torch.from_numpy(nan_masks_test * 1 + 1e-5).float().to(self.device)
-        towards, towards_test = numpy2tensor(self.device,
-                                             expand1darr(towards.astype(np.int64), 3, self.seq_dim),
-                                             expand1darr(towards_test.astype(np.int64), 3, self.seq_dim)
-                                             )
+        tasks_tensor = torch.from_numpy(tasks).long().to(self.device)
+        tasks_mask_tensor = torch.from_numpy(tasks_mask * 1 + 1e-5).float().to(self.device)
 
-        train_inputs = (x, towards, tasks, tasks_mask, idpatients, phenos, phenos_mask)
-        test_inputs = (x_test, towards_test, tasks_test, tasks_mask_test, idpatients_test, phenos_test, phenos_mask_test)
-        train_info = (x, nan_masks, tasks_tensor, tasks_mask_tensor, phenos, phenos_mask, towards, _, _, idpatients)
-        test_info = (
-        x_test, nan_masks_test, tasks_test_tensor, tasks_mask_test_tensor, phenos_test, phenos_mask_test, towards_test, _, _, idpatients_test)
-        return train_inputs, test_inputs, train_info, test_info
+        input_data = (x, towards, tasks, tasks_mask, idpatients, phenos, phenos_mask)
+        input_info = (x, nan_masks, tasks_tensor, tasks_mask_tensor, phenos, phenos_mask, towards, leg, leg_mask, idpatients)
+        return input_data, input_info
 
     def loss_function(self, recon_info, class_info, pose_stats, motion_stats, nan_masks, label_masks, patient_info):
         x, recon_motion = recon_info

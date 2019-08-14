@@ -4,7 +4,7 @@ import os
 import pandas as pd
 import skvideo.io as skv
 import torch
-from common.utils import expand1darr, numpy2tensor, tensor2numpy, write_df_pickle, slice_by_mask, expand_1dfloat_arr
+from common.utils import expand1darr, numpy2tensor, tensor2numpy, write_df_pickle, slice_by_mask, expand_1dfloat_arr, append_lists
 from common.visualisation import SkeletonPainter
 
 def convert_direction_convex_combinaiton(labels, frac):
@@ -227,3 +227,74 @@ class LatentSpaceSaver_CondDirectLeg(LatentSpaceSaver_CondDirect):
         ep_input = (x_ep, cond_ep)
         base_input = (x_base, cond_base)
         return ep_input, base_input
+
+
+class LatentSpaceSaver_CondDirectIdentity:
+    def __init__(self, model_container, data_gen, fit_samples_num, save_data_dir, df_save_fn, vid_dirname,
+                 model_identifier, draw):
+
+        # Copy arguments
+        self.model_container = model_container
+        self.data_gen = data_gen
+        self.fit_samples_num = fit_samples_num
+        self.save_data_dir = save_data_dir
+        self.df_save_fn = df_save_fn
+        self.vid_dirname = vid_dirname
+        self.model_identifier = model_identifier
+        self.draw = draw
+
+    def process(self):
+        self._forward_pass()
+        self._fit_and_transform_umap()
+        self._save_for_interactive_plot()
+
+    def _forward_pass(self):
+        # Lists for concatenation
+        x_list, recon_list, motion_z_list, phenos_list, tasks_list, towards_list, leg_list = [], [], [], [], [], [], []
+        # Get data from data generator's first loop
+        for train_data, _ in self.data_gen.iterator():
+            recon, motion_z, pred_ident, labels_ident, input_info = self.model_container._forward_pass(train_data, return_np=True)
+            x, nan_masks, labels, labels_mask, phenos, phenos_mask, conds, leg, leg_mask, idpatients = input_info
+
+            # Slicing
+            mask = (labels_mask > 0.5) & (phenos_mask > 0.5) & (leg_mask > 0.5)
+            x, nan_masks, labels, labels_mask, phenos, phenos_mask, conds, leg, leg_mask, idpatients = slice_by_mask(mask, *input_info)
+            recon, motion_z = slice_by_mask(mask, recon, motion_z)
+
+            #Append to lists
+            x_list.append(x)
+            recon_list.append(recon)
+            motion_z_list.append(motion_z)
+            phenos_list.append(phenos)
+            tasks_list.append(labels)
+            towards_list.append(np.argmax(conds[:, :, 0], axis=1))
+            leg_list.append(leg)
+        self.x = np.vstack(x_list)
+        self.recon = np.vstack(recon_list)
+        self.motion_z = np.vstack(motion_z_list)
+        self.phenos = np.concatenate(phenos_list)
+        self.tasks = np.concatenate(tasks_list)
+        self.towards = np.concatenate(towards_list)
+        self.leg = np.concatenate(leg_list)
+
+    def _fit_and_transform_umap(self):
+        print("Fit and transform umap")
+        motion_z_umapper = umap.UMAP(n_neighbors=15,
+                                     n_components=2,
+                                     min_dist=0.1,
+                                     metric="euclidean")
+
+        self.motion_z_umap = motion_z_umapper.fit_transform(self.motion_z)
+
+    def _save_for_interactive_plot(self):
+        print("Save for interactive plot")
+        # Save arrays
+        df = pd.DataFrame({"ori_motion": list(self.x),
+                           "recon_motion": list(self.recon),
+                           "motion_z_umap": list(self.motion_z_umap),
+                           "phenotype": list(self.phenos),
+                           "task": list(self.tasks),
+                           "direction": list(self.towards),
+                           "leg": list(self.leg)
+                           })
+        write_df_pickle(df, os.path.join(self.save_data_dir, self.df_save_fn))

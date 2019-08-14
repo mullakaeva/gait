@@ -3,7 +3,8 @@
 from Spatiotemporal_VAE.STVAE_run import STVAEmodel, CSTVAEmodel, CtaskSVAEmodel, CtaskLegSVAEmodel, CISTVAEmodel
 from common.generator import GaitGeneratorFromDFforTemporalVAE
 from common.utils import dict2json, json2dict
-from Spatiotemporal_VAE.analysis_scripts.latent_space_visualization import LatentSpaceSaver_CondDirectTask, LatentSpaceSaver_CondDirectLeg
+from Spatiotemporal_VAE.analysis_scripts.latent_space_visualization import LatentSpaceSaver_CondDirectTask, LatentSpaceSaver_CondDirectLeg, LatentSpaceSaver_CondDirectIdentity
+from Spatiotemporal_VAE.analysis_scripts.fingerprint import GaitprintSaver
 import os
 import pprint
 
@@ -82,40 +83,44 @@ def load_model_container(model_class, model_identifier, df_path, datagen_batch_s
 
 def run_train_and_vis_on_stvae():
     df_path = "/mnt/data/full_feas_tasks_phenos_nanMasks_idpatient_leg.pickle"
-    model_identifier = "Cond_Direct_Leg_K-0.0001"  # Direction + Leg
+    # model_identifier = "Cond_Direct_Leg_K-0.0001"  # Direction + Leg
     # model_identifier = "Cond_Task_Direct_K-0.0001"  # Direction + Task
     # model_identifier = "CB-K(0.0001)-C-G-S2-New"  # Only Direction
-    # model_identifier = "Ident_Cond_Direct_K-0.0001"  # Identity loss + Direction
+    model_identifier = "Ident_Cond_Direct_K-0.0001"  # Identity loss + Direction
 
-    model_container, save_model_path = load_model_container(model_class=CtaskLegSVAEmodel,
+    model_container, save_model_path = load_model_container(model_class=CISTVAEmodel,
                                                             model_identifier=model_identifier,
                                                             df_path=df_path,
                                                             datagen_batch_size=1024)
 
-    # model_container.train(900)
+    gs = GaitprintSaver(model_container=model_container,
+                        save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data",
+                        df_save_fn="Gaitprint_Cond-Direct-Ident.pickle")
+    gs.process()
+    # model_container.train(500)
 
     # Visualization
-    if os.path.isfile(save_model_path):
-        data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path,
-                                                      m=model_container.data_gen.num_rows - 1,
-                                                      n=model_container.seq_dim,
-                                                      train_portion=0.99,
-                                                      seed=60)
-        viser = LatentSpaceSaver_CondDirectLeg(
-            model_container=model_container,
-            data_gen=data_gen2,
-            fit_samples_num=4096
-            save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data",
-            df_save_fn="LatentSpace_Cond-Direct-Leg.pickle",
-            vid_dirname="Cond-Direct-Leg",
-            model_identifier=model_identifier,
-            draw=True
-        )
-        viser.process()
+    # if os.path.isfile(save_model_path):
+    #     data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path,
+    #                                                   m=1024,
+    #                                                   n=model_container.seq_dim,
+    #                                                   train_portion=0.99,
+    #                                                   seed=60)
+    #     viser = LatentSpaceSaver_CondDirectLeg(
+    #         model_container=model_container,
+    #         data_gen=data_gen2,
+    #         fit_samples_num=4096,
+    #         save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data",
+    #         df_save_fn="LatentSpace_Cond-Direct-Leg.pickle",
+    #         vid_dirname="Cond-Direct-Leg",
+    #         model_identifier=model_identifier,
+    #         draw=False
+    #     )
+    #     viser.process()
 
 
-    else:
-        print("Chkpt cannot be found")
+    # else:
+    #     print("Chkpt cannot be found")
 
 
 def dual_fingerprint_analysis():

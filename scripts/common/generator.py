@@ -133,7 +133,7 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
 
     """
 
-    def __init__(self, df_pickle_path, m=32, n=128, train_portion=0.95, seed=None):
+    def __init__(self, df_pickle_path, m=32, n=128, train_portion=0.95, seed=None, gait_print=False):
         """
 
         Parameters
@@ -147,6 +147,7 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
             Sequence length
         train_portion : float
         seed : int
+
         """
 
         # Set number of features
@@ -156,12 +157,15 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         # Call parent's init
         super(GaitGeneratorFromDFforTemporalVAE, self).__init__(df_pickle_path, m, n, train_portion, seed)
         self.batch_shape = (m, self.total_fea_dims, n)
+        self.gait_print = gait_print
 
         # Get number of unique patients
         self.num_uni_patients = self._get_num_uni_patients()
 
     def _convert_df_to_data(self, df_shuffled, start, stop):
         selected_df = df_shuffled.iloc[start:stop, :].copy()
+        if self.gait_print:
+            selected_df = self._complete_gaitprint(selected_df)
 
         # Retrieve train data
         x_train_info, task_train_info, pheno_train_info, towards_train, leg_train_info, idpatients = self._loop_for_array_construction(
@@ -258,3 +262,23 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         # Apply conversion to dataframe
         self.df_train["idpatients"] = self.df_train["idpatients"].apply(lambda x: conversion_dict.get(x, np.nan))
         self.df_test["idpatients"] = self.df_test["idpatients"].apply(lambda x: conversion_dict.get(x, np.nan))
+
+    def _complete_gaitprint(self, df):
+        import pdb
+        pdb.set_trace()
+
+        current_uni_ids = np.unique(df[df["idpatients"].isnull()==False]["idpatients"])
+
+        pass
+    def _construct_patient_tasks_dict(self):
+        mask = (self.df_train["idpatients"].isnull()==False) & (self.df_train["task_masks"]==True)
+        df_nonan = self.df_train[mask]
+        uni_ids = np.unique(df_nonan)
+
+        self.ids_tasks_map = dict()
+
+        for id in uni_ids:
+            self.ids_tasks_map[id] =
+
+
+

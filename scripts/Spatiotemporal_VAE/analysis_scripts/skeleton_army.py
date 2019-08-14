@@ -82,6 +82,6 @@ class ArmyVisualizer:
         self.trans_recon = self.pooled_recon * self.scaling - self.pooled_latents
 
     def _drawing(self):
-        self.
+        pass
 
 
