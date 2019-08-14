@@ -32,7 +32,7 @@ class ArmyVisualizer:
 
         self._pooling_and_transform()
 
-        self.drawing()
+        self._drawing()
 
         pass
 
@@ -78,8 +78,10 @@ class ArmyVisualizer:
         self.pooled_directions = self.all_directions[self.pooled_indexes]
 
         # Scale and translate the skeleton to their latents
-        self.trans_inputs = (self.pooled_inputs * self.scaling - self.pooled_latents)
+        self.trans_inputs = self.pooled_inputs * self.scaling - self.pooled_latents
         self.trans_recon = self.pooled_recon * self.scaling - self.pooled_latents
 
+    def _drawing(self):
+        self.
 
 

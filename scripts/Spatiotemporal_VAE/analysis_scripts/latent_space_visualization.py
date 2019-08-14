@@ -44,8 +44,6 @@ class LatentSpaceSaver_CondDirect:
 
     def process(self):
 
-        import pdb
-        pdb.set_trace()
         self._concat_generator_batches()
         self._forward_pass()
         self._fit_and_transform_umap()
@@ -58,6 +56,7 @@ class LatentSpaceSaver_CondDirect:
         # Lists for concatenation
         x_ep_list, tasks_ep_list, phenos_ep_list, towards_ep_list, leg_ep_list = [], [], [], [], []
         # Get data from data generator's first loop
+
         for train_data, test_data in self.data_gen.iterator():
             # x_fit for umap embedding
             x, x_masks, tasks, task_masks, phenos, pheno_masks, towards, leg, leg_masks, idpatients = train_data
@@ -129,7 +128,7 @@ class LatentSpaceSaver_CondDirect:
         )
 
     def _fit_and_transform_umap(self):
-
+        print("Fit and transform umap")
         motion_z_umapper = umap.UMAP(n_neighbors=15,
                                      n_components=2,
                                      min_dist=0.1,
@@ -139,7 +138,7 @@ class LatentSpaceSaver_CondDirect:
         self.motion_z_ep_umap = motion_z_umapper.transform(self.motion_z_ep)
 
     def _save_for_interactive_plot(self):
-
+        print("Save for interactive plot")
         # Save arrays
         df = pd.DataFrame({"ori_motion": list(self.x_ep),
                            "recon_motion": list(self.recon_motion_ep),
@@ -152,6 +151,7 @@ class LatentSpaceSaver_CondDirect:
         write_df_pickle(df, os.path.join(self.save_data_dir, self.df_save_fn))
 
     def _draw_corresponding_videos(self):
+        print("Drawing videos")
         # Define and make directories
         save_videos_dir = os.path.join(self.save_data_dir, "videos", self.vid_dirname)
         os.makedirs(save_videos_dir, exist_ok=True)

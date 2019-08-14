@@ -98,11 +98,13 @@ def run_train_and_vis_on_stvae():
     if os.path.isfile(save_model_path):
         data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path,
                                                       m=model_container.data_gen.num_rows - 1,
-                                                      n=model_container.seq_dim, seed=60)
+                                                      n=model_container.seq_dim,
+                                                      train_portion=0.99,
+                                                      seed=60)
         viser = LatentSpaceSaver_CondDirectLeg(
             model_container=model_container,
             data_gen=data_gen2,
-            fit_samples_num=4096,
+            fit_samples_num=4096
             save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data",
             df_save_fn="LatentSpace_Cond-Direct-Leg.pickle",
             vid_dirname="Cond-Direct-Leg",
