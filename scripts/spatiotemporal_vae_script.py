@@ -15,7 +15,7 @@ def print_model_info(model_identifier, hyper_params):
     pp.pprint(hyper_params)
 
 
-def load_model_container(model_class, model_identifier, df_path, datagen_batch_size=512):
+def load_model_container(model_class, model_identifier, df_path, datagen_batch_size=512, gaitprint_completion=False):
     # Hard-coded stuffs
     seq_dim = 128
     init_lr = 0.001
@@ -26,7 +26,7 @@ def load_model_container(model_class, model_identifier, df_path, datagen_batch_s
     hyper_params = {
         "model_name": model_identifier,
         "model_type": "conditional",
-        "conditional_label_dim": 4,
+        "conditional_label_dim": 3,
         "recon_weight": 1,
         "posenet_latent_dim": 16,
         "posenet_dropout_p": 0,
@@ -34,7 +34,7 @@ def load_model_container(model_class, model_identifier, df_path, datagen_batch_s
         "pose_latent_gradient": 0.0001,  # 0.0001
         "motionnet_latent_dim": 128,
         "motionnet_dropout_p": 0,
-        "motionnet_kld": [50, 250, 0.0001],  # [200, 250, 0.0001],
+        "motionnet_kld": [0, 250, 0.0001],  # [200, 250, 0.0001],
         "recon_gradient": 0.0001,  # 0.0001
         "class_weight": 0.001,  # 0.001
         "rmse_weighting_startepoch": None,
@@ -59,7 +59,8 @@ def load_model_container(model_class, model_identifier, df_path, datagen_batch_s
 
     print_model_info(model_identifier, hyper_params)
 
-    data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=datagen_batch_size, n=seq_dim, train_portion=0.99)
+    data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=datagen_batch_size, n=seq_dim, train_portion=0.99,
+                                                 gait_print=gaitprint_completion)
 
     model_container = model_class(data_gen=data_gen, fea_dim=50, seq_dim=seq_dim,
                                    conditional_label_dim=hyper_params["conditional_label_dim"],
@@ -86,18 +87,27 @@ def run_train_and_vis_on_stvae():
     # model_identifier = "Cond_Direct_Leg_K-0.0001"  # Direction + Leg
     # model_identifier = "Cond_Task_Direct_K-0.0001"  # Direction + Task
     # model_identifier = "CB-K(0.0001)-C-G-S2-New"  # Only Direction
-    model_identifier = "Ident_Cond_Direct_K-0.0001"  # Identity loss + Direction
+    # model_identifier = "Ident_Cond_Direct_K-0.0001"  # Identity loss + Direction
+    model_identifier = "Ident_complete_Cond_Direct_K-0.0001"  # Identity loss + Direction + datagen_completion
 
-    model_container, save_model_path = load_model_container(model_class=CISTVAEmodel,
-                                                            model_identifier=model_identifier,
-                                                            df_path=df_path,
-                                                            datagen_batch_size=1024)
-
-    gs = GaitprintSaver(model_container=model_container,
-                        save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data",
-                        df_save_fn="Gaitprint_Cond-Direct-Ident.pickle")
-    gs.process()
+    # model_container, save_model_path = load_model_container(model_class=CISTVAEmodel,
+    #                                                         model_identifier=model_identifier,
+    #                                                         df_path=df_path,
+    #                                                         datagen_batch_size=256,
+    #                                                         gaitprint_completion=True)
+    #
     # model_container.train(500)
+
+    vis = LatentSpaceSaver_CondDirectIdentity("", "", "", save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data",
+                                        df_save_fn="", vid_dirname="Ident_complete_Cond_Direct", model_identifier="", draw=True)
+    vis.load_saved_df("/mnt/JupyterNotebook/interactive_latent_exploration/data/LatentSpace_Cond-Direct-Ident.pickle")
+    vis._draw_corresponding_videos()
+
+
+    # gs = GaitprintSaver(model_container=model_container,
+    #                     save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data",
+    #                     df_save_fn="Gaitprint_Cond-Direct-Ident.pickle")
+    # gs.process()
 
     # Visualization
     # if os.path.isfile(save_model_path):

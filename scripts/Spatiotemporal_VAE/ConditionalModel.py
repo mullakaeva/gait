@@ -221,6 +221,7 @@ class IdentifyNet(nn.Module):
             phenos_id_each = phenos[patient_index]
             uni_patient_phenos.append((p_id, phenos_id_each[0]))
             phenos_labels.append(phenos_id_each[0])
+
         # Enabling gradient record on slice assignment
         patient_assigner = TensorAssignerDouble(size=(num_uni_patients, self.task_dim, self.motion_z_dim),
                                                 device=self.device)
@@ -233,6 +234,7 @@ class IdentifyNet(nn.Module):
 
             task_assigner.assign(i, average_tasks)
         aver_tasks_all = task_assigner.get_fingerprint()
+
         # Calc patient's task's means
         for p_id, phenos_id in uni_patient_phenos:
 
@@ -245,6 +247,7 @@ class IdentifyNet(nn.Module):
                 else:
                     average_patient_task = aver_tasks_all[j,]
                 patient_assigner.assign(p_id, j, average_patient_task)
+
         # Reshape
         fingerprint = patient_assigner.get_fingerprint()
         fingerprint = fingerprint.reshape(num_uni_patients, -1)

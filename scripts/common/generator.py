@@ -5,7 +5,7 @@ from .keypoints_format import excluded_points_flatten
 import random
 import os
 import numpy as np
-
+import pandas as pd
 
 # Abbreviations:
 # SSF = simple shallow features analysis
@@ -120,6 +120,8 @@ class GaitGeneratorFromDF:
         return output_arr, times
 
 
+
+
 class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
     """
     Example of usage:
@@ -162,15 +164,21 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         # Get number of unique patients
         self.num_uni_patients = self._get_num_uni_patients()
 
+        # Construct df filtered out the nan
+        self.df_nonan = self._construct_filtered_df()
+
     def _convert_df_to_data(self, df_shuffled, start, stop):
         selected_df = df_shuffled.iloc[start:stop, :].copy()
+
+        # import pdb
+        # pdb.set_trace()
         if self.gait_print:
             selected_df = self._complete_gaitprint(selected_df)
 
         # Retrieve train data
         x_train_info, task_train_info, pheno_train_info, towards_train, leg_train_info, idpatients = self._loop_for_array_construction(
             selected_df,
-            self.m)
+            selected_df.shape[0])
         x_train, x_train_masks = x_train_info
         task_train, task_train_masks = task_train_info
         pheno_train, pheno_train_masks = pheno_train_info
@@ -264,21 +272,33 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         self.df_test["idpatients"] = self.df_test["idpatients"].apply(lambda x: conversion_dict.get(x, np.nan))
 
     def _complete_gaitprint(self, df):
-        import pdb
-        pdb.set_trace()
 
-        current_uni_ids = np.unique(df[df["idpatients"].isnull()==False]["idpatients"])
+        id_nan_mask = df["idpatients"].isnull()==False
+        current_uni_ids = np.unique(df[id_nan_mask]["idpatients"])
 
-        pass
-    def _construct_patient_tasks_dict(self):
+        indexes_to_add = []
+        for uni_id in current_uni_ids:
+
+
+            df_patient_tasks = self.df_nonan[self.df_nonan["idpatients"] == uni_id]["tasks"]
+            grand_id_tasks = np.unique(df_patient_tasks)
+
+            uni_id_tasks = np.unique(df[(df["idpatients"] == uni_id)]["tasks"])
+
+            for grand_id_tasks_each in grand_id_tasks:
+                if grand_id_tasks_each not in uni_id_tasks:
+                    add_indexes = df_patient_tasks[df_patient_tasks==grand_id_tasks_each].index
+                    if add_indexes.shape[0] == 0:
+                        continue
+                    sampled_add_index = list(np.random.choice(add_indexes, size=1))
+                    indexes_to_add += sampled_add_index
+
+        df_to_append = self.df_nonan.loc[indexes_to_add]
+        df = pd.concat([df, df_to_append], axis=0)
+        return df
+
+    def _construct_filtered_df(self):
         mask = (self.df_train["idpatients"].isnull()==False) & (self.df_train["task_masks"]==True)
         df_nonan = self.df_train[mask]
-        uni_ids = np.unique(df_nonan)
-
-        self.ids_tasks_map = dict()
-
-        for id in uni_ids:
-            self.ids_tasks_map[id] =
-
-
+        return df_nonan
 

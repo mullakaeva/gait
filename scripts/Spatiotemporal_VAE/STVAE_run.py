@@ -971,7 +971,9 @@ class CISTVAEmodel(CSTVAEmodel):
                         train_latent_grad=latentgrad.item(),
                         train_acc=acc
                     )
-
+                    if np.isnan(loss.item()):
+                        import pdb
+                        pdb.set_trace()
                     # Back-prop
                     loss.backward()
                     self.optimizer.step()
@@ -989,8 +991,10 @@ class CISTVAEmodel(CSTVAEmodel):
                     ), flush=True, end=""
                           )
 
-                    # print()
-                    # pprint.pprint(self.loss_meter.get_meter_avg())
+                    print()
+                    pprint.pprint(self.loss_meter.get_meter_avg())
+                    print("Identity loss:\ntest: {} ({})\ntrain: {} ({})".format(ident_loss_t, ident_acc_t, ident_loss,
+                                                                                 ident_acc))
 
                 # Print losses and update recorders
                 print()

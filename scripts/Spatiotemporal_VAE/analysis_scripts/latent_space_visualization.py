@@ -4,7 +4,7 @@ import os
 import pandas as pd
 import skvideo.io as skv
 import torch
-from common.utils import expand1darr, numpy2tensor, tensor2numpy, write_df_pickle, slice_by_mask, expand_1dfloat_arr, append_lists
+from common.utils import expand1darr, numpy2tensor, tensor2numpy, write_df_pickle, slice_by_mask, expand_1dfloat_arr, append_lists, load_df_pickle
 from common.visualisation import SkeletonPainter
 
 def convert_direction_convex_combinaiton(labels, frac):
@@ -298,3 +298,31 @@ class LatentSpaceSaver_CondDirectIdentity:
                            "leg": list(self.leg)
                            })
         write_df_pickle(df, os.path.join(self.save_data_dir, self.df_save_fn))
+
+    def load_saved_df(self, df_path):
+        df = load_df_pickle(df_path)
+        self.x, self.recon = np.stack(df["ori_motion"]), np.stack(df["recon_motion"])
+
+    def _define_draw_data(self):
+        self.vid_draw_labels = ["Ori", "Recon"]
+        self.vid_draw_data = np.stack([self.x, self.recon])
+
+    def _draw_corresponding_videos(self):
+        print("Drawing videos")
+        # Define and make directories
+        self._define_draw_data()
+        save_videos_dir = os.path.join(self.save_data_dir, "videos", self.vid_dirname)
+        os.makedirs(save_videos_dir, exist_ok=True)
+
+        # Loop for each video
+        num_vid = self.vid_draw_data.shape[1]
+        for vid_idx in range(num_vid):
+            print("\rWriting vid {}/{}".format(vid_idx, num_vid), end="", flush=True)
+            vwriter = skv.FFmpegWriter(os.path.join(save_videos_dir, "%s_%d.mp4" % (self.vid_dirname, vid_idx)))
+
+            skepaint = SkeletonPainter(x=self.vid_draw_data[:, vid_idx, 0:25, :],
+                                       y=self.vid_draw_data[:, vid_idx, 25:, :],
+                                       texts=self.vid_draw_labels)
+            for frame in skepaint.draw_multiple_skeletons():
+                vwriter.writeFrame(frame)
+            vwriter.close()
