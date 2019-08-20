@@ -663,6 +663,8 @@ class CSTVAEmodel(STVAEmodel):
                         acc, acc_t
                     ), flush=True, end=""
                           )
+                    print()
+                    pprint.pprint(self.loss_meter.get_meter_avg())
 
                 # Print losses and update recorders
                 print()
