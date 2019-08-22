@@ -318,9 +318,8 @@ class PoseVAE(nn.Module):
         self.device = torch.device('cuda:0') if device is None else device
 
         # Encoder
-        self.first_layer = nn.Linear(self.fea_dim, self.encode_units[0])
 
-        self.en_blk1 = nn.Sequential(*pose_block(input_channels=self.encode_units[0],
+        self.en_blk1 = nn.Sequential(*pose_block(input_channels=self.fea_dim,
                                                  output_channels=self.encode_units[1],
                                                  dropout_p=dropout_p))
         self.en_blk2 = nn.Sequential(*pose_block(input_channels=self.encode_units[1],
@@ -375,18 +374,14 @@ class PoseVAE(nn.Module):
         return out, mu, logvar, z
 
     def encode(self, x):
-        logging.debug("PoseNet Input's Shape: %s" % (str(x.shape)))
 
-        out = self.first_layer(x)
+        out = self.en_blk1(x)
         logging.debug("PoseNet Encode's Shape: %s" % (str(out.shape)))
 
-        out = self.en_blk1(out) + out[:, 0:int(self.encode_units[1])]
+        out = self.en_blk2(out)
         logging.debug("PoseNet Encode's Shape: %s" % (str(out.shape)))
 
-        out = self.en_blk2(out) + out[:, 0:int(self.encode_units[2])]
-        logging.debug("PoseNet Encode's Shape: %s" % (str(out.shape)))
-
-        out = self.en_blk3(out) + out[:, 0:int(self.encode_units[3])]
+        out = self.en_blk3(out)
         logging.debug("PoseNet Encode's Shape: %s" % (str(out.shape)))
 
         out = self.en2latents(out)
@@ -504,9 +499,7 @@ class MotionVAE(nn.Module):
                                                             hidden_dim,
                                                             kernel_size=self.decoding_kernels[4],
                                                             stride=self.decoding_strides[4]))
-        self.final_layer = nn.Sequential(
-            nn.Conv1d(hidden_dim, self.fea_dim, kernel_size=1)
-        )
+        self.final_layer = nn.Conv1d(hidden_dim, self.fea_dim, kernel_size=1)
 
     def forward(self, x):
         # Encoder
@@ -528,16 +521,16 @@ class MotionVAE(nn.Module):
         out = self.first_layer(x)
         logging.debug("MotionNet Encode's Shape: %s" % (str(out.shape)))
 
-        out = self.en_blk1(out) + out[:, :, 0:int(self.Ls_encode[1])]
+        out = self.en_blk1(out)
         logging.debug("MotionNet Encode's Shape: %s" % (str(out.shape)))
 
-        out = self.en_blk2(out) + out[:, :, 0:int(self.Ls_encode[2])]
+        out = self.en_blk2(out)
         logging.debug("MotionNet Encode's Shape: %s" % (str(out.shape)))
 
-        out = self.en_blk3(out) + out[:, :, 0:int(self.Ls_encode[3])]
+        out = self.en_blk3(out)
         logging.debug("MotionNet Encode's Shape: %s" % (str(out.shape)))
 
-        out = self.en_blk4(out) + out[:, :, 0:int(self.Ls_encode[4])]
+        out = self.en_blk4(out)
         logging.debug("MotionNet Encode's Shape: %s" % (str(out.shape)))
 
         out = self.en2latents(out)

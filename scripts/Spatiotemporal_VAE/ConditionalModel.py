@@ -133,8 +133,9 @@ class ConditionalPoseVAE(PoseVAE):
             device=device
         )
         self.conditional_label_dim = conditional_label_dim
-        self.first_layer = nn.Linear(self.fea_dim + self.conditional_label_dim, self.encode_units[0])
-
+        self.en_blk1 = nn.Sequential(*pose_block(input_channels=self.fea_dim + self.conditional_label_dim,
+                                                 output_channels=self.encode_units[1],
+                                                 dropout_p=dropout_p))
 
 class ConditionalMotionVAE(MotionVAE):
     def __init__(self, fea_dim=50, seq_dim=128, hidden_dim=1024, latent_dim=8, conditional_label_dim=0, kld=False,
@@ -187,6 +188,7 @@ class IdentifyNet(nn.Module):
                                                 output_channels=self.hidden_dim))
         self.layer_out = nn.Sequential(*pose_block(input_channels=self.hidden_dim,
                                                    output_channels=self.num_phenos))
+        self.sigmoid_layer = nn.Sigmoid()
 
     def forward(self, *inputs):
 
@@ -196,6 +198,7 @@ class IdentifyNet(nn.Module):
         out = self.layer_in(fingerprint)
         out = self.layer2(out)
         out = self.layer_out(out)
+        out = self.sigmoid_layer(out)
 
         return out, uni_phenos
     def _transform_to_patient_task_means(self, motion_z, tasks, tasks_mask, patient_ids, phenos, phenos_mask):

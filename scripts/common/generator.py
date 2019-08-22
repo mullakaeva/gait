@@ -82,6 +82,7 @@ class GaitGeneratorFromDF:
         if self.seed is not None:
             np.random.seed(self.seed)
         df_shuffled = self.df_train.iloc[np.random.permutation(self.num_rows), :]
+        self.seed += 1
 
         for start, stop in duration_indices:
             info = self._convert_df_to_data(df_shuffled, start, stop)
@@ -167,13 +168,15 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         # Construct df filtered out the nan
         self.df_nonan = self._construct_filtered_df()
 
+
     def _convert_df_to_data(self, df_shuffled, start, stop):
         selected_df = df_shuffled.iloc[start:stop, :].copy()
 
-        # import pdb
-        # pdb.set_trace()
         if self.gait_print:
             selected_df = self._complete_gaitprint(selected_df)
+            selected_df_test = self._complete_gaitprint(self.df_test.sample(n=self.m))
+        else:
+            selected_df_test = self.df_test.sample(n=self.m)
 
         # Retrieve train data
         x_train_info, task_train_info, pheno_train_info, towards_train, leg_train_info, idpatients = self._loop_for_array_construction(
@@ -186,8 +189,9 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
 
         # Retrieve test data
         x_test_info, task_test_info, pheno_test_info, towards_test, leg_test_info, idpatients_test = self._loop_for_array_construction(
-            self.df_test,
-            self.df_test.shape[0])
+            selected_df_test,
+            selected_df_test.shape[0])
+
 
         x_test, x_test_masks = x_test_info
         task_test, task_test_masks = task_test_info
