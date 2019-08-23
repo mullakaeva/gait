@@ -55,6 +55,10 @@ def draw_skeleton_new(ax, x, y, linewidth=1):
         ax.plot(x[seq_indexes[0]], y[seq_indexes[0]], c=seq_indexes[1], linewidth=linewidth)
     return ax
 
+def draw_skeleton_custom(ax, x, y, c, alpha, linewidth=1):
+    for seq_indexes in draw_seq_col_indexes:
+        ax.plot(x[seq_indexes[0]], y[seq_indexes[0]], c=c, alpha=alpha, linewidth=linewidth)
+    return ax
 
 def draw_skeleton(ax, x, y, linewidth=1):
     side_dict = {

@@ -57,9 +57,12 @@ def load_model_container(model_class, model_identifier, df_path, datagen_batch_s
         dict2json(save_hyper_params_path, hyper_params)
 
     print_model_info(model_identifier, hyper_params)
-
-    data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=datagen_batch_size, n=seq_dim, train_portion=train_portion,
-                                                 gait_print=gaitprint_completion, seed=seed)
+    if df_path:
+        data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=datagen_batch_size, n=seq_dim,
+                                                     train_portion=train_portion,
+                                                     gait_print=gaitprint_completion, seed=seed)
+    else:
+        data_gen = None
 
     model_container = model_class(data_gen=data_gen,
                                   fea_dim=50,
@@ -87,11 +90,12 @@ def load_model_container(model_class, model_identifier, df_path, datagen_batch_s
 def run_train_and_vis_on_stvae():
     df_path = "/mnt/data/fea_thesis_analysis_37836_allLabelled_withoutLeg.pickle"
     # model_identifier = "Thesis_B"
-    # model_identifier = "Thesis_B+T"
-    # model_identifier = "Thesis_B+T+C"
-    model_identifier = "Thesis_B+T+C+P"
+    # model_identifier = "Thesis_B+C"
+    # model_identifier = "Thesis_B+C+T"
+    model_identifier = "Thesis_B+C+T+P"
+
     gaitprint_completion = True  # True for B+T+C+P, False for others
-    batch_size = 64  # 64 for B+T+C+P, 512 for others
+    batch_size = 64  # 64 for Thesis_B+C+T+P, 512 for others
     model_container, save_model_path = load_model_container(model_class=PhenoCondContainer,
                                                             model_identifier=model_identifier,
                                                             df_path=df_path,
@@ -99,26 +103,38 @@ def run_train_and_vis_on_stvae():
                                                             gaitprint_completion=gaitprint_completion,
                                                             train_portion=0.80,
                                                             seed=0)
-    model_container.train(300)
+    model_container.train(100)
 
-    # # Visualization
-    # if os.path.isfile(save_model_path):
-    #     data_gen2 = GaitGeneratorFromDFforTemporalVAE(df_path,
-    #                                                   m=model_container.data_gen.num_rows-1,
-    #                                                   n=model_container.seq_dim,
-    #                                                   train_portion=0.99,
-    #                                                   seed=60)
-    #     viser = LatentSpaceSaver_CondDirect(
-    #         model_container=model_container,
-    #         data_gen=data_gen2,
-    #         fit_samples_num=4096,
-    #         save_data_dir="/mnt/JupyterNotebook/interactive_latent_exploration/data",
-    #         df_save_fn="LatentSpace_Cond-Direct-alldata.pickle",
-    #         vid_dirname="Cond-Direct-alldata",
-    #         model_identifier=model_identifier,
-    #         draw=True
-    #     )
-    #     viser.process()
 
-    # else:
-    #     print("Chkpt cannot be found")
+def run_save_model_outputs():
+    from Spatiotemporal_VAE.analysis_scripts.thesis_save_model_outputs import OutputSavers
+    df_path = "/mnt/data/fea_thesis_analysis_37836_allLabelled_withoutLeg.pickle"
+    df_save_path = "/mnt/thesis_results/data/model_outputs.pickle"
+    df_pheno_save_path = "/mnt/thesis_results/data/model_phenos_outputs.pickle"
+
+    identifier_set = ["Thesis_B", "Thesis_B+C", "Thesis_B+C+T", "Thesis_B+C+T+P"]
+    model_classess = [BaseContainer, ConditionalContainer, ConditionalContainer, PhenoCondContainer]
+    model_container_set = []
+
+    data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=512, n=128,
+                                                 train_portion=0.8,
+                                                 gait_print=False, seed=0)
+
+
+
+    for model_identifier, model_class in zip(identifier_set, model_classess):
+        model_container, _ = load_model_container(model_class=model_class,
+                                                  model_identifier=model_identifier,
+                                                  df_path=df_path,
+                                                  datagen_batch_size=512,
+                                                  gaitprint_completion=False,
+                                                  train_portion=0.80,
+                                                  seed=0)
+        model_container_set.append(model_container)
+
+    saver = OutputSavers(data_gen=data_gen,
+                         model_container_set=model_container_set,
+                         identifier_set=identifier_set,
+                         save_df_path=df_save_path,
+                         save_pheno_df_path=df_pheno_save_path)
+    saver.forward_batch()

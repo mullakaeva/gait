@@ -43,9 +43,14 @@
 # %% ======================== Step 4: Train and visualize on combined_VAE =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:3 bash
 # from spatiotemporal_vae_script import run_train_and_vis_on_stvae, dual_fingerprint_analysis, single_fingerprint_analysis
-from thesis_analysis_script import run_train_and_vis_on_stvae
+from thesis_analysis_script import run_train_and_vis_on_stvae, run_save_model_outputs
 run_train_and_vis_on_stvae()
+# run_save_model_outputs()
 # dual_fingerprint_analysis()
 # single_fingerprint_analysis()
+
+# %% ======================== Step 5: Propagate and save outputs =======================
+
+
 
 

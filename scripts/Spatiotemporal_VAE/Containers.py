@@ -98,6 +98,13 @@ class BaseContainer:
             self.model, self.optimizer, self.lr_scheduler = self._load_model()
         # self._save_model()  # Enabled only for renewing newly introduced hyper-parameters
 
+    def forward_evaluate(self, datagen_tuple):
+        self.model.eval()
+        with torch.no_grad():
+            data_input, data_info = self._convert_input_data(datagen_tuple)
+            data_outputs = self.model(*data_input)
+        return data_outputs
+
     def train(self, n_epochs=50):
         try:
             for epoch in range(n_epochs):
