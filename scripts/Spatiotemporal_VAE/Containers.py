@@ -115,14 +115,14 @@ class BaseContainer:
 
                     # Retrieve data
                     train_input, train_info = self._convert_input_data(train_data)
-                    test_input, test_info = self._convert_input_data(test_data)
+                    # test_input, test_info = self._convert_input_data(test_data)
 
-                    # CV set
-                    self.model.eval()
-                    with torch.no_grad():
-                        test_outputs = self.model(*test_input)
-                        loss_test, loss_test_indicators = self.loss_function(test_outputs, test_info)
-                        self._update_loss_meters(loss_test, loss_test_indicators, train=False)
+                    # # CV set
+                    # self.model.eval()
+                    # with torch.no_grad():
+                    #     test_outputs = self.model(*test_input)
+                    #     loss_test, loss_test_indicators = self.loss_function(test_outputs, test_info)
+                    #     self._update_loss_meters(loss_test, loss_test_indicators, train=False)
 
                     # Train set
                     self.model.train()
@@ -340,11 +340,11 @@ class BaseContainer:
         '''
 
         def plot_ax_train_test(ax, x_length, windows, recorders, key_suffix, train_ylabel, test_ylabel):
-            ax_tw = ax.twinx()
+            # ax_tw = ax.twinx()
             ax.plot(x_length, recorders["train_" + key_suffix][windows:], c="b")
-            ax_tw.plot(x_length, recorders["test_" + key_suffix][windows:], c="r")
+            # ax_tw.plot(x_length, recorders["test_" + key_suffix][windows:], c="r")
             ax.set_ylabel(train_ylabel)
-            ax_tw.set_ylabel(test_ylabel)
+            # ax_tw.set_ylabel(test_ylabel)
 
         def sliding_plot(epoch_windows, axes, recorders):
             windows = self.epoch - epoch_windows

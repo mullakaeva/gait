@@ -37,7 +37,7 @@ class OutputSavers:
             Predefined as ["B", "B+C", "B+C+T", "B+C+T+P"]
         """
         self.data_gen = data_gen
-        self.data_gen.m = data_gen.df_test.shape[0]
+        self.data_gen.mt = data_gen.df_test.shape[0]
         self.identifier_set = [x.replace("Thesis_", "") for x in identifier_set]
         for i in range(len(identifier_set)):
             del model_container_set[i].data_gen

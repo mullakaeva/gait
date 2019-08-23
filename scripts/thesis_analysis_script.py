@@ -88,29 +88,29 @@ def load_model_container(model_class, model_identifier, df_path, datagen_batch_s
 
 
 def run_train_and_vis_on_stvae():
-    df_path = "/mnt/data/fea_thesis_analysis_37836_allLabelled_withoutLeg.pickle"
+    df_path = "/mnt/data/full_feas_tasks_phenos_nanMasks_idpatient_leg.pickle"
     # model_identifier = "Thesis_B"
     # model_identifier = "Thesis_B+C"
-    # model_identifier = "Thesis_B+C+T"
-    model_identifier = "Thesis_B+C+T+P"
+    model_identifier = "Thesis_B+C+T"
+    # model_identifier = "Thesis_B+C+T+P"
 
-    gaitprint_completion = True  # True for B+T+C+P, False for others
-    batch_size = 64  # 64 for Thesis_B+C+T+P, 512 for others
-    model_container, save_model_path = load_model_container(model_class=PhenoCondContainer,
+    gaitprint_completion = False  # True for B+T+C+P, False for others
+    batch_size = 512  # 64 for Thesis_B+C+T+P, 512 for others
+    model_container, save_model_path = load_model_container(model_class=ConditionalContainer,
                                                             model_identifier=model_identifier,
                                                             df_path=df_path,
                                                             datagen_batch_size=batch_size,
                                                             gaitprint_completion=gaitprint_completion,
                                                             train_portion=0.80,
                                                             seed=0)
-    model_container.train(100)
+    model_container.train(992)
 
 
 def run_save_model_outputs():
     from Spatiotemporal_VAE.analysis_scripts.thesis_save_model_outputs import OutputSavers
-    df_path = "/mnt/data/fea_thesis_analysis_37836_allLabelled_withoutLeg.pickle"
-    df_save_path = "/mnt/thesis_results/data/model_outputs.pickle"
-    df_pheno_save_path = "/mnt/thesis_results/data/model_phenos_outputs.pickle"
+    df_path = "/mnt/data/full_feas_tasks_phenos_nanMasks_idpatient_leg.pickle"
+    df_save_path = "/mnt/thesis_results/data/model_outputs_full.pickle"
+    df_pheno_save_path = "/mnt/thesis_results/data/model_phenos_outputs_full.pickle"
 
     identifier_set = ["Thesis_B", "Thesis_B+C", "Thesis_B+C+T", "Thesis_B+C+T+P"]
     model_classess = [BaseContainer, ConditionalContainer, ConditionalContainer, PhenoCondContainer]

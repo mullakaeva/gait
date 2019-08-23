@@ -54,15 +54,18 @@ class GaitGeneratorFromDF:
         self.total_num_rows = self.df.shape[0]
         self.seed = seed
         self.df = self.df.sample(frac=1, random_state=self.seed)
-        split_index = int(self.total_num_rows * train_portion)
-        self.df_train = self.df.iloc[0:split_index, :].reset_index(drop=True)
-        self.df_test = self.df.iloc[split_index:, :].reset_index(drop=True)
-
-
+        self.train_portion = train_portion
+        self.df_train, self.df_test = self._split_train_test()
         self.num_rows = self.df_train.shape[0]
         self.m, self.n = m, n
 
         self.label_range = np.max(self.df["tasks"]) - np.min(self.df["tasks"])
+
+    def _split_train_test(self):
+        split_index = int(self.total_num_rows * self.train_portion)
+        df_train = self.df.iloc[0:split_index, :].reset_index(drop=True)
+        df_test = self.df.iloc[split_index:, :].reset_index(drop=True)
+        return df_train, df_test
 
     def iterator(self):
         """
@@ -161,6 +164,7 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         super(GaitGeneratorFromDFforTemporalVAE, self).__init__(df_pickle_path, m, n, train_portion, seed)
         self.batch_shape = (m, self.total_fea_dims, n)
         self.gait_print = gait_print
+        self.mt = 4
 
         # Get number of unique patients
         self.num_uni_patients = self._get_num_uni_patients()
@@ -168,15 +172,22 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         # Construct df filtered out the nan
         self.df_nonan = self._construct_filtered_df()
 
+    def _split_train_test(self):
+
+        labelled_mask = (self.df["task_masks"] == True)
+        df_test = self.df[labelled_mask][0:8000].copy()
+        train_index = list(self.df[labelled_mask][8000:].index) + list(self.df[labelled_mask==False].index)
+        df_train = self.df.loc[train_index].copy()
+        return df_train, df_test
 
     def _convert_df_to_data(self, df_shuffled, start, stop):
         selected_df = df_shuffled.iloc[start:stop, :].copy()
 
         if self.gait_print:
             selected_df = self._complete_gaitprint(selected_df)
-            selected_df_test = self._complete_gaitprint(self.df_test.sample(n=self.m))
+            selected_df_test = self._complete_gaitprint(self.df_test.sample(n=self.mt))
         else:
-            selected_df_test = self.df_test.sample(n=self.m)
+            selected_df_test = self.df_test.sample(n=self.mt)
 
         # Retrieve train data
         x_train_info, task_train_info, pheno_train_info, towards_train, leg_train_info, idpatients = self._loop_for_array_construction(
