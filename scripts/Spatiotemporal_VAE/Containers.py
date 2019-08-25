@@ -220,6 +220,7 @@ class BaseContainer:
         self.classification_weight = checkpoint['classification_weight']
         self.posenet_kld = checkpoint['posenet_kld']
         self.motionnet_kld = checkpoint['motionnet_kld']
+        # self.motionnet_kld = [0, 10, 0.0001]
         self.posenet_kld_bool = checkpoint['posenet_kld_bool']
         self.motionnet_kld_bool = checkpoint['motionnet_kld_bool']
         self.latent_recon_loss = checkpoint['latent_recon_loss']

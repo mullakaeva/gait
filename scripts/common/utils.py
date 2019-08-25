@@ -600,14 +600,14 @@ def sample_and_copy_videos(src_dir, dest_dir, sample_num=1000, labels_path="", s
 
 # ['dtcarry' 'dtmath' 'dtspeech' 'ec' 'headneck' 'vmax' 'vmin' 'vself']
 task2idx_dict = {
-    "vself": 0,
-    "vmin": 1,
-    "vmax": 2,
-    "headneck": 3,
-    "dtspeech": 4,
-    "dtmath": 5,
-    "dtcarry": 6,
-    "ec": 7
+    "Vself": 0,
+    "Vmin": 1,
+    "Vmax": 2,
+    "HeadExtended": 3,
+    "DT-speech": 4,
+    "DT-math": 5,
+    "DT-carry": 6,
+    "EC": 7
 }
 
 idx2task_dict = {v: k for k, v in task2idx_dict.items()}
@@ -625,19 +625,19 @@ def task2idx(task):
 #  'ppv' 'psychogenic' 'sensory ataxia' 'spastic' 'suspectnph']
 
 pheno2idx_dict = {
-    "anxious":0,
-    "antalgic":1,
-    "atactic":2,
-    "dyskinetic":3,
-    "functional":4,
-    "healthy":5,
-    "hypokinetic-frontal":6,
-    "hypokinetic":7,
-    "motor-cognitive":8,
-    "paretic":9,
-    "sensory-atactic":10,
-    "spastic":11,
-    "spastic-atactic":12
+    "Anxious":0,
+    "Antalgic":1,
+    "Atactic":2,
+    "Dyskinetic":3,
+    "Functional":4,
+    "Healthy":5,
+    "Hypokinetic-frontal":6,
+    "Hypokinetic":7,
+    "Motor-cognitive":8,
+    "Paretic":9,
+    "Sensory-atactic":10,
+    "Spastic":11,
+    "Spastic-atactic":12
 }
 
 idx2pheno_dict = {v: k for k, v in pheno2idx_dict.items()}
@@ -649,3 +649,33 @@ def idx2pheno(idx):
 
 def pheno2idx(pheno):
     return pheno2idx_dict[pheno]
+
+# Direction
+
+direction2idx_dict = {
+    "Unknown":0,
+    "Towards":1,
+    "Away":2
+}
+idx2direction_dict = {v: k for k, v in direction2idx_dict.items()}
+
+def idx2direction(idx):
+    return idx2direction_dict[idx]
+
+def direction2idx(idx):
+    return direction2idx_dict[idx]
+
+def tick_val_text_tasks():
+    vals = list(idx2task_dict.keys())
+    texts = [idx2task(i) for i in vals]
+    return (vals, texts)
+
+def tick_val_text_phenos():
+    vals = list(idx2pheno_dict.keys())
+    texts = [idx2pheno(i) for i in vals]
+    return (vals, texts)
+
+def tick_val_text_directions():
+    vals = list(idx2direction_dict.keys())
+    texts = [idx2direction(i) for i in vals]
+    return (vals, texts)

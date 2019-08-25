@@ -35,7 +35,7 @@ def load_model_container(model_class, model_identifier, df_path, datagen_batch_s
         "pose_latent_gradient": 0.0001,  # 0.0001
         "motionnet_latent_dim": 128,
         "motionnet_dropout_p": 0,
-        "motionnet_kld": [0, 250, 0.0001],  # [200, 250, 0.0001],
+        "motionnet_kld": [0, 10, 0.0001],  # [0, 250, 0.0001],
         "recon_gradient": 0.0001,  # 0.0001
         "class_weight": 0.001,  # 0.001
         "latent_recon_loss": 1,
@@ -90,8 +90,8 @@ def load_model_container(model_class, model_identifier, df_path, datagen_batch_s
 def run_train_and_vis_on_stvae():
     df_path = "/mnt/data/full_feas_tasks_phenos_nanMasks_idpatient_leg.pickle"
     # model_identifier = "Thesis_B"
-    # model_identifier = "Thesis_B+C"
-    model_identifier = "Thesis_B+C+T"
+    model_identifier = "Thesis_B+C"
+    # model_identifier = "Thesis_B+C+T"
     # model_identifier = "Thesis_B+C+T+P"
 
     gaitprint_completion = False  # True for B+T+C+P, False for others
