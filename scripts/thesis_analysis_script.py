@@ -109,8 +109,8 @@ def run_train_and_vis_on_stvae():
 def run_save_model_outputs():
     from Spatiotemporal_VAE.analysis_scripts.thesis_save_model_outputs import OutputSavers
     df_path = "/mnt/data/full_feas_tasks_phenos_nanMasks_idpatient_leg.pickle"
-    df_save_path = "/mnt/thesis_results/data/model_outputs_full.pickle"
-    df_pheno_save_path = "/mnt/thesis_results/data/model_phenos_outputs_full.pickle"
+    df_save_path = "/mnt/thesis_results/data/model_outputs_full_final.pickle"
+    df_pheno_save_path = "/mnt/thesis_results/data/model_phenos_outputs_full_final.pickle"
 
     identifier_set = ["Thesis_B", "Thesis_B+C", "Thesis_B+C+T", "Thesis_B+C+T+P"]
     model_classess = [BaseContainer, ConditionalContainer, ConditionalContainer, PhenoCondContainer]
@@ -123,14 +123,24 @@ def run_save_model_outputs():
 
 
     for model_identifier, model_class in zip(identifier_set, model_classess):
-        model_container, _ = load_model_container(model_class=model_class,
-                                                  model_identifier=model_identifier,
-                                                  df_path=df_path,
-                                                  datagen_batch_size=512,
-                                                  gaitprint_completion=False,
-                                                  train_portion=0.80,
-                                                  seed=0)
-        model_container_set.append(model_container)
+        model_container_kwargs = {
+            "model_class": model_class,
+            "model_identifier": model_identifier,
+            "df_path": None,
+            "datagen_batch_size": 512,
+            "gaitprint_completion": False,
+            "train_portion": 0.80,
+            "seed": 0
+        }
+        model_container_set.append(model_container_kwargs)
+        # model_container, _ = load_model_container(model_class=model_class,
+        #                                           model_identifier=model_identifier,
+        #                                           df_path=df_path,
+        #                                           datagen_batch_size=512,
+        #                                           gaitprint_completion=False,
+        #                                           train_portion=0.80,
+        #                                           seed=0)
+        # model_container_set.append(model_container)
 
     saver = OutputSavers(data_gen=data_gen,
                          model_container_set=model_container_set,

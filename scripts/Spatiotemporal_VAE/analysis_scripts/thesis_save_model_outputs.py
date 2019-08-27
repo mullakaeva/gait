@@ -1,4 +1,5 @@
 from common.utils import tensor2numpy, write_df_pickle
+from thesis_analysis_script import load_model_container
 import pandas as pd
 import numpy as np
 import umap
@@ -39,8 +40,6 @@ class OutputSavers:
         self.data_gen = data_gen
         self.data_gen.mt = data_gen.df_test.shape[0]
         self.identifier_set = [x.replace("Thesis_", "") for x in identifier_set]
-        for i in range(len(identifier_set)):
-            del model_container_set[i].data_gen
         self.model_container_set = model_container_set
         self.df_dict = dict()
         self.df_pheno_dict = dict()
@@ -64,7 +63,9 @@ class OutputSavers:
         self.df_dict["direction"] = list(towards)
 
 
-        for identifier, model_container in zip(self.identifier_set, self.model_container_set):
+        for identifier, model_container_kwargs in zip(self.identifier_set, self.model_container_set):
+            print("Loading {}".format(identifier))
+            model_container, _ = load_model_container(**model_container_kwargs)
             print("forward passing {}".format(identifier))
             data_outputs = model_container.forward_evaluate(test_data)
             if identifier == "B+C+T+P":
