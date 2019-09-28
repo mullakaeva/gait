@@ -9,12 +9,17 @@ from common.utils import sample_subset_of_videos
 def gen_template(all_videos_list, output_videos_dir, output_data_dir):
     """
     Produce bash shell commands for inferring multiple videos with openpose
-
-    Args:
-        src_videos_dir: Directory of the videos that you infer
-        output_videos_dir: Directory for storing the visualisation (keypoints overlaid on original video)
-        output_data_dir: Directory for storing the keypoints data (.json)
-        division: List of indexes that divide your inference list to multiple subsets. It is intended for parallel inference.
+    Parameters
+    ----------
+    all_videos_list : str
+        Directory of the videos that you infer
+    output_videos_dir : str
+        Directory for storing the visualisation (keypoints overlaid on original video)
+    output_data_dir : str
+        Directory for storing the keypoints data (.json)
+    Returns
+    -------
+    None
 
     """
 
@@ -28,16 +33,18 @@ def gen_template(all_videos_list, output_videos_dir, output_data_dir):
         vid_name_root = os.path.splitext(os.path.split(input_vid_path)[1])[0]
         output_vid_path = os.path.join(output_videos_dir, vid_name_root + ".mp4")
 
-        # If output exists, skipp
+        # If output video exists, skip
         if os.path.isfile(output_vid_path):
             print("{} exists. Skipped".format(output_vid_path))
             skipped_num += 1
             continue
-        # If video name contains bracket, also skip (since I haven't found a way to interpret names with brackets in shell script)
+
+        # If video name contains bracket, also skip (since I didn't bother to interpret names with brackets in shell script)
         if "(" in vid_name_root or ")" in vid_name_root:
             print("Brackets exists. Skipped".format(output_vid_path))
             skipped_num += 1
             continue
+
         # Make folder for storing keypoints 
         output_data_path = os.path.join(output_data_dir, vid_name_root)  # output_data_path should point to a directory!
         if os.path.isdir(output_data_path) is not True:
@@ -57,9 +64,10 @@ def gen_template(all_videos_list, output_videos_dir, output_data_dir):
 
 
 if __name__ == "__main__":
-    # src_videos_dir = "/mnt/data/gait/data/videos_mp4/"
-    src_videos_dir = "/mnt/media/dsgz2tb_2/videos_converted/"
-    # labels_path = "/mnt/data/hoi/gait_analysis/data/labels/z_matrix/df_gait_vid_linked_190718.pkl"
+    # src_videos_dir = "/mnt/data/gait/data/videos_mp4/" # These are the 70k videos from Mustafa
+    src_videos_dir = "/mnt/media/dsgz2tb_2/videos_converted/"  # 160k Videos
+
+    # Sample source videos to be converted from a directory. Since argument (sample_num=0), it takes all vids with schuffling only
     all_videos_list = sample_subset_of_videos(src_videos_dir, sample_num=0, labels_path="", seed=50,
                                               with_labels=False)
 

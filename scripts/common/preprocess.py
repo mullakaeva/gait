@@ -1,14 +1,14 @@
+import os
+from glob import glob
+
+import matplotlib.pyplot as plt
 import numpy as np
 import skvideo.io as skv
-import os
-import matplotlib.pyplot as plt
-import pdb
-import re
+from skimage.transform import resize
+
+from .keypoints_format import openpose2detectron_indexes, openpose_L_indexes, openpose_R_indexes
 from .utils import fullfile, read_openpose_keypoints, read_and_select_openpose_keypoints, moving_average, \
     OnlineFilter_scalar, OnlineFilter_np, extract_contagious
-from glob import glob
-from skimage.transform import resize
-from .keypoints_format import openpose2detectron_indexes, openpose_L_indexes, openpose_R_indexes
 
 
 def reverse_flips(keyps):
@@ -762,23 +762,24 @@ def openpose_preprocess_wrapper(src_vid_dir, input_data_main_dir, output_vid_dir
                                 output_data_dir, error_log_path="", plot_keypoints=False,
                                 write_video=True):
     """
-    This function preprocesses the raw videos and keypoints that were inferred by openpose, by cropping, centering and
-    scaling the coordinates and bounding boxes.
-    The original keypoints are stored in subfolders inside "input_data_main_dir". This fuunction searches for the raw
-    videos in "src_vid_dir" with the same name as the subfolders' (with extension ".mp4")
+    This function preprocesses the raw videos and keypoints that were inferred by OpenPose, and output the
+    processed keypoints and (optiional) visualization to the designated directories.
 
     Parameters
     ----------
     src_vid_dir : str
         Directory that you store your raw videos.
     input_data_main_dir : str
-        Directory that you store the subfolders of keypoints, inferred from openpose.
+        Directory that you store the subfolders of keypoints, inferred from OpenPose.
     output_vid_dir : str
         Directory that you store the output preprocessed visualisation videos.
     output_data_dir : str
         Directory that you store the output preprocessed keypoints.
+    error_log_path : str
+        Define the path of file that logs the traceback message whenever error is encountered.
     plot_keypoints : bool
-        True if you want to plot the keypoints on the output visualisation videos. False if you don't.
+        True if you want to plot the keypoints on the output visualisation videos.
+        False if you don't do the plotting. The processing will then be faster.
     write_video : bool
         True if you want to store the output preprocessed visualisation videos.
     """

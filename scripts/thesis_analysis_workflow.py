@@ -1,32 +1,31 @@
 # -*- coding: utf-8 -*-
 
-# from common.generator import GaitGeneratorFromDF
-# from neuralODE.analysis_neuralODE import gait_neural_ode_train, gait_neural_ode_vis
-
-# from TemporalVAE.cVAE_run import GaitCVAEmodel, GaitCVAEvisualiser
+# This file will guide you all the steps that I did for the analysis in the Master thesis --Hoi
 
 
 # %%  ======================= Step 1: OpenPose inference ============================
-# This section find all videos from Mustafa's gait data, select those that has labels and infer them
-# 1. $ NV_GPU=0,1,2 nvidia-docker run --rm -it -v /:/mnt yyhhoi/openpose:u16cuda9dnn7-2 bash
+# This section find all videos from Mustafa's gait data, select those with labels and infer them with openpose
+# Configuration of OpenPose behaviours is stored in the "generate_openpose_shellscript_for_FSF.py" as shown below
+
+# 1. Environment $ NV_GPU=0,1,2 nvidia-docker run --rm -it -v /:/mnt yyhhoi/openpose:u16cuda9dnn7-2 bash
 # 2. # cp -r /mnt/data/hoi/gait_analysis/scripts/openpose_shellscripts/generate_openpose_shellscript_for_FSF.py /mnt/data/hoi/gait_analysis/scripts/common ./
 # 3. # python generate_openpose_shellscript_for_FSF.py
 # 4. # sh openpose_inference_script.sh | tee /mnt/data/hoi/gait_analysis/scripts/openpose_shellscripts/clt_output.txt
-# Configuration of behaviours is stored in the generate_openpose_shellscript_for_FSF.py above
 
-# %% ======================== Step 2: Keypoints Pre-processing =======================
-# Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /:/mnt yyhhoi/neuro:2 bash
-# from common.preprocess import openpose_preprocess_wrapper
-# # src_vid_dir = "/mnt/data/gait/data/videos_mp4/"
-# src_vid_dir = "/mnt/media/dsgz2tb_2/videos_converted"
-# input_data_main_dir = "/mnt/data/hoi/gait_analysis/data/openpose_keypoints"
-# output_vid_dir = "/mnt/data/hoi/gait_analysis/data/preprocessed_visualisation"
-# output_data_dir = "/mnt/data/hoi/gait_analysis/data/preprocessed_keypoints"
-# error_log_path = "/mnt/data/hoi/gait_analysis/logs/preprocess_error_log.txt"
-# openpose_preprocess_wrapper(src_vid_dir, input_data_main_dir, output_vid_dir, output_data_dir,
-#                             error_log_path=error_log_path,
-#                             write_video=False,
-#                             plot_keypoints=False)
+
+# %% ======================== Step 2: Keypoints Pre-processing Part One =======================
+# It is the first part of the preprocessing in the thesis. It includes cropping, scaling, torso length normalization
+# Environment $ nvidia-docker run --rm -it -e NV_GPU=0 -v /:/mnt yyhhoi/neuro:3 bash
+from common.preprocess import openpose_preprocess_wrapper
+src_vid_dir = "/mnt/media/dsgz2tb_2/videos_converted"
+input_data_main_dir = "/mnt/data/hoi/gait_analysis/data/openpose_keypoints"
+output_vid_dir = "/mnt/data/hoi/gait_analysis/data/preprocessed_visualisation"
+output_data_dir = "/mnt/data/hoi/gait_analysis/data/preprocessed_keypoints"
+error_log_path = "/mnt/data/hoi/gait_analysis/logs/preprocess_error_log.txt"
+openpose_preprocess_wrapper(src_vid_dir, input_data_main_dir, output_vid_dir, output_data_dir,
+                            error_log_path=error_log_path,
+                            write_video=False,
+                            plot_keypoints=False)
 
 # %% ======================== Step 3: Feature Extraction =======================
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:2 bash
@@ -49,7 +48,6 @@ run_save_model_outputs()
 # dual_fingerprint_analysis()
 # single_fingerprint_analysis()
 
-# %% ======================== Step 5: Propagate and save outputs =======================
 
 
 
