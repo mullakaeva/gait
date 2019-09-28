@@ -197,18 +197,23 @@ class FeatureExtractorForODE(FeatureExtractor):
     """
     The purpose of the class is to generate a dataframe with columns of:
         1. Video names
-        2. Feature vectors
-        3. Labels of the walking task
-        4. Number of video frames
+        2. Feature vectors : np array with (num_frames, 25, 2)
+        3. Feature masks : with boolean entries, low confidence keypoints as False, otherwise as True
+        4. Tasks : integers [0, 7] for 8 walking tasks. Unlabelled task is set to 0
+        5. Task masks : boolean. True = labelled, False = unlabelled
+        6. Phenotype : integers [0, 12] for 13 phenotypes. Unlabelled phenotype is set to 0
+        7. Phenotype masks : boolean. True = labelled, False = unlabelled
+        8. Patient ID
+        9. Walkign direction : integers [0, 2]. 0=unknown, 1=towards camera, 2=awayf rom camera
+        10. Leg length : float
+        11. Leg length masks : boolean. True = labelled, False = unlabelled
 
     The feature vectors should be a numpy array with shape (num_frames, 25, 2), with below characteristics:
         1. Entries are clipped between [0, 250]
         2. The nan's are imputed by mean of the keypoints across a video (num_frames)
         3. The keypoints' coordinates are scaled to between float [0, 1]
 
-    The labels should be integers within [0, 7], since there are 8 walking tasks
-
-    The class handles input data that were first preprocessed by "OpenposePreprocesser".
+    This class handles input data that were first preprocessed by "OpenposePreprocesser" (Part-1 preprocessing)
     """
 
     def __init__(self, scr_keyps_dir, labels_path, df_save_path):
@@ -217,14 +222,14 @@ class FeatureExtractorForODE(FeatureExtractor):
         Parameters
         ----------
         scr_keyps_dir : str
-            Directory that stored the preprocessed keypoints from OpenPose's inference. It should contain a .npz file
+            Directory that stored the preprocessed keypoints from Part-1 preprocessing. It should contain a .npz file
             per video
 
         labels_path : str
             Path that contains the label of z_matrix which can be handled by common.utils.LabelReader class
 
         df_save_path : str
-            Path that you will store your dataframe after this "second preprocessing"
+            Path that you will store your dataframe after this "Part-2 preprocessing"
         """
         self.scr_keyps_dir = scr_keyps_dir
         self.arrs_paths = sorted(glob(os.path.join(self.scr_keyps_dir, "*.npz")))
@@ -245,6 +250,7 @@ class FeatureExtractorForODE(FeatureExtractor):
 
     def extract(self, filter_window=None):
         """
+        Generate the dataframe with the 11 columns as described in class docstring.
 
         Parameters
         ----------
@@ -253,7 +259,7 @@ class FeatureExtractorForODE(FeatureExtractor):
 
         Returns
         -------
-            None
+        None
         """
         for idx, arr_path in enumerate(self.arrs_paths):
             # Print progress
@@ -285,7 +291,7 @@ class FeatureExtractorForODE(FeatureExtractor):
             self.phenos_list.append(pheno)
             self.pheno_masks_list.append(pheno_mask)  # False = masked
             self.idpatients_list.append(idpatient)  # None if not found
-            self.towards_camera_list.append(towards)  # 0=unknown, 1=left, 2=right
+            self.towards_camera_list.append(towards)  # 0=unknown, 1=towards, 2=away
             self.leg_list.append(leg)
             self.leg_mask_list.append(leg_mask)
 
