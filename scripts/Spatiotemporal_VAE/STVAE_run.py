@@ -13,8 +13,6 @@ import re
 from glob import glob
 from common.utils import MeterAssembly, RunningAverageMeter, dict2json, tensor2numpy, numpy2tensor, load_df_pickle, \
     write_df_pickle, expand1darr, expand_1dfloat_arr
-from common.visualisation import LatentSpaceVideoVisualizer
-from common.data_preparation import prepare_data_for_concatenated_latent
 from .Model import SpatioTemporalVAE
 from .ConditionalModel import ConditionalSpatioTemporalVAE, ConditionalIdentifySpatioTemporalVAE
 

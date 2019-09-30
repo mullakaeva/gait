@@ -2,6 +2,15 @@
 
 # This file will guide you all the steps that I did for the analysis in the Master thesis --Hoi
 
+# Overall the steps are:
+#     1. OpenPose inference from video
+#     2. Pre-processing part 1
+#     3. Pre-processing part 2
+#     4. Training models
+#     5. Forward pass test data and save as dataframe
+#     6. Data analysis and visualization
+
+
 
 # %%  ======================= Step 1: OpenPose inference ============================
 # This section find all videos from Mustafa's gait data, select those with labels and infer them with openpose
@@ -14,12 +23,12 @@
 
 
 # %% ======================== Step 2: Keypoints Pre-processing Part 1 =======================
-# It is the first part of the preprocessing in the thesis. It includes
-# 1. Eliminate the flipping artefact by reversing the wrong coordinates
-# 2. Translation of keypoints to the bounding box's cooridnate system
-# 3. Crop videos to their bounding box of human subject and resize the bounding box to a fixed size
-# 4. Torso length normalization
-# 5. Extract only the video segment with whole skeleton visible
+# It is the first part of the preprocessing in the thesis. It does the followings:
+#     1. Eliminate the flipping artefact by reversing the flipped coordinates
+#     2. Translation of keypoints to the bounding box's cooridnate system
+#     3. Crop videos to their bounding box of human subject and resize the bounding box to a fixed size
+#     4. Torso length normalization
+#     5. Extract only the video segment in which the full skeletons are visible
 
 # Environment $ nvidia-docker run --rm -it -e NV_GPU=0 -v /:/mnt yyhhoi/neuro:3 bash
 # from common.preprocess import openpose_preprocess_wrapper
@@ -33,10 +42,11 @@
 #                             write_video=False,
 #                             plot_keypoints=False)
 
+
 # %% ======================== Step 3: Keypoints Pre-processing Part 2 =======================
-# This section do the following
-# 1. Further normalization, clipping, walking direction detection and so on.
-# 2. Pack all information into a dataframe (see the class doctring in common.feature_extaction.FeatureExtractorForODE)
+# This section does the following
+#     1. Normalization, clipping values and walking direction detection.
+#     2. Pack all information into a dataframe and save (see docstring in common.feature_extaction.FeatureExtractorForODE)
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:2 bash
 # from common.feature_extraction import FeatureExtractorForODE
 # scr_keyps_dir = "/mnt/data/preprocessed_keypoints"
@@ -48,16 +58,25 @@
 #                                    df_save_path=df_save_path)
 # extractor.extract(minimum_sequence_window)
 
-# %% ======================== Step 4: Train and visualize on combined_VAE =======================
+
+# %% ======================== Step 4: Train Models =======================
+# This section trains the models of "Thesis_B", "Thesis_B+C", "Thesis_B+C+T", "Thesis_B+C+T+P"
+# Detailed configurations can be found in the function thesis_analysis_script.run_save_model_outputs()
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:3 bash
-# from spatiotemporal_vae_script import run_train_and_vis_on_stvae, dual_fingerprint_analysis, single_fingerprint_analysis
-from thesis_analysis_script import run_train_and_vis_on_stvae, run_save_model_outputs
+# from thesis_analysis_script import run_train_and_vis_on_stvae
 # run_train_and_vis_on_stvae()
-run_save_model_outputs()
-# dual_fingerprint_analysis()
-# single_fingerprint_analysis()
 
 
+# %% ========= Step 5: Infer with trained models and save results for analysis + visualization ============
+# Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:3 bash
+# from thesis_analysis_script import run_save_model_outputs
+# run_save_model_outputs()
+
+
+# %% ========= Step 6: Data analysis + visualization ============
+# Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:3 bash
+# Refer to the jupyter notebook located at
+# /data/hoi/gait_analysis/Thesis_analysis.ipynb
 
 
 

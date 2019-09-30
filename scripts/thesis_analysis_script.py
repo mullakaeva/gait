@@ -3,9 +3,6 @@
 from Spatiotemporal_VAE.Containers import BaseContainer, ConditionalContainer, PhenoCondContainer
 from common.generator import GaitGeneratorFromDFforTemporalVAE
 from common.utils import dict2json, json2dict
-from Spatiotemporal_VAE.analysis_scripts.latent_space_visualization import LatentSpaceSaver_CondDirect, \
-    LatentSpaceSaver_CondDirectTask, LatentSpaceSaver_CondDirectLeg, LatentSpaceSaver_CondDirectIdentity
-from Spatiotemporal_VAE.analysis_scripts.fingerprint import GaitprintSaver
 import os
 import pprint
 
@@ -18,13 +15,17 @@ def print_model_info(model_identifier, hyper_params):
 
 def load_model_container(model_class, model_identifier, df_path, datagen_batch_size=512, gaitprint_completion=False,
                          train_portion=0.99, seed=0):
+    # This function returns an object that wraps over the DL model
+    # For each different model identifier, different set of hyperparameters is used
+    # To look for the hyper-parameters I used, go to /data/hoi/gait_analysis/scripts/Spatiotemporal_VAE/model_chkpt/
+
     # Hard-coded stuffs
     seq_dim = 128
     init_lr = 0.001
     lr_milestones = [75]
     lr_decay_gamma = 0.1
 
-    # Hyper-parameters
+    # Hyper-parameters. To be adjusted for each different model.
     hyper_params = {
         "model_name": model_identifier,
         "conditional_label_dim": 3,
@@ -32,12 +33,12 @@ def load_model_container(model_class, model_identifier, df_path, datagen_batch_s
         "posenet_latent_dim": 16,
         "posenet_dropout_p": 0,
         "posenet_kld": None,
-        "pose_latent_gradient": 0.0001,  # 0.0001
+        "pose_latent_gradient": 0.0001,
         "motionnet_latent_dim": 128,
         "motionnet_dropout_p": 0,
-        "motionnet_kld": [0, 10, 0.0001],  # [0, 250, 0.0001],
-        "recon_gradient": 0.0001,  # 0.0001
-        "class_weight": 0.001,  # 0.001
+        "motionnet_kld": [0, 10, 0.0001],   # It means, slowly increasing linearly from 0th to 10th epoch from 0 to 0.0001
+        "recon_gradient": 0.0001,
+        "class_weight": 0.001,
         "latent_recon_loss": 1,
     }
     save_model_path = "Spatiotemporal_VAE/model_chkpt/ckpt_%s.pth" % model_identifier
@@ -49,6 +50,7 @@ def load_model_container(model_class, model_identifier, df_path, datagen_batch_s
     else:
         load_model_path = None
 
+    # If hyper-parameters file (identified by filename) already exists, load it. If not, save it.
     if os.path.isfile(save_hyper_params_path):
         print("Existing hyper-params file found")
         hyper_params = json2dict(save_hyper_params_path)
@@ -64,6 +66,7 @@ def load_model_container(model_class, model_identifier, df_path, datagen_batch_s
     else:
         data_gen = None
 
+    # The container object
     model_container = model_class(data_gen=data_gen,
                                   fea_dim=50,
                                   seq_dim=seq_dim,
@@ -89,37 +92,56 @@ def load_model_container(model_class, model_identifier, df_path, datagen_batch_s
 
 def run_train_and_vis_on_stvae():
     df_path = "/mnt/data/full_feas_tasks_phenos_nanMasks_idpatient_leg.pickle"
-    # model_identifier = "Thesis_B"
-    model_identifier = "Thesis_B+C"
+    training_epoch = 1000
+    # Choose the model identifier is one of the four: Thesis_B, Thesis_B+C, Thesis_B+C+T, Thesis_B+C+T+P
+    model_identifier = "Thesis_B"
+    # model_identifier = "Thesis_B+C"
     # model_identifier = "Thesis_B+C+T"
     # model_identifier = "Thesis_B+C+T+P"
 
-    gaitprint_completion = False  # True for B+T+C+P, False for others
-    batch_size = 512  # 64 for Thesis_B+C+T+P, 512 for others
-    model_container, save_model_path = load_model_container(model_class=ConditionalContainer,
+    # =======================================================
+    # Based on the model identifier you choose, you will need to the variable identifiers below
+    gaitprint_completion = False  # True for Thesis B+T+C+P, False for Thesis_B, Thesis_B+C, Thesis_B+C+T
+    batch_size = 512  # 64 for Thesis_B+C+T+P, 512 for Thesis_B, Thesis_B+C, Thesis_B+C+T
+    model_class = BaseContainer  # For Thesis_B
+    # model_class = ConditionalContainer  # For Thesis_B+C or Thesis_B+C+T
+    # model_class = PhenoCondContainer  # For Thesis_B+C+T+P
+    # =======================================================
+
+    model_container, save_model_path = load_model_container(model_class=model_class,
                                                             model_identifier=model_identifier,
                                                             df_path=df_path,
                                                             datagen_batch_size=batch_size,
                                                             gaitprint_completion=gaitprint_completion,
                                                             train_portion=0.80,
                                                             seed=0)
-    model_container.train(992)
+    # Model checkpoint is automatically saved in every epoch at Spatiotemporal_VAE/model_chkpt/
+    model_container.train(training_epoch)
 
 
 def run_save_model_outputs():
+    """
+    This function runs forward inference with the four models ("Thesis_B", "Thesis_B+C", "Thesis_B+C+T", "Thesis_B+C+T+P")
+    one by one on the test data.
+
+    Returns
+    -------
+    None
+    """
     from Spatiotemporal_VAE.analysis_scripts.thesis_save_model_outputs import OutputSavers
+    # Input dataframe
     df_path = "/mnt/data/full_feas_tasks_phenos_nanMasks_idpatient_leg.pickle"
+
+    # Output dataframes. One for the general results. One for the PhenoNet identificaiton
     df_save_path = "/mnt/thesis_results/data/model_outputs_full_final.pickle"
     df_pheno_save_path = "/mnt/thesis_results/data/model_phenos_outputs_full_final.pickle"
 
     identifier_set = ["Thesis_B", "Thesis_B+C", "Thesis_B+C+T", "Thesis_B+C+T+P"]
     model_classess = [BaseContainer, ConditionalContainer, ConditionalContainer, PhenoCondContainer]
     model_container_set = []
-
     data_gen = GaitGeneratorFromDFforTemporalVAE(df_path, m=512, n=128,
                                                  train_portion=0.8,
                                                  gait_print=False, seed=0)
-
 
 
     for model_identifier, model_class in zip(identifier_set, model_classess):
@@ -133,18 +155,12 @@ def run_save_model_outputs():
             "seed": 0
         }
         model_container_set.append(model_container_kwargs)
-        # model_container, _ = load_model_container(model_class=model_class,
-        #                                           model_identifier=model_identifier,
-        #                                           df_path=df_path,
-        #                                           datagen_batch_size=512,
-        #                                           gaitprint_completion=False,
-        #                                           train_portion=0.80,
-        #                                           seed=0)
-        # model_container_set.append(model_container)
 
     saver = OutputSavers(data_gen=data_gen,
                          model_container_set=model_container_set,
                          identifier_set=identifier_set,
                          save_df_path=df_save_path,
                          save_pheno_df_path=df_pheno_save_path)
+
+    # Run forward inference here
     saver.forward_batch()
