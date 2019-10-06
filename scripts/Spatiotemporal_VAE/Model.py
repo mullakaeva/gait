@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import logging
 
 
 def pose_block(input_channels,
@@ -217,9 +216,9 @@ class SpatioTemporalVAE(nn.Module):
                                     dropout_p=self.motionnet_dropout_p,
                                     device=self.device)
 
-        self.class_net = ClassNet(input_dim=self.motionnet_latent_dim,
-                                  n_classes=self.n_classes,
-                                  device=self.device)
+        self.class_net = TaskNet(input_dim=self.motionnet_latent_dim,
+                                 n_classes=self.n_classes,
+                                 device=self.device)
 
     def forward(self, x):
         (pose_z_seq, pose_mu, pose_logvar), (motion_z, motion_mu, motion_logvar) = self.encode(x)
@@ -376,35 +375,25 @@ class PoseVAE(nn.Module):
     def encode(self, x):
 
         out = self.en_blk1(x)
-        logging.debug("PoseNet Encode's Shape: %s" % (str(out.shape)))
 
         out = self.en_blk2(out)
-        logging.debug("PoseNet Encode's Shape: %s" % (str(out.shape)))
 
         out = self.en_blk3(out)
-        logging.debug("PoseNet Encode's Shape: %s" % (str(out.shape)))
 
         out = self.en2latents(out)
-        logging.debug("PoseNet Last Encode's Shape: %s" % (str(out.shape)))
         return out
 
     def decode(self, z):
-        logging.debug("PoseNet z's Shape: %s" % (str(z.shape)))
 
         out = self.latents2de(z)
-        logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
 
         out = self.de_blk1(out)
-        logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
 
         out = self.de_blk2(out)
-        logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
 
         out = self.de_blk3(out)
-        logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
 
         out = self.final_layer(out)
-        logging.debug("PoseNet Decode's Shape: %s" % (str(out.shape)))
         return out
 
 
@@ -516,51 +505,37 @@ class MotionVAE(nn.Module):
         return out, mu, logvar, z
 
     def encode(self, x):
-        logging.debug("MotionNet Input's Shape: %s" % (str(x.shape)))
 
         out = self.first_layer(x)
-        logging.debug("MotionNet Encode's Shape: %s" % (str(out.shape)))
 
         out = self.en_blk1(out)
-        logging.debug("MotionNet Encode's Shape: %s" % (str(out.shape)))
 
         out = self.en_blk2(out)
-        logging.debug("MotionNet Encode's Shape: %s" % (str(out.shape)))
 
         out = self.en_blk3(out)
-        logging.debug("MotionNet Encode's Shape: %s" % (str(out.shape)))
 
         out = self.en_blk4(out)
-        logging.debug("MotionNet Encode's Shape: %s" % (str(out.shape)))
 
         out = self.en2latents(out)
-        logging.debug("MotionNet Last Encode's Shape: %s" % (str(out.shape)))
         return out
 
     def decode(self, z):
-        logging.debug("MotionNet z's Shape: %s" % (str(z.shape)))
 
         out = self.latents2de(z)
-        logging.debug("MotionNet Decode's Shape: %s" % (str(out.shape)))
 
         out = self.de_blk1(out)
-        logging.debug("MotionNet Decode's Shape: %s" % (str(out.shape)))
 
         out = self.de_blk2(out)
-        logging.debug("MotionNet Decode's Shape: %s" % (str(out.shape)))
 
         out = self.de_blk3(out)
-        logging.debug("MotionNet Decode's Shape: %s" % (str(out.shape)))
 
         out = self.de_blk4(out)
-        logging.debug("MotionNet Decode's Shape: %s" % (str(out.shape)))
 
         out = self.final_layer(out)
-        logging.debug("MotionNet Decode's Shape: %s" % (str(out.shape)))
         return out
 
 
-class ClassNet(nn.Module):
+class TaskNet(nn.Module):
 
     def __init__(self, input_dim, n_classes, device=None):
         """
@@ -575,7 +550,7 @@ class ClassNet(nn.Module):
         """
 
         # Model setting
-        super(ClassNet, self).__init__()
+        super(TaskNet, self).__init__()
         self.input_dim, self.n_classes = input_dim, n_classes
         self.device = torch.device('cuda:0') if device is None else device
         self.encode_units = [128, 64, 32, 16]
@@ -601,27 +576,20 @@ class ClassNet(nn.Module):
         return out
 
     def encode(self, x):
-        logging.debug("ClassNet Input's Shape: %s" % (str(x.shape)))
 
         out = self.first_layer(x)
-        logging.debug("ClassNet Encode's Shape: %s" % (str(out.shape)))
 
         out = self.en_blk1(out) + out[:, 0:int(self.encode_units[1])]
-        logging.debug("ClassNet Encode's Shape: %s" % (str(out.shape)))
 
         out = self.en_blk2(out) + out[:, 0:int(self.encode_units[2])]
-        logging.debug("ClassNet Encode's Shape: %s" % (str(out.shape)))
 
         out = self.en_blk3(out) + out[:, 0:int(self.encode_units[3])]
-        logging.debug("ClassNet Encode's Shape: %s" % (str(out.shape)))
 
         out = self.final_layer(out)
-        logging.debug("ClassNet Last Encode's Shape: %s" % (str(out.shape)))
         return out
 
 
 if __name__ == "__main__":
-    # logging.basicConfig(level=logging.DEBUG)
     device = torch.device('cuda:0')
 
     network_params = {

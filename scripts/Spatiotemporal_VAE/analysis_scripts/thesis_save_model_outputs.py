@@ -7,9 +7,10 @@ import umap
 class OutputSavers:
     """
     This class intends to do inference using exisitng trained models,
-    and save inputs + results for later analysis/visualization
+    and save inputs + output results for later analysis/visualization in JupyterNotebook
 
-    Things to save:
+    Belows are the things to be saved in dataframes:
+
     1. From inputs:
         1.1. Original motion sequence
         1.2. Mask of original motion sequence (True = confident keypoint. False = low confident/non-existing)
@@ -28,13 +29,13 @@ class OutputSavers:
         2.6 Phenotype prediction (for model B+C+T+P)
 
     Except 2.5 and 2.6, all data are written to the dataframe specified by self.save_df_path
-    For 2.5 and 2.6, they are written to dataframe specified by save_pheno_df_path
+    For 2.5 and 2.6, they are written to dataframe specified by self.save_pheno_df_path
 
     """
 
     def __init__(self, data_gen, model_container_set, identifier_set, save_df_path, save_pheno_df_path):
         """
-        data_gen
+        data_gen : object
         model_container_set : list
             List of kwargs dictionaries for models "Thesis_B", "Thesis_B+C", "Thesis_B+C+T", "Thesis_B+C+T+P"
         identifier_set : list
@@ -45,7 +46,7 @@ class OutputSavers:
             Path for saving the dataframe that stores the results of PhenotypeNet
         """
         self.data_gen = data_gen
-        self.data_gen.mt = data_gen.df_test.shape[0]  # s.t. data is loaded in first generaator loop
+        self.data_gen.mt = data_gen.df_test.shape[0]  # s.t. all data are loaded in first generaator loop
         self.identifier_set = [x.replace("Thesis_", "") for x in identifier_set]
         self.model_container_set = model_container_set
         self.df_dict = dict()  # For being loaded into output dataframe (storing general data)

@@ -10,7 +10,7 @@ import pprint
 from common.utils import MeterAssembly, numpy2tensor, expand1darr
 
 from .Model import SpatioTemporalVAE
-from .ConditionalModel import ConditionalSpatioTemporalVAE, ConditionalIdentifySpatioTemporalVAE
+from .ConditionalModel import ConditionalSpatioTemporalVAE, ConditionalPhenotypeSpatioTemporalVAE
 
 
 class BaseContainer:
@@ -557,7 +557,7 @@ class PhenoCondContainer(BaseContainer):
         )
 
     def _model_initialization(self):
-        model = ConditionalIdentifySpatioTemporalVAE(
+        model = ConditionalPhenotypeSpatioTemporalVAE(
             fea_dim=self.fea_dim,
             seq_dim=self.seq_dim,
             posenet_latent_dim=self.posenet_latent_dim,

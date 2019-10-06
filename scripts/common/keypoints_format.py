@@ -1,29 +1,6 @@
 import numpy as np
-import matplotlib.pyplot as plt
 
 # left and right is from the owner's perspective, not the observer's
-
-videopose3d_labels = {
-    0: 'hip_centre',
-    1: 'r_hip', 2: 'r_knee', 3: 'r_ankle',
-    4: 'l_hip', 5: 'l_knee', 6: 'l_ankle', 
-    7: 'torso', 8: 'neck', 9: 'nose', 10: 'crown',
-    11: 'l_shoulder', 12: 'l_elbow', 13: 'l_wrist',
-    14: 'r_shoulder', 15: 'r_elbow', 16: 'r_wrist'
-}
-
-detectron_labels = {
-    0: 'nose',
-    1: 'l_eye', 2: 'r_eye',
-    3: 'l_ear', 4: 'r_ear',
-    5: 'l_shoulder', 6: 'r_shoulder',
-    7: 'l_elbow', 8: 'r_elbow',
-    9: 'l_wrist', 10: 'r_wrist',
-    11: 'l_hip', 12: 'r_hip',
-    13: 'l_knee', 14: 'r_knee',
-    15: 'l_ankle', 16: 'r_ankle'
-
-}
 
 openpose_body25_labels = {
     0: "nose",
@@ -54,35 +31,6 @@ openpose_body25_labels = {
 }
 
 openpose_body25_indexes = {v: k for k, v in openpose_body25_labels.items()}
-
-openpose_body_draw_sequence = (
-    # (0, 1, "m"),  # nose to neck
-    # (0, 15, "r"),  # nose to r_eye
-    # (0, 16, "l"),  # nose to l_eye
-    # (15, 17, "r"),  # r_eye to r_ear
-    # (16, 18, "l"),  # l_eye to l_ear
-    (18, 1, "l"),  # l_ear to neck
-    (17, 1, "l"),  # r_ear to neck
-    (1, 5, "l"),  # neck to l_shoulder
-    (5, 6, "l"),  # l_shoulder to l_elbow
-    (6, 7, "l"),  # l_elbow to l_wrist
-    (1, 2, "r"),  # neck to r_shoulder
-    (2, 3, "r"),  # r_shoulder to r_elbow
-    (3, 4, "r"),  # r_elbow to r_wrist
-    (1, 8, "m"),  # neck to hip_centre
-    (8, 9, "r"),  # hip_centre to r_hip
-    (9, 10, "r"),  # r_hip to r_knee
-    (10, 11, "r"),  # r_knee to r_ankle
-    (11, 24, "r"),  # r_ankle to r_heel
-    (11, 22, "r"),  # r_ankle to r_bigtoe
-    (22, 23, "r"),  # r_bigtoe to r_smalltoe
-    (8, 12, "l"),  # hip_centre to l_hip
-    (12, 13, "l"),  # l_hip to l_knee
-    (13, 14, "l"),  # l_knee to l_ankle
-    (14, 21, "l"),  # l_ankle to l_heel
-    (14, 19, "l"),  # l_ankle to l_bigtoe
-    (19, 20, "l")  # l_bigtoe to l_small toe
-)
 
 openpose_body_connection_scheme = (
     (0, 1),  # nose to neck

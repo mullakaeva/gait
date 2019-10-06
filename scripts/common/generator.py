@@ -7,6 +7,7 @@ import os
 import numpy as np
 import pandas as pd
 
+
 # Abbreviations:
 # SSF = simple shallow features analysis
 
@@ -124,8 +125,6 @@ class GaitGeneratorFromDF:
         return output_arr, times
 
 
-
-
 class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
     """
     Example of usage:
@@ -145,14 +144,15 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         Parameters
         ----------
         df_pickle_path : str
-        conditional_labels : int
-            Number of labels. They are for conditional VAE - the discrete labels will be concatenated to the features.
         m : int
-            Sample size for each batch
+            Number of samples drawn from training set for each iteration
         n : int
-            Sequence length
+            Sequence length. Keep it at 128.
         train_portion : float
+            Portion of the whole data size to be used as training set. In this class GaitGeneratorFromDFforTemporalVAE,
+            it is overridden by setting a particular number and no longer meaningful. See self._split_train_test() method.
         seed : int
+            Random seed for data generator.
 
         """
 
@@ -164,7 +164,7 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         super(GaitGeneratorFromDFforTemporalVAE, self).__init__(df_pickle_path, m, n, train_portion, seed)
         self.batch_shape = (m, self.total_fea_dims, n)
         self.gait_print = gait_print
-        self.mt = 4
+        self.mt = 4  # number of samples to be drawn for test set
 
         # Get number of unique patients
         self.num_uni_patients = self._get_num_uni_patients()
@@ -176,7 +176,7 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
 
         labelled_mask = (self.df["task_masks"] == True)
         df_test = self.df[labelled_mask][0:8000].copy()
-        train_index = list(self.df[labelled_mask][8000:].index) + list(self.df[labelled_mask==False].index)
+        train_index = list(self.df[labelled_mask][8000:].index) + list(self.df[labelled_mask == False].index)
         df_train = self.df.loc[train_index].copy()
         return df_train, df_test
 
@@ -202,7 +202,6 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         x_test_info, task_test_info, pheno_test_info, towards_test, leg_test_info, idpatients_test = self._loop_for_array_construction(
             selected_df_test,
             selected_df_test.shape[0])
-
 
         x_test, x_test_masks = x_test_info
         task_test, task_test_masks = task_test_info
@@ -254,9 +253,8 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         fea_masks_arr = np.zeros(features_arr.shape)
 
         for i in range(num_samples):
-
             # Slice to the receptive window
-            slice_start = np.random.choice(fea_vec[i, ].shape[0] - self.n)
+            slice_start = np.random.choice(fea_vec[i,].shape[0] - self.n)
             fea_vec_sliced = fea_vec[i][slice_start:slice_start + self.n, :, :]
             fea_mask_vec_sliced = fea_mask_vec[i][slice_start:slice_start + self.n, :, :]
 
@@ -288,12 +286,11 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
 
     def _complete_gaitprint(self, df):
 
-        id_nan_mask = df["idpatients"].isnull()==False
+        id_nan_mask = df["idpatients"].isnull() == False
         current_uni_ids = np.unique(df[id_nan_mask]["idpatients"])
 
         indexes_to_add = []
         for uni_id in current_uni_ids:
-
 
             df_patient_tasks = self.df_nonan[self.df_nonan["idpatients"] == uni_id]["tasks"]
             grand_id_tasks = np.unique(df_patient_tasks)
@@ -302,7 +299,7 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
 
             for grand_id_tasks_each in grand_id_tasks:
                 if grand_id_tasks_each not in uni_id_tasks:
-                    add_indexes = df_patient_tasks[df_patient_tasks==grand_id_tasks_each].index
+                    add_indexes = df_patient_tasks[df_patient_tasks == grand_id_tasks_each].index
                     if add_indexes.shape[0] == 0:
                         continue
                     sampled_add_index = list(np.random.choice(add_indexes, size=1))
@@ -313,7 +310,6 @@ class GaitGeneratorFromDFforTemporalVAE(GaitGeneratorFromDF):
         return df
 
     def _construct_filtered_df(self):
-        mask = (self.df_train["idpatients"].isnull()==False) & (self.df_train["task_masks"]==True)
+        mask = (self.df_train["idpatients"].isnull() == False) & (self.df_train["task_masks"] == True)
         df_nonan = self.df_train[mask]
         return df_nonan
-

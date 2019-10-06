@@ -1,4 +1,4 @@
-from .Model import SpatioTemporalVAE, PoseVAE, MotionVAE, Unsqueeze, ClassNet, pose_block
+from .Model import SpatioTemporalVAE, PoseVAE, MotionVAE, Unsqueeze, TaskNet, pose_block
 from common.utils import TensorAssigner, TensorAssignerDouble, numpy_bool_index_select
 import torch
 import torch.nn as nn
@@ -65,10 +65,10 @@ class ConditionalSpatioTemporalVAE(SpatioTemporalVAE):
                                                kld=self.motionnet_kld,
                                                dropout_p=self.motionnet_dropout_p,
                                                device=self.device)
-        self.class_net = ConditionalClassNet(input_dim=self.motionnet_latent_dim,
-                                             conditional_label_dim=self.conditional_label_dim,
-                                             n_classes=self.n_classes,
-                                             device=self.device)
+        self.class_net = ConditionalTaskNet(input_dim=self.motionnet_latent_dim,
+                                            conditional_label_dim=self.conditional_label_dim,
+                                            n_classes=self.n_classes,
+                                            device=self.device)
 
     def forward(self, *inputs):
         """
@@ -159,21 +159,21 @@ class ConditionalMotionVAE(MotionVAE):
         )
 
 
-class ConditionalClassNet(ClassNet):
+class ConditionalTaskNet(TaskNet):
     def __init__(self, input_dim, conditional_label_dim, n_classes, device=None):
         self.conditional_label_dim = conditional_label_dim
-        super(ConditionalClassNet, self).__init__(input_dim=input_dim,
-                                                  n_classes=n_classes,
-                                                  device=device)
+        super(ConditionalTaskNet, self).__init__(input_dim=input_dim,
+                                                 n_classes=n_classes,
+                                                 device=device)
         self.first_layer = nn.Linear(self.input_dim + self.conditional_label_dim,
                                      self.encode_units[0])
 
 
-class IdentifyNet(nn.Module):
+class PhenotypeNet(nn.Module):
     def __init__(self, num_phenos, motion_z_dim=128,
                  task_dim=8, fingerprint_dim=1024, hidden_dim=1024 * 2, device=None):
         # init
-        super(IdentifyNet, self).__init__()
+        super(PhenotypeNet, self).__init__()
         self.num_phenos = num_phenos
         self.task_dim = task_dim
         self.motion_z_dim = motion_z_dim
@@ -257,7 +257,7 @@ class IdentifyNet(nn.Module):
         return fingerprint, np.asarray(phenos_labels)
 
 
-class ConditionalIdentifySpatioTemporalVAE(ConditionalSpatioTemporalVAE):
+class ConditionalPhenotypeSpatioTemporalVAE(ConditionalSpatioTemporalVAE):
     def __init__(self,
                  fea_dim=50,
                  seq_dim=128,
@@ -272,7 +272,7 @@ class ConditionalIdentifySpatioTemporalVAE(ConditionalSpatioTemporalVAE):
                  conditional_label_dim=0,
                  device=None
                  ):
-        super(ConditionalIdentifySpatioTemporalVAE, self).__init__(
+        super(ConditionalPhenotypeSpatioTemporalVAE, self).__init__(
             fea_dim=fea_dim,
             seq_dim=seq_dim,
             posenet_latent_dim=posenet_latent_dim,
@@ -285,7 +285,7 @@ class ConditionalIdentifySpatioTemporalVAE(ConditionalSpatioTemporalVAE):
             conditional_label_dim=conditional_label_dim,
             device=device
         )
-        self.identify_net = IdentifyNet(
+        self.phenotype_net = PhenotypeNet(
             num_phenos = num_phenos,
             motion_z_dim=self.motionnet_latent_dim,
             task_dim=8,
@@ -305,7 +305,7 @@ class ConditionalIdentifySpatioTemporalVAE(ConditionalSpatioTemporalVAE):
         pred_labels = self.class_net(concat_motion_z)  # Convert (m, motion_latent_dim+label_dim) to (m, n_classes)
 
         # Identification net
-        pred_identify, labels_identify = self.identify_net(motion_z, tasks_np, tasks_mask_np, patient_ids_np, phenos_np, phenos_mask_np)
+        pred_identify, labels_identify = self.phenotype_net(motion_z, tasks_np, tasks_mask_np, patient_ids_np, phenos_np, phenos_mask_np)
 
         return recon_motion, pred_labels, (pose_z_seq, recon_pose_z_seq, pose_mu, pose_logvar), (
             motion_z, motion_mu, motion_logvar), (pred_identify, labels_identify)

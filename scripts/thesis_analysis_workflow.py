@@ -31,16 +31,16 @@
 #     5. Extract only the video segment in which the full skeletons are visible
 
 # Environment $ nvidia-docker run --rm -it -e NV_GPU=0 -v /:/mnt yyhhoi/neuro:3 bash
-# from common.preprocess import openpose_preprocess_wrapper
-# src_vid_dir = "/mnt/media/dsgz2tb_2/videos_converted"
-# input_data_main_dir = "/mnt/data/hoi/gait_analysis/data/openpose_keypoints"
-# output_vid_dir = "/mnt/data/hoi/gait_analysis/data/preprocessed_visualisation"
-# output_data_dir = "/mnt/data/hoi/gait_analysis/data/preprocessed_keypoints"
-# error_log_path = "/mnt/data/hoi/gait_analysis/logs/preprocess_error_log.txt"
-# openpose_preprocess_wrapper(src_vid_dir, input_data_main_dir, output_vid_dir, output_data_dir,
-#                             error_log_path=error_log_path,
-#                             write_video=False,
-#                             plot_keypoints=False)
+from common.preprocess import openpose_preprocess_wrapper
+src_vid_dir = "/mnt/media/dsgz2tb_2/videos_converted"
+input_data_main_dir = "/mnt/data/hoi/gait_analysis/data/openpose_keypoints"
+output_vid_dir = "/mnt/data/hoi/gait_analysis/data/preprocessed_visualisation"
+output_data_dir = "/mnt/data/hoi/gait_analysis/data/preprocessed_keypoints"
+error_log_path = "/mnt/data/hoi/gait_analysis/logs/preprocess_error_log.txt"
+openpose_preprocess_wrapper(src_vid_dir, input_data_main_dir, output_vid_dir, output_data_dir,
+                            error_log_path=error_log_path,
+                            write_video=False,
+                            plot_keypoints=False)
 
 
 # %% ======================== Step 3: Keypoints Pre-processing Part 2 =======================
@@ -48,29 +48,29 @@
 #     1. Normalization, clipping values and walking direction detection.
 #     2. Pack all information into a dataframe and save (see docstring in common.feature_extaction.FeatureExtractorForODE)
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:2 bash
-# from common.feature_extraction import FeatureExtractorForODE
-# scr_keyps_dir = "/mnt/data/preprocessed_keypoints"
-# labels_path = "/mnt/data/labels/fn_tasks_phenos_validated_rename.pkl"
-# df_save_path = "/mnt/data/full_feas_tasks_phenos_nanMasks_idpatient_leg.pickle"
-# minimum_sequence_window = 128  # Predefined fixed video segment length
-# extractor = FeatureExtractorForODE(scr_keyps_dir=scr_keyps_dir,
-#                                    labels_path=labels_path,
-#                                    df_save_path=df_save_path)
-# extractor.extract(minimum_sequence_window)
+from common.feature_extraction import FeatureExtractorForODE
+scr_keyps_dir = "/mnt/data/preprocessed_keypoints"
+labels_path = "/mnt/data/labels/fn_tasks_phenos_validated_rename.pkl"
+df_save_path = "/mnt/data/full_feas_tasks_phenos_nanMasks_idpatient_leg.pickle"
+minimum_sequence_window = 128  # Predefined fixed video segment length
+extractor = FeatureExtractorForODE(scr_keyps_dir=scr_keyps_dir,
+                                   labels_path=labels_path,
+                                   df_save_path=df_save_path)
+extractor.extract(minimum_sequence_window)
 
 
 # %% ======================== Step 4: Train Models =======================
 # This section trains the models of "Thesis_B", "Thesis_B+C", "Thesis_B+C+T", "Thesis_B+C+T+P"
 # Detailed configurations can be found in the function thesis_analysis_script.run_save_model_outputs()
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:3 bash
-# from thesis_analysis_script import run_train_and_vis_on_stvae
-# run_train_and_vis_on_stvae()
+from thesis_analysis_script import run_train_and_vis_on_stvae
+run_train_and_vis_on_stvae()
 
 
 # %% ========= Step 5: Infer with trained models and save results for analysis + visualization ============
 # Environment $ nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=0 -v /data/hoi/gait_analysis:/mnt yyhhoi/neuro:3 bash
-# from thesis_analysis_script import run_save_model_outputs
-# run_save_model_outputs()
+from thesis_analysis_script import run_save_model_outputs
+run_save_model_outputs()
 
 
 # %% ========= Step 6: Data analysis + visualization ============
